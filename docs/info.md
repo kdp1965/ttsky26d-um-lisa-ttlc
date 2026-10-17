@@ -131,7 +131,7 @@ terminated with a LINFEED plus CR sequence (0x0A, 0x0D).  All HEX values must be
 
  | Command   | Description                                                          |
  | --------- | -------------------------------------------------------------------- |
- | v         | Report Debugger version.  Should return: lisav1.2                    |
+ | v         | Report Debugger version.  Returns lisav2.0 (the TT07 chip: lisav1.2). |
  | wAAVVVV   | Write 16-bit HEX value 'VVVV' to register at 8-bit HEX address 'AA'. |
  | rAA       | Read 16-bit register value from 8-bit HEX address 'AA'.              |
  | t         | Reset the LISA core.                                                 |

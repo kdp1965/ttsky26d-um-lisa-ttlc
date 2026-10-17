@@ -33,7 +33,7 @@ SUCH DAMAGE.
  Debugger command syntax:
 
  General Control
-       v      - Report version of debugger
+       v      - Report version of debugger (lisav2.0; TT07: lisav1.2)
 
  CPU Register access
        rhh     - Read CPU register identified by h
@@ -155,9 +155,9 @@ module debug_ctrl
    assign   s_ver[5] = ASCII_s;
    assign   s_ver[4] = ASCII_a;
    assign   s_ver[3] = ASCII_v;
-   assign   s_ver[2] = ASCII_1;
-   assign   s_ver[1] = ASCII_dp;
-   assign   s_ver[0] = ASCII_2;
+   assign   s_ver[2] = ASCII_2;      // lisav2.0: the second chip (TT07 reports lisav1.2);
+   assign   s_ver[1] = ASCII_dp;     // the major digit tells a tool which stack convention
+   assign   s_ver[0] = ASCII_0;      // and silicon fixes it is talking to
 
    reg   [3:0]    s_reset_count;
    reg   [23:0]   s_guard_count;

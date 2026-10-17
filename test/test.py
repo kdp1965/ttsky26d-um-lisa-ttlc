@@ -28,7 +28,7 @@ async def test_debugger(dut):
     lisa = await start(dut)
     ver = await lisa.version()
     dut._log.info('version: %s' % ver)
-    assert ver == 'lisav1.2', ver
+    assert ver == 'lisav2.0', ver   # TT07 reports lisav1.2; the major digit is the chip's revision
     assert (await lisa.read_reg(REG_STATUS)) & 1 == 1, 'the core is not halted after reset'
     await lisa.write_reg(REG_LISA1_BASE, 0x1234)
     await lisa.check_reg(REG_LISA1_BASE, 0x1234)
