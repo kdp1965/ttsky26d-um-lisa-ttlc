@@ -361,6 +361,7 @@ module tt_um_lisa
    wire                 ttlc_io_start;
    wire [2:0]           ttlc_out_data;
    wire [2:0]           ttlc_in_data;
+   wire                 psram_mod;           // 0x1c bit 10: the TT QSPI Pmod's uio[7:4] (lisa_io_mux.v)
    wire [1:0]           clk_div;             // Clock division factor control (00: /2, 01: /4, 10: /8, 11: /16)
 //   wire [1:0]           input_depth;
 //   wire [1:0]           output_depth;
@@ -863,6 +864,7 @@ module tt_um_lisa
       // I/O Mux Bits                                        
       .output_mux_bits           ( output_mux_bits           ),
       .io_mux_bits               ( io_mux_bits               ),
+      .psram_mod                 ( psram_mod                 ),
 
       // Cache control
       .cache_disabled            ( cache_disabled            ),
@@ -959,6 +961,7 @@ module tt_um_lisa
       .rx_sel                    ( rx_sel                    ),
       .output_mux_bits           ( output_mux_bits           ),
       .io_mux_bits               ( io_mux_bits               ),
+      .psram_mod                 ( psram_mod                 ),
 
       // Debug UART signals
       .rx1                       ( rx1_r2                    ), // Input from the UART

@@ -316,6 +316,20 @@ its `rev2` from it at connect).
 string is eight constant bytes in the debug controller, so it is a
 re-harden with the same knobs and anchor table.
 
+## 18. The Tiny Tapeout QSPI Pmod
+
+**Symptom.** The chip's quad SPI and second chip select are on uio[6:7] and
+uio[4] (or the custom board's latch), the Tiny Tapeout QSPI Pmod has SD2 /
+SD3 on uio[4:5] and the PSRAM selects on uio[6:7]: the data cache cannot
+use the Pmod's PSRAM without an interposer.
+
+**RTL.** From ttgf-um-lisa (Ken, 2025-11): `psram_mod`, register 0x1c bit 10
+(a latch beside io_mux and the TTLC shift divider; it reads back there).
+With the uio mux at 2 it puts SIO2 / SIO3 on uio[4:5], CE1 on uio[6] and
+uio[7] high (`src/lisa_io_mux.v`); ttgf's other mux changes are not taken.
+2026-10-17; the chip testbench passes (default 3 of 3, TTLC 2 of 2), the
+PSRAM path itself is not tested yet (the FPGA has the Pmod).
+
 ## Verification (test/, see test/README.md)
 
 * `test/core/`: tb_core.v, the core with the chip's registered data bus, the

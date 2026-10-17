@@ -94,6 +94,7 @@ module debug_regs
    input  wire                ttlc_cache_invalidate_ack,
 
    output wire [1:0]          clk_div,
+   output wire                psram_mod,        // 0x1c bit 10: uio[7:4] for the TT QSPI Pmod
 
    input  wire [11:0]         ttlc_pc,
    input  wire                ttlc_exec,        // the TTLC retires an instruction (its PC moves)
@@ -143,7 +144,7 @@ module debug_regs
    wire        dbg_we_49;
    (* keep = "true" *)
    wire        dbg_we_4a;
-   wire [9:0]  addr_1c_bits;
+   wire [10:0] addr_1c_bits;
    wire [12:0] addr_1e_bits;
 
    // We transfer a single 16-bit value on the debug interface
@@ -170,6 +171,7 @@ module debug_regs
 
    assign io_mux_bits = addr_1c_bits[7:0];
    assign clk_div     = addr_1c_bits[9:8];
+   assign psram_mod   = addr_1c_bits[10];
    assign spi_clk_div = addr_1e_bits[3:0];
    assign spi_ce_delay= addr_1e_bits[10:4];
    assign spi_mode    = addr_1e_bits[12:11];
@@ -293,7 +295,7 @@ module debug_regs
             .D          ( dbg_di[b]          ),
             .Q          ( output_mux_bits[b] )
          );
-         if (b < 10)
+         if (b < 11)
          begin : IO_GEN
             sky130_fd_sc_hd__dlrtp_1   io_mux_latch
             (
@@ -519,7 +521,7 @@ module debug_regs
          4'h9: dbg_do = {8'h0, cmd_quad_write_r};
          4'ha: dbg_do = {12'h0, plus_guard_time};
          4'hb: dbg_do = output_mux_bits;
-         4'hc: dbg_do = {6'h0, clk_div, io_mux_bits};
+         4'hc: dbg_do = {5'h0, psram_mod, clk_div, io_mux_bits};
          4'hd: dbg_do = {9'h0, ttlc_cache_invalidate, inst_cache_invalidate, data_cache_invalidate,
                          data_cache_flush, cache_disabled, cache_map_sel};
          4'he: dbg_do = {3'h0, spi_mode, spi_ce_delay, spi_clk_div};
