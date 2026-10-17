@@ -4,7 +4,7 @@ name: gds_custom
 # macro, results copied to gds/, lef/ and pnl/) instead of hardening in the
 # action.  Run it by hand once those files are committed.  The viewer job
 # publishes the 2D / 3D GDS viewer to the repo's GitHub Pages
-# (https://kdp1965.github.io/ttsky26c-um-lisa-ttlc/).
+# (https://kdp1965.github.io/ttsky26d-um-lisa-ttlc/).
 
 on:
   workflow_dispatch:
