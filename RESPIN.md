@@ -300,6 +300,22 @@ which `--rev2` excludes), `test_core.py` reads a pushed byte at SP, and
 probes and the debug-port tests on test/core, the rev-2 suite on both
 testbenches (see the commit).
 
+## 17. Debugger version
+
+**Symptom.** A tool cannot tell which chip answers on the debug UART: TT07's
+debugger reports `lisav1.2`, and the stack convention (item 16), the ALU
+flags, the divider and the BF16 adder all differ between the chips.
+
+**RTL.** `src/debug_ctrl.v`, `s_ver`: the `v` command answers `lisav2.0`
+(2026-10-17, Ken's call). The major digit is the chip's revision; a tool
+that sees `lisav2` or later assumes the rev-2 conventions (lisa_ide sets
+its `rev2` from it at connect).
+
+**Test.** `test/test.py` test_debugger checks the string. Note: rc2's
+`gds/` (2026-10-17, earlier) was hardened before this change; the version
+string is eight constant bytes in the debug controller, so it is a
+re-harden with the same knobs and anchor table.
+
 ## Verification (test/, see test/README.md)
 
 * `test/core/`: tb_core.v, the core with the chip's registered data bus, the
@@ -691,6 +707,21 @@ testbenches (see the commit).
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
   command whose text holds an inline `[expr {...}]` (it takes the command
   text as a list to record the SDC line).
+* After rc2 (2026-10-17, evening): the FPGA port (`fpga/`, the Arty A7 with
+  Vivado) runs the same RTL with lisa.sdc's exceptions on its netlist, and
+  at 50 MHz the longest single-cycle path left was the instruction window's
+  words into the BF16 accumulator (window -> the fadd operand select -> the
+  adder -> facc). Ken: a 3-cycle path, fetch / decode / exec - lisa.sdc
+  gains `win_data` (`i_inst_stream.window[*]`, 128 flops, 3 cycles into
+  core3 and 2 into core2 like the window's count and head; the flow to
+  STAPrePNR resolves it, every other count as rc2's). rc2 was signed off
+  without it and without item 17's version string: the next harden is rc3.
+  Seen in the netlist on the way: lisa.sdc's `div_rs1` / `div_rs2` group
+  names nets of combinational operands, so its register walk resolves to
+  the IX low byte and the accumulator (8 + 8), giving pc -> acc[7:0] and
+  pc -> ix[7:0] two cycles; and its `cont_q` walk finds only `cont_q_r`,
+  not the `step_r` / `skip_r` levels the RTL ORs into cont_q (the FPGA
+  has them in the group; the chip's SDC is Ken's call).
 
 * The suite's known failures, first test_bf16 (2026-10-17): its checks 33
   and 34 asserted the TT07 adder's two defects through `bf16_fadd_raw` and

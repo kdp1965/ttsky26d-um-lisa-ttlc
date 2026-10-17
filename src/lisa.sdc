@@ -59,6 +59,12 @@ set pc         [lisa_regs {i_lisa_core.pc[*]}]
 # decide the hit, as the TT07 cache line's valid bit and address did
 set win_count  [lisa_regs {i_inst_stream.count[*]}]
 set win_head   [lisa_regs {i_inst_stream.head_addr[*]}]
+# and its words: the one at the PC's offset is the instruction, stable from
+# the fetch state to the execute state (three cycles: fetch, decode, exec;
+# a slide moves the same word with the offset) - added 2026-10-17, after
+# rc2, when the FPGA build showed the path (window -> fadd operand select
+# -> BF16 adder -> facc, the longest single-cycle one left)
+set win_data   [lisa_regs {i_inst_stream.window[*]}]
 set brk        [lisa_regs "$dbg.brk_r*"]
 set dbg_a      [lisa_regs {dbg_a[*]} {i_lisa_core.dbg_a[*]} {i_debug_ctrl.s_debug_arg[*]}]
 set dbg_di     [lisa_regs {dbg_di[*]} {core_inst_o[*]} {i_lisa_core.dbg_di[*]} {i_lisa_core.inst_o[*]}]
@@ -88,7 +94,7 @@ set div_cond   [lisa_regs "$div.cond"]
 set div_ixc    [lisa_regs "$div.ix_cond"]
 set div_sinv   [lisa_regs "$div.signed_inversion"]
 
-set groups {pc win_count win_head brk dbg_a dbg_di dbg_we dbg_halted cont_q predec d_we_r
+set groups {pc win_count win_head win_data brk dbg_a dbg_di dbg_we dbg_halted cont_q predec d_we_r
             facc ix ra ia sp cond ie isr_jump isr_sh div_rs1 div_rs2 div_zflag div_cond div_ixc div_sinv}
 set report "lisa.sdc:"
 foreach g $groups { append report " $g [llength [set $g]]" }
@@ -104,7 +110,7 @@ set core2 [concat $div_rs1 $div_rs2]
 
 lisa_mcp 3 $pc [concat $pc $core3]
 lisa_mcp 2 $pc $core2
-foreach src [list $win_count $win_head] {
+foreach src [list $win_count $win_head $win_data] {
     lisa_mcp 3 $src $core3
     lisa_mcp 2 $src $core2
 }
