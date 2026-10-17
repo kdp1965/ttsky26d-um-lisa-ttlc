@@ -52,9 +52,12 @@ set_property -dict { PACKAGE_PIN U14   IOSTANDARD LVCMOS33 } [get_ports { jc[4] 
 set_property -dict { PACKAGE_PIN V14   IOSTANDARD LVCMOS33 } [get_ports { jc[5] }];
 set_property -dict { PACKAGE_PIN T13   IOSTANDARD LVCMOS33 } [get_ports { jc[6] }];
 set_property -dict { PACKAGE_PIN U13   IOSTANDARD LVCMOS33 } [get_ports { jc[7] }];
-## uio[4] and uio[6] are the debug UART's other rx candidates (the autobaud
-## picks the port that talks first): idle high like a UART
-set_property PULLUP true [get_ports { jc[4] jc[6] }];
+## uio[4..7] are inputs or open-drain until a program sets the uio mux
+## (0x1c).  On the Tiny Tapeout QSPI Pmod they are the flash's WP# / HOLD#
+## (SD2 / SD3) and the two PSRAMs' selects, which must idle high or the
+## flash holds and the PSRAMs drive MISO; uio[4] and uio[6] are also the
+## debug UART's other rx candidates, idle high like a UART
+set_property PULLUP true [get_ports { jc[4] jc[5] jc[6] jc[7] }];
 
 ## USB-UART (FTDI): uart_txd_in is the host's transmit, into the design
 set_property -dict { PACKAGE_PIN D10   IOSTANDARD LVCMOS33 } [get_ports { uart_rxd_out }];

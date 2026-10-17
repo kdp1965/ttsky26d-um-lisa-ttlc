@@ -50,5 +50,25 @@ directory to the clone on `HOST`, andromeda by default, and runs the build
 there; `make remote-prog` programs the board on that machine, `make
 remote-log` shows the end of its log).  `build/` has the bitstream,
 timing, utilization and DRC reports.  `make lint` runs Verilator over the
-whole thing without Vivado.  Use the board like the demo board: lisa_ide
-or lisa_pydb on the USB-UART's serial port, the QSPI Pmod on JC.
+whole thing without Vivado.  Running a program (2026-10-17, on andromeda with a Tiny Tapeout QSPI Pmod
+on JC): `arty_run.py <file.ihx> [seconds]` loads it into the flash through
+the debug port (lisa-tools `lisa_pydb`, which reads Intel HEX since then),
+reads back the first words, turns the data cache off, runs it, hands it
+the UART and prints what it sends.  hello, test_core, test_printf and
+test_irq (rev-2 builds) give lisa_sim --rev2's output.  What it takes:
+
+- 125000 baud: the autobaud measures a bit in 32-clock steps, and 40 MHz /
+  125000 is exactly 320 clocks a bit (115200 and 460800 are not usable at
+  40 MHz).
+- One serial session per run: opening the port resets the design (the
+  Arty's JP2 jumper ties the FTDI's DTR to the RESET line), which clears
+  the debug registers and halts the core.
+- The data cache off (`w1d0007`): with it on, evicted lines go to a PSRAM
+  that is not set up (on the chip testbench there is one), so the globals
+  read back wrong while the stack, hot in the cache, survives.
+- `l` after the resume gives the program the debug UART.
+- The QSPI Pmod's uio[7:4] (WP#, HOLD#, the PSRAM selects) are pulled up
+  in the XDC; uio[7:4] are undriven until a program sets the mux, and a
+  floating HOLD# held the flash.  `psram_mod` (0x1c bit 10, from
+  ttgf-um-lisa) maps the data cache's quad SPI onto the Pmod's pins (not
+  tried yet).
