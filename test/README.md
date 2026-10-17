@@ -20,6 +20,9 @@ make IHX=../../lisa-tools/sdcc_test/test_core.ihx [CACHE=1] [TIMEOUT=clocks]
 ./run_suite.sh chip REV2=1    # the SDCC suite's self-checking programs (the
                               # *_rev2.ihx of `make check REV2=1`: this RTL's
                               # stack convention; without REV2=1 the TT07 build)
+./run_suite.sh chip REV2=1 CACHE=1   # the ones that need the 32K data space
+                              # (test_bigframe, test_ptroff; with the TT07
+                              # build also the cache tests)
 make SIM=icarus               # what CI runs
 ```
 

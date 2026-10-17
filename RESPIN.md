@@ -711,6 +711,10 @@ testbenches (see the commit).
   (lisa-tools a453dec) and passes with the default limit. Left on the chip
   testbench: test_bigframe and test_ptroff, which need the data cache
   (they pass in the CACHE=1 list), and test_irq, which prints nothing.
+  Since 2026-10-17 run_suite.sh lists test_bigframe and test_ptroff under
+  CACHE=1 only (the 32K data space they are built for, --stack-loc
+  0x7fff): the default list is 19 programs, all passing on both benches,
+  the CACHE=1 list those two (plus the TT07 cache tests for a TT07 build).
 * test_irq (2026-10-17): the test's timer, not the chip. Its tick came
   every 640 clocks (TIMER1_DIV 20) into a byte counter: lisa_sim ran
   work(300) in 135K cycles (212 ticks), the core testbench at 3-4 clocks
