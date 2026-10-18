@@ -1055,7 +1055,13 @@ default suite.  lisa_sim had no such pop (its write path never read).
   Promoted 2026-10-18 (Ken): gds/, lef/, pnl/ are rc6's, macro.json's
   anchor table its placement (placements/macro-rc6_final_cells.json);
   rc4's table stays as the overlay trial_anchor_rc4.json.  Tag rc6.
-  Next: rc7 with the UART overrun flags (item 14).
+* rc7 (2026-10-18, runs/macro-rc7 on ea6105e: items 14 (the overrun flag)
+  and 23 (the read strobe) on rc6's RTL, a free draw with the art): 63346
+  instances, synthesized 153213 um2 (+0.3% over rc6), placed at 66.8%,
+  810K um of wire in 32 routing iterations, Magic DRC / LVS / antenna 0,
+  hold +0.075, setup +5.6 nominal and -4.6 at ss (the same quasi-static
+  cones as rc6).  The local precheck passes; its placement table is
+  placements/macro-rc7_final_cells.json.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
