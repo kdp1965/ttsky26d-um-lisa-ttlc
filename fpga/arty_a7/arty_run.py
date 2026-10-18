@@ -14,7 +14,10 @@ the bridge takes the QSPI Pmod's bus with the chip in reset, programs and
 verifies the image in well under a second, gives the bus back) and uses
 the debug port only to set up and run; the UART path takes minutes for a
 big image.
-usage: [CACHE=1] [ETH=1] arty_run.py <file.ihx> [seconds] [baud]   (any rate; 460800 as the demo board)"""
+SEND='text' is written to the program after it has the UART, a line at
+a time with a pause between (escapes as in Python: SEND='\\rhelp' wakes
+lisa_monitor and asks for its help; arty_term.py is the live terminal).
+usage: [CACHE=1] [ETH=1] [SEND=..] arty_run.py <file.ihx> [seconds] [baud]   (any rate; 460800 as the demo board)"""
 import os, sys, time
 img = sys.argv[1]
 secs = float(sys.argv[2]) if len(sys.argv) > 2 else 5
@@ -56,6 +59,12 @@ print("data cache", "on (PSRAM A on CS1)" if cache else "off", flush=True)
 d.writePC(0); d.resume()
 time.sleep(0.1); d.ser.read(256)
 d.ser.write(b"l")
+if os.environ.get("SEND"):
+    # a line at a time with a pause: lisa_monitor drops what arrived while it
+    # printed the banner, so a command queued behind the Enter would be lost
+    for line in os.environ["SEND"].encode().decode("unicode_escape").split("\r"):
+        time.sleep(0.6)
+        d.ser.write(line.encode() + b"\r")
 t = time.time(); out = b""
 while time.time() - t < secs:
     out += d.ser.read(256)

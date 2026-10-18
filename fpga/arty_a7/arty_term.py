@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+"""A live terminal on a program running on the Arty: the image goes into
+the flash over Ethernet (ttlc_io.py), the debug port sets the design up
+(the data cache on the Pmod's PSRAM unless CACHE=0), starts the program
+at 0 and hands it the UART, and this terminal stays on the port - the
+port must not be reopened, since opening it resets the design.  Keys go
+straight through (ctrl-] quits, as pyserial's miniterm).  For lisa_monitor
+press Enter for the banner and 'lisa> ', then 'help'.
+usage: [CACHE=0] arty_term.py <file.ihx> [baud]     (on andromeda, the board's host)"""
+import os
+import sys
+import time
+img = sys.argv[1]
+baud = int(sys.argv[2]) if len(sys.argv) > 2 else 460800
+sys.argv = ["x"]
+here = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, here)
+sys.path.insert(0, os.environ.get("LISA_PYDB", os.path.expanduser("~/projects/tiny-tapeout/ttsky26d/lisa_pydb")))
+import lisa_pydb as m
+from ttlc_io import TtlcIo, load_image
+from serial.tools.miniterm import Miniterm
+
+TtlcIo().flash_write(0, load_image(img), log=lambda *a: print("ethernet:", *a, flush=True))
+class A: flashbase = 0
+d = m.LisaPyDb(); d.iwidth = 16; d.args = A()
+d.openPort("/dev/ttyUSB1", baud)
+print("debugger", d.getVer(), flush=True)
+d.halt(); d.writePC(0); d.setFlashBase(); d.writeReg(0x17, 4); d.writeReg(0x1e, 0x08d3)
+if os.environ.get("CACHE", "1") != "0":
+    for a, v in ((0x1c, 0x04aa), (0x17, 0x0006), (0x18, 0x006a), (0x15, 0x0006), (0x1d, 0x0013)):
+        d.writeReg(a, v)
+    print("data cache on (PSRAM A on CS1)", flush=True)
+else:
+    d.writeReg(0x1d, 7)
+    print("data cache off (the 128-byte RAM)", flush=True)
+d.writePC(0); d.resume()
+time.sleep(0.1); d.ser.read(256)
+d.ser.write(b"l")                                 # the program has the UART from here
+print("--- %s is running; the terminal is live, ctrl-] quits ---" % os.path.basename(img), flush=True)
+d.ser.timeout = 0.05
+term = Miniterm(d.ser, echo=False, eol="cr", filters=["direct"])
+term.exit_character = chr(0x1d)
+term.set_rx_encoding("latin-1")
+term.set_tx_encoding("latin-1")
+term.start()
+try:
+    term.join(True)
+except KeyboardInterrupt:
+    pass
+term.join()
+term.close()

@@ -177,6 +177,15 @@ test_flash runs the sequence against the chip testbench's flash model.
     ETH=1 CACHE=1 arty_run.py hello_rev2.ihx  # the image over Ethernet, then the debug port only sets up and runs
     ETH=1 arty_ttlc.py ttlc_loopback.hex
 
+`arty_term.py <file.ihx>` is the live terminal: the image over Ethernet,
+the debug port's setup with the data cache on (CACHE=0 for the 128-byte
+RAM), the program started and given the UART, then pyserial's miniterm on
+the same port (ctrl-] quits).  lisa_monitor built with `sdcc -mlisa
+--rev2 --stack-loc 0x7fff` (lisa-tools lisa_monitor/monitor_rev2.ihx,
+13396 words, 0.3 s to flash) runs on it: Enter for the banner and
+`lisa> `, then help, mr, mw, stack, free, calc, banner (2026-10-18).
+`SEND='\rhelp'` on arty_run.py scripts the same a line at a time.
+
 `TtlcIo.flash_write(addr, data)` erases the 64 KB blocks the image
 covers, programs it page by page, reads it back and releases the bus;
 `load_image(path)` gives the bytes (Intel HEX with gaps as zeros, like
