@@ -17,10 +17,10 @@
     54,
     79
   ],
-  "metal_pixels": 2355,
-  "rectangles": 351,
-  "merged_polygons": 41,
-  "metal_area_um2": 847.8,
+  "metal_pixels": 2529,
+  "rectangles": 377,
+  "merged_polygons": 22,
+  "metal_area_um2": 910.44,
   "routing_obstruction": [
     "met4",
     646.0,
@@ -31,7 +31,7 @@
   "exclusions": [],
   "clearance": 1.0,
   "mode": "plate",
-  "slot": 15,
+  "slot": 0,
   "extent": [
     644.2,
     460.0,

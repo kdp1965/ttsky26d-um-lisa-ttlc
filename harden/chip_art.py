@@ -6,8 +6,8 @@
 # for sky130A (met4 71/20): 2026-10-18, Ken's calvin on the LISA tile.
 #
 #   python3 chip_art.py --image art/calvin/source.gds --image-layer 50 0 \
-#       --extent 294.2 460.0 330.2 507.4 --box 296.0 460.0 328.4 507.4 \
-#       --slot 15 --out art/calvin
+#       --extent 644.2 460.0 680.2 507.4 --box 646.0 460.0 678.4 507.4 \
+#       --out art/calvin
 #
 # runs inside the LibreLane nix shell (PIL, numpy, klayout.db).  Outputs in
 # --out: <cell>.gds (met4 71/20; the cell's origin is the box's lower-left
@@ -22,9 +22,12 @@
 # area 0.24 um2 and m4.7 hole area 0.2 um2 (a pixel is 0.36), m4.5ab 0.4
 # between metal 3 um wide and anything (a gap is 0.6), and m4.11, no metal
 # that is still there after a 5 um shrink, i.e. no solid area wider than
-# 10 um in both directions: --slot N leaves every Nth pixel row of the
-# plate empty (15: solid runs of 8.4 um).  The tool re-checks all of them
-# on the merged shapes and refuses to write a cell that fails.  Magic's
+# 10 um in both directions - calvin's ink strokes see to that by
+# themselves (and neither the precheck's KLayout deck nor the PDK's
+# current one carries m4.11); for a picture that has such areas, --slot N
+# leaves every Nth pixel row empty (15: solid runs of 8.4 um).  The tool
+# re-checks all of them on the merged shapes and refuses to write a cell
+# that fails.  Magic's
 # met4.5a (what the Tiny Tapeout precheck runs) also fails where thin
 # metal leaves a convex corner of a 3 um body on both sides - the two
 # pieces of the 0.4 um band around the body meet at the corner point only -
@@ -163,7 +166,7 @@ def main():
     ap.add_argument("--mode", choices=("plate", "ink"), default="plate")
     ap.add_argument("--threshold", type=float, default=128)
     ap.add_argument("--no-disc", action="store_true", help="do not clip to the avatar's disc")
-    ap.add_argument("--slot", type=int, default=15, help="leave every Nth pixel row empty (m4.11: no solid metal wider than 10 um both ways); 0 = none")
+    ap.add_argument("--slot", type=int, default=0, help="leave every Nth pixel row empty, for a picture with solid metal wider than 10 um both ways (m4.11, which the self-check reports; calvin has none, and neither the precheck's deck nor the PDK's current one carries the rule); 0 = none")
     ap.add_argument("--cell", default="tt_um_pettit_calvin")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()

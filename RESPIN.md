@@ -831,8 +831,8 @@ at each.  On the Arty at 50 MHz: hello with the cache on at 115200,
   (prism's tool for sky130A: met4 71/20, the rules of sky130A_mr.drc met
   on a 0.6 um pixel grid - m4.1/m4.2 width and spacing 0.3, m4.4a area
   0.24, m4.7 holes 0.2, m4.5ab 0.4 to 3 um wide metal, and m4.11, no solid
-  metal wider than 10 um both ways, so every 15th pixel row of the plate
-  is a slot - re-checked on the merged shapes) re-grids prism's hand-edited
+  metal wider than 10 um both ways, which calvin's ink strokes meet by
+  themselves - re-checked on the merged shapes) re-grids prism's hand-edited
   cell (`harden/art/calvin/source.gds`) onto the 54 x 79 pixel box that
   fits the channel between a PDN stripe pair and the next (32.4 x 47.4 um).
   As in prism the picture sits on bare oxide (Ken: that is what makes it
@@ -876,7 +876,14 @@ at each.  On the Arty at 50 MHz: hello with the cache on at 115200,
   Tiny Tapeout precheck run locally on it (tt-support-tools/precheck:
   Magic DRC, KLayout FEOL / BEOL / offgrid / zero-area / pin-label,
   the pin, boundary, power-pin, layer, cell-name and nwell checks)
-  passes.  Not promoted: gds/ is rc3's until Ken says so.
+  passes.  Ken saw five empty rows across the picture: the slots I had
+  cut for m4.11 (every 15th pixel row).  The picture needs none - its
+  strokes leave no white area 10 um wide both ways, the self-check
+  agreed with no slots, and neither the precheck's KLayout deck nor the
+  PDK's current one carries the rule - so the art is regenerated without
+  them (910 um2 of met4, Magic DRC of the cell 0) and the run's tail
+  (Project.ChipArt on) redone.  Not promoted: gds/ is rc3's until Ken
+  says so.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
