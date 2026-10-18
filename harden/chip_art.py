@@ -24,7 +24,11 @@
 # that is still there after a 5 um shrink, i.e. no solid area wider than
 # 10 um in both directions: --slot N leaves every Nth pixel row of the
 # plate empty (15: solid runs of 8.4 um).  The tool re-checks all of them
-# on the merged shapes and refuses to write a cell that fails.  sky130 has
+# on the merged shapes and refuses to write a cell that fails.  Magic's
+# met4.5a (what the Tiny Tapeout precheck runs) also fails where thin
+# metal leaves a convex corner of a 3 um body on both sides - the two
+# pieces of the 0.4 um band around the body meet at the corner point only -
+# so the pixel diagonal to such a corner is filled (corners()).  sky130 has
 # no fill-exclusion markers; the chip-level fill will sit in the dark
 # areas as it does everywhere.
 import argparse
@@ -96,6 +100,57 @@ def clean(mask):
     return m
 
 
+def large_pixels(mask, px):
+    """the pixels of the metal that is 3 um wide (Magic's "large" met4: what
+    survives a 1.5 um shrink and grow), as a mask"""
+    reg = kdb.Region()
+    h, w = mask.shape
+    for y in range(h):
+        for x in range(w):
+            if mask[y, x]:
+                reg.insert(kdb.Box(x * px, y * px, (x + 1) * px, (y + 1) * px))
+    reg.merge()
+    large = reg.sized(-1500).sized(1500) & reg
+    out = np.zeros_like(mask)
+    for y in range(h):
+        for x in range(w):
+            if mask[y, x]:
+                cell = kdb.Region(kdb.Box(x * px, y * px, (x + 1) * px, (y + 1) * px))
+                out[y, x] = (large & cell).area() * 2 >= px * px
+    return out
+
+
+def corners(mask, px):
+    """Magic's met4.5a (sky130A.tech: a 0.4 um spacing within the band of
+    metal 0.4 um around large metal, touching_ok) fails where thin metal
+    leaves a convex corner of a large body on both of its sides: the two
+    band pieces meet at the corner point only, which Magic counts as zero
+    spacing (KLayout's m4.5ab does not see it).  Fill the empty pixel
+    diagonal to such a corner.  Returns the number filled."""
+    m = mask
+    filled = 0
+    for _ in range(8):
+        large = large_pixels(m, px)
+        thin = m & ~large
+        h, w = m.shape
+        n = 0
+        for y in range(h):
+            for x in range(w):
+                if m[y, x]:
+                    continue
+                for dx, dy in ((1, 1), (1, -1), (-1, 1), (-1, -1)):
+                    xx, yy = x + dx, y + dy
+                    if 0 <= xx < w and 0 <= yy < h and large[yy, xx] and thin[y, xx] and thin[yy, x]:
+                        m[y, x] = True
+                        n += 1
+                        break
+        filled += n
+        if n == 0:
+            break
+        m = clean(m)
+    return filled
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--image", required=True, help="the bitmap; or a .gds of a hand-edited art cell (its metal is re-gridded, see load_mask_gds)")
@@ -135,6 +190,10 @@ def main():
     if a.slot:
         mask[a.slot - 1::a.slot, :] = False
     mask = clean(mask)
+    px = int(round(a.pixel * 1000))
+    n_corner = corners(mask, px)
+    if n_corner:
+        print(f"  {n_corner} pixel(s) filled at convex corners of large metal (Magic met4.5a)")
 
     os.makedirs(a.out, exist_ok=True)
     ly = kdb.Layout(); ly.dbu = 0.001
@@ -143,7 +202,6 @@ def main():
     # one rectangle per horizontal run of pixels, never merged polygons: a
     # merged plate has holes, which GDS writes as a boundary with cut lines
     # that the Tiny Tapeout 3D viewer's triangulator throws on
-    px = int(round(a.pixel * 1000))
     rects = 0
     for y in range(h_px):
         x = 0

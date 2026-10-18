@@ -17,10 +17,10 @@
     54,
     79
   ],
-  "metal_pixels": 2354,
+  "metal_pixels": 2355,
   "rectangles": 351,
   "merged_polygons": 41,
-  "metal_area_um2": 847.44,
+  "metal_area_um2": 847.8,
   "routing_obstruction": [
     "met4",
     646.0,

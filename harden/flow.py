@@ -226,13 +226,14 @@ class MacroFlow(Classic):
 def main():
     macro = "--macro" in sys.argv
     to = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--to=")), None)
+    frm = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--from=")), None)   # resume an existing run (its tag) from this step
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     merged = "config_merged_macro.json" if macro else "config_merged.json"
     cfg = json.load(open(os.path.join(HERE, merged), encoding="utf8"))
     cfg["PDK"] = "sky130A"
     flow_class = MacroFlow if macro else StandardFlow
     flow = flow_class(cfg, design_dir=HERE, pdk_root=os.environ["PDK_ROOT"])
-    flow.start(tag=args[0] if args else None, **({"to": to} if to else {}))
+    flow.start(tag=args[0] if args else None, **({"to": to} if to else {}), **({"frm": frm} if frm else {}))
 
 
 if __name__ == "__main__":
