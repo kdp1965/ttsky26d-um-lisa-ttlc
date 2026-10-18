@@ -856,6 +856,23 @@ at each.  On the Arty at 50 MHz: hello with the cache on at 115200,
   rc1's distortion through rc2 into rc3 - so the harden with the art,
   rc4, is a free draw (`trial_anchor_free.json`), and its placement is
   the table to replay from then on.
+* rc4 (2026-10-18, runs/macro-rc4-art on 635640b: rc3's RTL, the art, a
+  free draw): routed clean in 21 iterations (34 with the two antenna
+  reroutes), 790K um of wire against rc3's 913K, placed at 65.6%, Magic
+  DRC / LVS / antenna 0, hold +0.076 ns at the fast corner, setup +5.6 ns
+  nominal and -5.5 / -6.9 at the ss corners (rc3 -4.7 / -5.7: a different
+  draw of the same unconstrained paths), 591 hold buffers (525), max-slew
+  2174 (1859), max-fanout 38 (35), max-cap 2 (6).  The first pass had two
+  Magic DRC errors, both in the art: met4.5a is a 0.4 um spacing within
+  the band of metal 0.4 um around large (3 um) metal, and where thin
+  metal leaves a convex corner of the body on both sides the two band
+  pieces meet at the corner point only, zero spacing to Magic (KLayout's
+  m4.5ab does not see it); chip_art.py now fills the pixel diagonal to
+  such a corner (one pixel in calvin, Magic DRC of the cell 0) and the
+  run was resumed from Project.ChipArt (`flow.py --from=`), 0 errors.
+  `harden/art/calvin/rc4_corner.png` is the corner of the GDS: the
+  picture in met4 on bare oxide, the routing stopping at the keep-out,
+  the stripe pair to its left and the edge stripe to its right.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
