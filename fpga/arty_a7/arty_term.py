@@ -18,7 +18,19 @@ sys.path.insert(0, here)
 sys.path.insert(0, os.environ.get("LISA_PYDB", os.path.expanduser("~/projects/tiny-tapeout/ttsky26d/lisa_pydb")))
 import lisa_pydb as m
 from ttlc_io import TtlcIo, load_image
+from serial.tools import miniterm
 from serial.tools.miniterm import Miniterm
+
+
+class EnterSendsCR(miniterm.Transform):
+    """ENTER sends CR, as the monitor wants; what comes in is shown as it
+    is (the monitor sends CR LF - miniterm's own 'cr' end-of-line setting
+    would turn each CR into a second LF)"""
+    def tx(self, text):
+        return text.replace("\n", "\r")
+
+
+miniterm.TRANSFORMATIONS["entercr"] = EnterSendsCR
 
 TtlcIo().flash_write(0, load_image(img), log=lambda *a: print("ethernet:", *a, flush=True))
 class A: flashbase = 0
@@ -38,7 +50,7 @@ time.sleep(0.1); d.ser.read(256)
 d.ser.write(b"l")                                 # the program has the UART from here
 print("--- %s is running; the terminal is live, ctrl-] quits ---" % os.path.basename(img), flush=True)
 d.ser.timeout = 0.05
-term = Miniterm(d.ser, echo=False, eol="cr", filters=["direct"])
+term = Miniterm(d.ser, echo=False, eol="lf", filters=["entercr"])
 term.exit_character = chr(0x1d)
 term.set_rx_encoding("latin-1")
 term.set_tx_encoding("latin-1")

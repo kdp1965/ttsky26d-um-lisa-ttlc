@@ -64,7 +64,9 @@ if os.environ.get("SEND"):
     # printed the banner, so a command queued behind the Enter would be lost
     for line in os.environ["SEND"].encode().decode("unicode_escape").split("\r"):
         time.sleep(0.6)
-        d.ser.write(line.encode() + b"\r")
+        for c in line.encode() + b"\r":          # a character at a time: the chip's 8-byte
+            d.ser.write(bytes([c])); time.sleep(0.005)   # RX FIFO is slower to drain than 460800 baud
+    time.sleep(0.3)
 t = time.time(); out = b""
 while time.time() - t < secs:
     out += d.ser.read(256)
