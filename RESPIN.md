@@ -872,7 +872,11 @@ at each.  On the Arty at 50 MHz: hello with the cache on at 115200,
   run was resumed from Project.ChipArt (`flow.py --from=`), 0 errors.
   `harden/art/calvin/rc4_corner.png` is the corner of the GDS: the
   picture in met4 on bare oxide, the routing stopping at the keep-out,
-  the stripe pair to its left and the edge stripe to its right.
+  the stripe pair to its left and the edge stripe to its right.  The
+  Tiny Tapeout precheck run locally on it (tt-support-tools/precheck:
+  Magic DRC, KLayout FEOL / BEOL / offgrid / zero-area / pin-label,
+  the pin, boundary, power-pin, layer, cell-name and nwell checks)
+  passes.  Not promoted: gds/ is rc3's until Ken says so.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
