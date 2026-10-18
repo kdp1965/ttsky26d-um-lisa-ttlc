@@ -142,21 +142,42 @@ class TtlcIo:
             log('flash id %s' % ident.hex())
             if ident in (b'\x00\x00\x00', b'\xff\xff\xff'):
                 raise RuntimeError('no flash answers (id %s)' % ident.hex())
+            # the runs of the image: a gap of 512 or more zero bytes is the
+            # loader's fill between code banks (bank n at byte n * 0x8000),
+            # not program - it is skipped and left erased
+            runs, i, n = [], 0, len(data)
+            while i < n:
+                j = i
+                while j < n and not (data[j] == 0 and data[j:j + 512] == bytes(min(512, n - j))):
+                    j += 1
+                if j > i:
+                    runs.append((i, j))
+                while j < n and data[j] == 0:
+                    j += 1
+                if j - (runs[-1][1] if runs else 0) < 512 and runs and j < n:
+                    runs[-1] = (runs[-1][0], j)          # a short zero run is program after all
+                i = j
             if erase:
-                for b in range(addr >> 16, ((addr + len(data) - 1) >> 16) + 1):
+                blocks = sorted({b for r0, r1 in runs for b in range((addr + r0) >> 16, ((addr + r1 - 1) >> 16) + 1)})
+                for b in blocks:
                     self.flash_erase_block(b << 16)
-                log('erased %d block(s) of 64 KB in %.2f s' % (((addr + len(data) - 1) >> 16) - (addr >> 16) + 1, time.time() - t0))
-            a = addr
-            while a < addr + len(data):
-                k = min(256 - (a & 0xff), addr + len(data) - a)
-                self.flash_program_page(a, data[a - addr:a - addr + k])
-                a += k
-            log('programmed %d bytes at 0x%x in %.2f s' % (len(data), addr, time.time() - t0))
+                log('erased %d block(s) of 64 KB in %.2f s' % (len(blocks), time.time() - t0))
+            written = 0
+            for r0, r1 in runs:
+                a = addr + r0
+                while a < addr + r1:
+                    k = min(256 - (a & 0xff), addr + r1 - a)
+                    self.flash_program_page(a, data[a - addr:a - addr + k])
+                    a += k
+                written += r1 - r0
+            log('programmed %d bytes at 0x%x in %.2f s%s' % (written, addr, time.time() - t0,
+                '' if written == len(data) else ' (%d run(s), the gaps left erased)' % len(runs)))
             if verify:
-                back = self.flash_read(addr, len(data))
-                bad = [i for i in range(len(data)) if back[i] != data[i]]
-                if bad:
-                    raise RuntimeError('verify failed at %d bytes, the first at 0x%x: %02x read, %02x written' % (len(bad), addr + bad[0], back[bad[0]], data[bad[0]]))
+                for r0, r1 in runs:
+                    back = self.flash_read(addr + r0, r1 - r0)
+                    bad = [i for i in range(r1 - r0) if back[i] != data[r0 + i]]
+                    if bad:
+                        raise RuntimeError('verify failed at %d bytes, the first at 0x%x: %02x read, %02x written' % (len(bad), addr + r0 + bad[0], back[bad[0]], data[r0 + bad[0]]))
                 log('verified in %.2f s' % (time.time() - t0))
         finally:
             self.flash_release()
