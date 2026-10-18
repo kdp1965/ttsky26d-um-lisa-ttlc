@@ -242,7 +242,7 @@ module tt_um_lisa
    wire [1:0]           lisa1_ce_ctrl;
    wire                 lisa1_stream;        // The instruction burst stays open
    wire                 lisa1_yield;         // ... another client wants the QSPI
-   wire [17:0]          lisa1_word_addr;     // The word the burst starts at: {bank, PC[13:0]}
+   wire [19:0]          lisa1_word_addr;     // The word the burst starts at: {bank, PC[13:0]}
    wire [15:0]          lisa1_base_addr;
                         
    // ==========================================================================
@@ -408,18 +408,19 @@ module tt_um_lisa
    wire        d_sp_c;
    wire [3:0]  d_bank_c;
    reg  [3:0]  d_bank_r;
-   wire [3:0]  code_bank;
+   wire [5:0]  code_bank;
    wire [3:0]  data_bank;
    wire [3:0]  stack_bank;
-   wire [17:0] core_i_paddr;
+   wire [19:0] core_i_paddr;
 
    // The banks (RESPIN 22; lisa_periph.v registers 0x15-0x17): the upper 16K
-   // of each space is a window on one of 16 banks.  A fetch above word
+   // of each space is a window on one of 64 code banks (6 bits) or 16 data
+   // banks (4 bits: the stack and data banks).  A fetch above word
    // 0x4000 goes to code_bank, an SP-relative data access above 0x4000 to
    // stack_bank, every other data access there (IX-relative, the debugger)
    // to data_bank; below 0x4000 is bank 0, common to all.  Reset 1 = the
-   // TT07 layout: 512 KB of code and 256 KB of data at most
-   assign core_i_paddr = {core_i_addr[14] ? code_bank : 4'h0, core_i_addr[13:0]};
+   // TT07 layout: 1M words (2 MB) of code and 256 KB of data at most
+   assign core_i_paddr = {core_i_addr[14] ? code_bank : 6'h0, core_i_addr[13:0]};
    assign d_bank_c     = !d_addr_c[14] ? 4'h0 : d_sp_c ? stack_bank : data_bank;
 
    // ==========================================================================
@@ -917,7 +918,7 @@ module tt_um_lisa
 
    assign dbg_do         = dbg_do_lisa | dbg_do_regs;
    assign dbg_ready      = dbg_ready_lisa | dbg_ready_regs;
-   assign lisa1_addr     = {lisa1_base_addr, 8'h0} | {5'h0, lisa1_word_addr, 1'b0};
+   assign lisa1_addr     = {lisa1_base_addr, 8'h0} | {3'h0, lisa1_word_addr, 1'b0};
    assign ttlc_addr      = {ttlc_base_addr, 8'h0} | {9'h0, ttlc_fetch_word, 1'b0};
    assign baud_div       = ui_in[6:0];
    assign baud_set       = ui_in[7];

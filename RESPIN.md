@@ -34,7 +34,7 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 20 | The autobaud and BRG count in 32-clock steps: only rates with a bit a multiple of 32 clocks | `debug_autobaud.v`, `debug_brg.v` | done: test_autobaud; the FPGA at 115200 .. 921600 |
 | 21 | Quad flash reads float the mode bits: continuous-read mode by accident | `lisa_qqspi.v` S12_MODE | done: the FPGA quad on both selects |
 | 23 | A store to the UART data register pops the receive FIFO (the core's `d_rd` pulsed on a store's exec clock); any access to 0x14 wrote UART2's baud divisor | `lisa_core.v` d_rd, `lisa_periph.v` 0x1E | fixed: test_uart_overrun |
-| 22 | Bank registers (an extension): the upper 16K of the code and of the data space a window on 16 banks, 512 KB / 256 KB | `lisa_periph.v` 0x15-0x17, `tt_um_lisa.v`, `inst_stream.v`, `data_cache8.v`, `lisa_core.v` d_sp | done: test/progs/bank.c (make BANK=1), lisa_sim --rev2, sdcc __banked (sdcc_test/test_bank on the testbench and the Arty) |
+| 22 | Bank registers (an extension): the upper 16K of the code and of the data space a window on 64 code / 16 data banks, 2 MB / 256 KB | `lisa_periph.v` 0x15-0x17, `tt_um_lisa.v`, `inst_stream.v`, `data_cache8.v`, `lisa_core.v` d_sp | done: test/progs/bank.c (make BANK=1), lisa_sim --rev2, sdcc __banked (sdcc_test/test_bank on the testbench and the Arty) |
 
 Status: open / fixed (the test that shows it, in test/: a program of test/progs, a cocotb test of test/core or the fops bench).
 
@@ -469,17 +469,20 @@ TTLC loopback run quad on both selects, and lisa_monitor runs 3 to 5
 times faster than from single-SPI flash (fpga/README.md).  rc4's GDS
 predates this; rc5 and rc6 (promoted) have it.
 
-## 22. Bank registers: 512 KB of code, 256 KB of data
+## 22. Bank registers: 2 MB of code, 256 KB of data
 
 **Why.** Not a silicon issue: an extension.  Ken (2026-10-18) wanted more
 code and data than 32K words / 32 KB without leaving the 16-bit opcode, the
 PIC18's banking rather than a wider PC (the cond tag in bit 15 of a saved
 return address leaves no room for one, and widening PC, IX, SP, RA, IA and
 every stack frame would stop being "little").  Four-bit banks (Ken: "large
-enough to run some pretty decent size applications").
+enough to run some pretty decent size applications"), then a 6-bit code
+bank the same day (Ken: 16 x 16K words is only 256K words of code; the
+instruction stream holds one window, no tagged lines, so the two bits are
+cheap): 1M words (2 MB) of code, 256 KB of data.
 
-**ISA** (`lisa_isa.md`, "Bank registers").  Three 4-bit registers in the
-peripheral space, reset 1 = the TT07 layout: `CB` 0x15, the code bank of a
+**ISA** (`lisa_isa.md`, "Bank registers").  Three registers in the
+peripheral space (the code bank 6 bits, the data and stack banks 4), reset 1 = the TT07 layout: `CB` 0x15, the code bank of a
 fetch above word 0x4000 (physical word `{CB, PC[13:0]}`); `DB` 0x16, the
 data bank of an IX-relative or debugger access above 0x4000; `SB` 0x17, the
 stack bank of an SP-relative access above 0x4000.  Below 0x4000 is bank 0,
@@ -491,13 +494,13 @@ the stack).  No shadows on an interrupt: an ISR runs under the interrupted
 code's banks, so handlers live in the lower 16K; a task switch is SP, SB,
 CB, DB.
 
-**RTL.** `lisa_periph.v`: the registers, read back with bits 7:4 zero.
+**RTL.** `lisa_periph.v`: the registers, read back with the unused bits zero.
 `lisa_core.v`: `d_sp`, the data address is SP-relative (`sp_sum` or `sp_addr`
 in the `d_addr` mux).  `tt_um_lisa.v`: `core_i_paddr` = `{CB or 0,
 PC[13:0]}` into the instruction stream, `d_bank_c` = 0 / `SB` / `DB`
-registered beside `d_addr_r` (and in `d_addr_good`), 18-bit words to the
+registered beside `d_addr_r` (and in `d_addr_good`), 20-bit words to the
 LISA1 flash address and 18-bit bytes to the LISA2 address.
-`inst_stream.v`: the window's head and the burst address 18 bits wide; a
+`inst_stream.v`: the window's head and the burst address 20 bits wide; a
 switch is a mismatch on the next fetch into the upper half, no flush.
 `data_cache8.v`: the bank in each line's tag (4 flops a line, 0 unless the
 32K map, `cache_map_sel` 3), the line index bit "bank != 0" so that bank 0

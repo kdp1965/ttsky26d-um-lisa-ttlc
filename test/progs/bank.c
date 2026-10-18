@@ -5,8 +5,9 @@
  * (SP-relative accesses above 0x4000).  All three reset to 1 = the TT07
  * layout; bank 0 is the lower half itself.  Needs the cache on (CACHE=1:
  * the banks are PSRAM) and the image bank_test.hex: this program at 0 and
- * a two-word routine `ldi #bank; ret` at word 0x4000 of banks 1, 2 and 3
- * (flash bytes 0x8000, 0x10000, 0x18000: bank_stubs.hex).  Built with the
+ * a two-word routine `ldi #bank; ret` at word 0x4000 of banks 1, 2, 3, 37
+ * and 63 (flash bytes 0x8000, 0x10000, 0x18000, 0x128000, 0x1f8000:
+ * bank_stubs.hex; the code bank is 6 bits, the data and stack banks 4).  Built with the
  * stack at 0x7fff, so the program's own frames run in stack bank 1. */
 #include "harness.h"
 
@@ -108,6 +109,9 @@ void main(void)
   DATA_BANK = 0x1f;
   CHECK(2, DATA_BANK == 0x0f);
   DATA_BANK = 1;
+  CODE_BANK = 0xff;                     /* 6 bits: written from the common area, nothing above 0x4000 runs here */
+  CHECK(23, CODE_BANK == 0x3f);
+  CODE_BANK = 1;
 
   /* the code bank: the routine at word 0x4000 of banks 2, 3 and 1 */
   CODE_BANK = 2;
@@ -116,6 +120,11 @@ void main(void)
   CHECK(4, call_upper() == 0x33);
   CODE_BANK = 1;
   CHECK(5, call_upper() == 0x11);
+  CODE_BANK = 37;                       /* banks above 15: flash byte 37 * 0x8000 */
+  CHECK(24, call_upper() == 0x25);
+  CODE_BANK = 63;
+  CHECK(25, call_upper() == 0x3f);
+  CODE_BANK = 1;
 
   /* the data bank: one address, three banks, through the cache */
   DATA_BANK = 1;

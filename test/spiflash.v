@@ -115,7 +115,7 @@ module spiflash #(
   assign `SPIDLY io3_delayed = io3;
 
   // 128 KB: the whole 32K-word instruction space
-  localparam flash_size = 128*1024;
+  localparam flash_size = 2*1024*1024;      // the 64 code banks (RESPIN 22): 2 MB
 
   // 16 MB (128Mb) Flash
   //reg [7:0] memory[0:16*1024*1024-1];

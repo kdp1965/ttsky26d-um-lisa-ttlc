@@ -74,7 +74,7 @@ Address Map:
 
    BANKS (revision 2, RESPIN 22)
    =============================
-   0x15:       Code bank  [3:0]: fetches above word 0x4000             (reset 1)
+   0x15:       Code bank  [5:0]: fetches above word 0x4000             (reset 1)
    0x16:       Data bank  [3:0]: IX-relative and debugger accesses above 0x4000 (reset 1)
    0x17:       Stack bank [3:0]: SP-relative accesses above 0x4000     (reset 1)
 
@@ -125,7 +125,7 @@ module lisa_periph
    output reg  [7:0]    porte,
 
    // The bank registers (RESPIN 22)
-   output reg  [3:0]    code_bank,
+   output reg  [5:0]    code_bank,          // 6 bits: 64 code banks of 16K words (1M words)
    output reg  [3:0]    data_bank,
    output reg  [3:0]    stack_bank,
 
@@ -223,7 +223,7 @@ module lisa_periph
          portc        <= 4'h00;
          porte        <= 8'h00;
          portc_dir    <= 4'h0;
-         code_bank    <= 4'h1;
+         code_bank    <= 6'h1;
          data_bank    <= 4'h1;
          stack_bank   <= 4'h1;
          ms_prediv    <= 16'd29494;
@@ -292,7 +292,7 @@ module lisa_periph
          // (SP-relative accesses above 0x4000).  1 = the upper half as the
          // TT07 chip had it, so an image that never writes them runs as before
          if (d_periph && d_we && d_addr == 7'h15)
-            code_bank <= d_i[3:0];
+            code_bank <= d_i[5:0];
          if (d_periph && d_we && d_addr == 7'h16)
             data_bank <= d_i[3:0];
          if (d_periph && d_we && d_addr == 7'h17)
@@ -564,7 +564,7 @@ module lisa_periph
 `endif
 
       // Bank registers
-      7'h15:   d_o_r = {4'h0, code_bank};
+      7'h15:   d_o_r = {2'h0, code_bank};
       7'h16:   d_o_r = {4'h0, data_bank};
       7'h17:   d_o_r = {4'h0, stack_bank};
 
