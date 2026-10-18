@@ -102,6 +102,10 @@ def merge_art(gds_in, gds_out, info):
     import klayout.db as kdb
     ly = kdb.Layout()
     ly.read(str(gds_in))
+    # a run resumed from this step starts from a view that already carries
+    # the art: take the old cell out first, or KLayout makes a second one
+    for c in [c for c in ly.each_cell() if c.name == info["cell"] or c.name.startswith(info["cell"] + "$")]:
+        ly.prune_cell(c.cell_index(), -1)
     top = ly.top_cell()                    # before the art cell exists (a second top until it is placed)
     art = kdb.Layout()
     art.read(str(info["gds"]))
