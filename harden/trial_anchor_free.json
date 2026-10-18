@@ -1,0 +1,5 @@
+{
+  "//": "Trial: rc3's recipe with no anchoring - the placer draws the whole placement itself (for a changed floorplan, a new macro, or to see what a fresh draw gives; judge it at global routing: make macro TO=OpenROAD.GlobalRouting OVERLAY=trial_anchor_free.json)",
+  "ANCHOR_CELLS_TABLE": null,
+  "ANCHOR_SEQ_TABLE": null
+}

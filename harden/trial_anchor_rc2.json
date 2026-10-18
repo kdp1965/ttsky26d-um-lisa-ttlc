@@ -1,0 +1,4 @@
+{
+  "//": "Trial: rc3's recipe with rc2's placement (runs/macro-stream-fo16-hold07) as the anchor table instead of rc3's own - make macro OVERLAY=trial_anchor_rc2.json",
+  "ANCHOR_CELLS_TABLE": "dir::placements/macro-stream-fo16-hold07_final_cells.json"
+}

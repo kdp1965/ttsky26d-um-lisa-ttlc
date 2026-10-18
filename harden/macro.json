@@ -62,8 +62,8 @@
       }
     }
   },
-  "//": "ANCHOR_CELLS_TABLE: the placement replayed from the release candidate (placements/macro-stream-fo16-hold07_final_cells.json, an odb_anchor_cells.py --dump of runs/macro-stream-fo16-hold07's final ODB, itself a draw anchored to rc1's table macro-ao5_final_cells.json, kept): the registers matched by RTL name and the logic by structure, so a rebuild of the same netlist reproduces this placement and a rebuild after an RTL change reuses what still matches (after the streaming fetch the ao5 table matched 6448 cells and the rest placed freely: a hybrid that routed to 1 stuck violation - a changed design is a new draw, judge it at global routing).",
-  "ANCHOR_CELLS_TABLE": "dir::placements/macro-stream-fo16-hold07_final_cells.json",
+  "//": "ANCHOR_CELLS_TABLE: the placement replayed from the release candidate, rc3 (placements/macro-rc3_final_cells.json, an odb_anchor_cells.py --dump of runs/macro-rc3's final ODB, 2026-10-18; itself a draw anchored to rc2's table): the registers matched by RTL name and the logic by structure, so a rebuild of the same netlist reproduces this placement and a rebuild after an RTL change reuses what still matches (rc3 matched 5354 cells of rc2's table, 317 registers new or renamed, and routed clean; after the streaming fetch the ao5 table matched 6448 cells and routed to 1 stuck violation - a changed design is a new draw, judge it at global routing). rc2's table is kept as an option: make macro OVERLAY=trial_anchor_rc2.json; a free draw: OVERLAY=trial_anchor_free.json.",
+  "ANCHOR_CELLS_TABLE": "dir::placements/macro-rc3_final_cells.json",
   "EXTRA_VERILOG_MODELS": [
     "dir::../src/RAM32.v"
   ]

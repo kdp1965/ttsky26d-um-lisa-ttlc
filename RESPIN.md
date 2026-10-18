@@ -820,9 +820,12 @@ at each.  On the Arty at 50 MHz: hello with the cache on at 115200,
   DRC / LVS / antenna 0, both power nets connected, hold +0.078 ns at the
   fast corner (0.077), setup +5.4 ns nominal and -4.7 / -5.7 at the ss
   corners (rc2 -5.8 / -7.2: the window-data exception), 525 hold buffers
-  (576), max-slew 1859 (1868), max-fanout 35 (35), max-cap 6 (3).  Not
-  promoted: gds/, lef/, pnl/ and macro.json's anchor table are still
-  rc2's until Ken says so, then the gds_custom.yaml precheck.
+  (576), max-slew 1859 (1868), max-fanout 35 (35), max-cap 6 (3).
+  Promoted 2026-10-18 (Ken): gds/, lef/, pnl/ are rc3's, macro.json's
+  anchor table its placement (placements/macro-rc3_final_cells.json);
+  rc2's placement stays an option (`make macro OVERLAY=trial_anchor_rc2.json`,
+  and `trial_anchor_free.json` is a free draw).  Tag rc3; the
+  gds_custom.yaml precheck is next.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
