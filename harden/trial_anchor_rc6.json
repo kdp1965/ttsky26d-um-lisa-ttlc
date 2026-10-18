@@ -1,0 +1,4 @@
+{
+  "//": "Trial: rc6's placement (runs/macro-rc6, the free draw with the art, item 22's RTL) as the anchor table instead of rc7's - make macro OVERLAY=trial_anchor_rc6.json",
+  "ANCHOR_CELLS_TABLE": "dir::placements/macro-rc6_final_cells.json"
+}
