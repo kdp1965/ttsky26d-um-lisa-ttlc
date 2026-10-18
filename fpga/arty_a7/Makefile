@@ -5,6 +5,7 @@
 #   make            synthesize, place, route, build/lisa_arty.bit (~10 min)
 #   make prog       program the Arty on this machine's USB (volatile)
 #   make lint       Verilator lint of the wrapper and the design (no Vivado)
+#   make test       the Ethernet TTLC I/O bridge's testbench (cocotb, Verilator)
 #
 # From the Mac (no Vivado here): the targets below copy src/ and this
 # directory to the clone on $(HOST) and run make there.
@@ -26,7 +27,9 @@ CHIP = tt_um_lisa.v RAM32.v lisa_core.v lisa_div.v lisa_periph.v lisa_io_mux.v \
 	   i2c_master_byte_ctrl.v i2c_master_bit_ctrl.v lisa_uart.v \
 	   fops.v lampFPU_div_top.sv lampFPU_div.sv lampFPU_fractDiv.sv lampFPU_utils.v \
 	   mc14500b.v ttlc_io.v ttlc_fetch.v shift_reg_io.v
-LINT_FLAGS ?= -Wno-fatal -Wno-DECLFILENAME -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM \
+ARTY = fpga_cells.v lisa_arty_clk.v eth_crc32_byte.v eth_mii_mac.v eth_ipstack.v ttlc_eth_app.v \
+	   eth_ttlc.v ttlc_chains_fpga.v lisa_arty.v
+LINT_FLAGS ?= -Wno-fatal -Wno-DECLFILENAME -Wno-PROCASSINIT -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM \
 	          -Wno-PINCONNECTEMPTY -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC
 
 all: bit
@@ -43,7 +46,11 @@ prog:
 
 lint: $(GEN)
 	verilator --lint-only -Wall $(LINT_FLAGS) --top-module lisa_arty -I$(SRC) \
-	    $(addprefix $(SRC)/,$(CHIP)) $(GEN) fpga_cells.v lisa_arty_clk.v lisa_arty.v
+	    $(addprefix $(SRC)/,$(CHIP)) $(GEN) $(ARTY)
+
+# the Ethernet TTLC I/O bridge alone, cocotb on Verilator (test/)
+test:
+	$(MAKE) -C test
 
 remote-sync:
 	rsync -a --exclude build --exclude gen --exclude .Xil ../../src/ $(HOST):$(REMOTE_DIR)/src/
@@ -61,4 +68,4 @@ remote-log:
 clean:
 	rm -rf gen build .Xil vivado*.jou vivado*.log
 
-.PHONY: all bit prog lint remote-sync remote remote-prog remote-log clean
+.PHONY: all bit prog lint test remote-sync remote remote-prog remote-log clean

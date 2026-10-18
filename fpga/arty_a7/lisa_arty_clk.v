@@ -1,7 +1,8 @@
 // The Arty's 100 MHz oscillator to the project clock through an MMCM:
 // VCO 1000 MHz, CLKOUT_DIVIDE 20 = 50 MHz (the demo board SDK's default),
 // 15 = 66.67 MHz (the chip's ceiling, see the TT07 notes), 10 = 100 MHz.
-// Under Verilator (lint, simulation) a divide-by-two stands in.
+// CLKOUT1 is the Ethernet PHY's 25 MHz reference.  Under Verilator (lint,
+// simulation) a divide-by-two and a divide-by-four stand in.
 module lisa_arty_clk
 #(
    parameter CLKOUT_DIVIDE = 20
@@ -9,18 +10,21 @@ module lisa_arty_clk
 (
    input  wire    clk_in,
    output wire    clk_out,
+   output wire    clk25,
    output wire    locked
 );
 
 `ifdef VERILATOR
-   reg            q = 1'b0;
+   reg  [1:0]     q = 2'b00;
    always @(posedge clk_in)
-      q <= ~q;
-   assign clk_out = q;
+      q <= q + 1'b1;
+   assign clk_out = q[0];
+   assign clk25   = q[1];
    assign locked  = 1'b1;
 `else
    wire           clkfb;
    wire           clk_mmcm;
+   wire           clk25_mmcm;
 
    MMCME2_BASE
    #(
@@ -32,6 +36,9 @@ module lisa_arty_clk
       .CLKOUT0_DIVIDE_F   ( CLKOUT_DIVIDE * 1.0 ),
       .CLKOUT0_DUTY_CYCLE ( 0.5           ),
       .CLKOUT0_PHASE      ( 0.0           ),
+      .CLKOUT1_DIVIDE     ( 40            ),
+      .CLKOUT1_DUTY_CYCLE ( 0.5           ),
+      .CLKOUT1_PHASE      ( 0.0           ),
       .REF_JITTER1        ( 0.01          ),
       .STARTUP_WAIT       ( "FALSE"       )
    )
@@ -43,7 +50,7 @@ module lisa_arty_clk
       .CLKFBOUTB  (          ),
       .CLKOUT0    ( clk_mmcm ),
       .CLKOUT0B   (          ),
-      .CLKOUT1    (          ),
+      .CLKOUT1    ( clk25_mmcm ),
       .CLKOUT1B   (          ),
       .CLKOUT2    (          ),
       .CLKOUT2B   (          ),
@@ -61,6 +68,12 @@ module lisa_arty_clk
    (
       .I          ( clk_mmcm ),
       .O          ( clk_out  )
+   );
+
+   BUFG bufg25
+   (
+      .I          ( clk25_mmcm ),
+      .O          ( clk25      )
    );
 `endif
 

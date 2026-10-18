@@ -21,29 +21,55 @@
 // asynchronously and held for 65536 clocks after both are clear, so the
 // synchronous resets see clock edges, as on the demo board.  LEDs: LD4
 // clock locked, LD5 in reset, LD6 tx, LD7 rx.
+//
+// The TTLC's I/O (uo_out[2:0] data, uo_out[5] latch and uo_out[6] shift
+// clock to the 74HC595 chains, ui_in[6:4] from the 74HC165 chains) goes
+// to copies of the chains inside the FPGA (ttlc_chains_fpga.v) unless SW3
+// is up, when JA / JB carry it to a real TTLC Pmod.  The inside chains'
+// 48 inputs and 48 outputs are reached over the Ethernet PHY (eth_ttlc.v:
+// UDP port 14500 at 192.168.1.200, MAC 02:4c:49:53:41:00).  The PHY runs
+// on a 25 MHz reference clock from the MMCM, is reset only by the MMCM's
+// lock (so the link survives the RESET button and the UART's DTR), and
+// has no MDIO: it autonegotiates from its straps.  LD0 shows it: red a
+// frame received, green one for us, blue one sent.
 module lisa_arty
 #(
-   parameter CLK_DIVIDE = 20       // 100 MHz / (CLK_DIVIDE / 10): 20 = 50 MHz, 25 = 40, 15 = 66.67
+   parameter CLK_DIVIDE = 20,      // 100 MHz / (CLK_DIVIDE / 10): 20 = 50 MHz, 25 = 40, 15 = 66.67
+   parameter [31:0] ETH_IP = {8'd192, 8'd168, 8'd1, 8'd200}
 )
 (
    input  wire        CLK100MHZ,
    input  wire        ck_rst,         // RESET button, active low
-   input  wire [3:0]  sw,            // unused
+   input  wire [3:0]  sw,             // SW3: the TTLC Pmod on JA / JB instead of the inside chains
    output wire [3:0]  led,
+   output wire        led0_r,
+   output wire        led0_g,
+   output wire        led0_b,
    input  wire [7:0]  ja,             // ui_in
    output wire [7:0]  jb,             // uo_out
    inout  wire [7:0]  jc,             // uio
    input  wire        uart_txd_in,    // from the host
-   output wire        uart_rxd_out    // to the host
+   output wire        uart_rxd_out,   // to the host
+   output wire        eth_ref_clk,    // 25 MHz to the PHY
+   output wire        eth_rstn,
+   input  wire        eth_rx_clk,
+   input  wire        eth_rx_dv,
+   input  wire        eth_rxerr,
+   input  wire [3:0]  eth_rxd,
+   input  wire        eth_tx_clk,
+   output wire        eth_tx_en,
+   output wire [3:0]  eth_txd
 );
 
    wire                 clk;
+   wire                 clk25;
    wire                 locked;
 
    lisa_arty_clk #(.CLKOUT_DIVIDE(CLK_DIVIDE)) clkgen
    (
       .clk_in     ( CLK100MHZ ),
       .clk_out    ( clk       ),
+      .clk25      ( clk25     ),
       .locked     ( locked    )
    );
 
@@ -68,6 +94,34 @@ module lisa_arty
 
    wire                 rst_n = rst_n_r;
 
+   // The PHY's reset: the lock alone, held 2^20 clocks (26 ms at 40 MHz)
+   reg  [20:0]          phy_cnt;
+
+   always @(posedge clk or negedge locked)
+   begin
+      if (!locked)
+         phy_cnt <= 21'd0;
+      else if (!phy_cnt[20])
+         phy_cnt <= phy_cnt + 1'b1;
+   end
+
+   assign eth_rstn = phy_cnt[20];
+
+`ifdef VERILATOR
+   assign eth_ref_clk = clk25;
+`else
+   ODDR #( .DDR_CLK_EDGE("OPPOSITE_EDGE"), .INIT(1'b0), .SRTYPE("SYNC") ) ref_clk_oddr
+   (
+      .Q  ( eth_ref_clk ),
+      .C  ( clk25       ),
+      .CE ( 1'b1        ),
+      .D1 ( 1'b1        ),
+      .D2 ( 1'b0        ),
+      .R  ( 1'b0        ),
+      .S  ( 1'b0        )
+   );
+`endif
+
    // The Tiny Tapeout ports
    wire [7:0]           ui_in;
    wire [7:0]           uo_out;
@@ -75,7 +129,14 @@ module lisa_arty
    wire [7:0]           uio_out;
    wire [7:0]           uio_oe;
 
-   assign ui_in  = {ja[7:4], uart_txd_in & ja[3], ja[2:0]};
+   // The TTLC chains inside, or the Pmod's
+   wire                 pmod_sel = sw[3];
+   wire [2:0]           chain_din;
+   wire [47:0]          ttlc_in;
+   wire [47:0]          ttlc_out;
+   wire [2:0]           ttlc_din = pmod_sel ? ja[6:4] : chain_din;
+
+   assign ui_in  = {ja[7], ttlc_din, uart_txd_in & ja[3], ja[2:0]};
    assign jb     = uo_out;
    assign uart_rxd_out = uo_out[4];
    assign uio_in = jc;
@@ -99,6 +160,67 @@ module lisa_arty
       .clk        ( clk     ),
       .rst_n      ( rst_n   )
    );
+
+   ttlc_chains_fpga chains
+   (
+      .clk        ( clk         ),
+      .rst_n      ( rst_n       ),
+      .sclk       ( uo_out[6]   ),
+      .latch      ( uo_out[5]   ),
+      .dout       ( uo_out[2:0] ),
+      .din        ( chain_din   ),
+      .inputs     ( ttlc_in     ),
+      .outputs    ( ttlc_out    )
+   );
+
+   wire                 eth_rx_act;
+   wire                 eth_accepted;
+   wire                 eth_tx_act;
+
+   eth_ttlc #( .IP(ETH_IP), .TICKS_PER_US(1000 / CLK_DIVIDE) ) eth
+   (
+      .clk        ( clk          ),
+      .rst_n      ( rst_n        ),
+      .mii_rx_clk ( eth_rx_clk   ),
+      .mii_rx_dv  ( eth_rx_dv    ),
+      .mii_rx_er  ( eth_rxerr    ),
+      .mii_rxd    ( eth_rxd      ),
+      .mii_tx_clk ( eth_tx_clk   ),
+      .mii_tx_en  ( eth_tx_en    ),
+      .mii_txd    ( eth_txd      ),
+      .ttlc_in    ( ttlc_in      ),
+      .ttlc_out   ( ttlc_out     ),
+      .pmod_sel   ( pmod_sel     ),
+      .rx_act     ( eth_rx_act   ),
+      .accepted   ( eth_accepted ),
+      .tx_act     ( eth_tx_act   )
+   );
+
+   // LD0, each pulse stretched to 2^21 clocks (52 ms at 40 MHz), 1/8 duty
+   reg  [20:0]          act_r, act_g, act_b;
+   reg  [2:0]           pwm;
+
+   always @(posedge clk or negedge rst_n)
+   begin
+      if (!rst_n)
+      begin
+         act_r <= 21'd0;
+         act_g <= 21'd0;
+         act_b <= 21'd0;
+         pwm   <= 3'd0;
+      end
+      else
+      begin
+         pwm   <= pwm + 1'b1;
+         act_r <= eth_rx_act   ? 21'h1fffff : act_r - (act_r != 21'd0);
+         act_g <= eth_accepted ? 21'h1fffff : act_g - (act_g != 21'd0);
+         act_b <= eth_tx_act   ? 21'h1fffff : act_b - (act_b != 21'd0);
+      end
+   end
+
+   assign led0_r = (act_r != 21'd0) && pwm == 3'd0;
+   assign led0_g = (act_g != 21'd0) && pwm == 3'd0;
+   assign led0_b = (act_b != 21'd0) && pwm == 3'd0;
 
    assign led = {ui_in[3], uo_out[4], ~rst_n, locked};
 

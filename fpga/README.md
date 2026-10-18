@@ -42,7 +42,10 @@ candidates, are pulled up), JD unused.  The USB-UART is the debug UART:
 its rx and JA pin 4 are ANDed into `ui_in[3]` (both idle high), `uo_out[4]`
 drives it and JB pin 7.  The RESET button is the reset, held 65536 clocks
 after release and after the MMCM locks.  LEDs: LD4 clock locked, LD5 in
-reset, LD6 tx, LD7 rx.
+reset, LD6 tx, LD7 rx; LD0 (RGB) is the Ethernet: red a frame received,
+green one for us, blue one sent.  SW3 up routes the TTLC's I/O to JA / JB
+for a real TTLC Pmod; down (the default) it goes to the chains inside the
+FPGA, reached over Ethernet (below).
 
 Build: `make -C fpga/arty_a7` where Vivado is on the PATH, or `make -C
 fpga/arty_a7 remote` from a machine without it (copies `src/` and the
@@ -77,3 +80,70 @@ test_irq (rev-2 builds) give lisa_sim --rev2's output.  What it takes:
   the 32K map (0x1d = 0x13).  hello, test_core, test_printf, test_irq and
   the two 32K tests (test_bigframe, test_ptroff) pass that way; with
   psram_mod off test_bigframe prints nothing.
+
+
+## The TTLC's I/O over Ethernet
+
+The TTLC scans its 48 outputs and 48 inputs through three 74HC595 and
+three 74HC165 chains on a Pmod (uo_out[2:0] data, uo_out[5] latch,
+uo_out[6] shift clock out; ui_in[6:4] in).  On the Arty the chains are
+inside the FPGA (`ttlc_chains_fpga.v`, the chip testbench's model made
+synchronous: the scan's shift clock is clk/2 at most, so sampling the pins
+every clock sees what the chips see), and their two 48-bit registers are
+reached from any host on the LAN through the board's Ethernet PHY
+(2026-10-17, Ken's choice over a soft processor: the bridge is ~1000 lines
+of plain RTL, no toolchain, and the Mac talks to the board directly):
+
+- `eth_mii_mac.v`: a MAC on the DP83848J's MII (4-bit nibbles at 25 MHz,
+  the PHY's own RX_CLK and TX_CLK), received frames into two 2 KB buffers
+  used in turn, the frame to send in another, each handed between the
+  PHY's clock and the project clock by a four-phase handshake - so all
+  the protocol logic runs on the project clock.  FCS checked and appended,
+  frames padded to 60 bytes, full duplex only.  A frame that arrives
+  while both buffers are held is dropped (the host retries); two buffers
+  let frames follow each other by the inter-frame gap, since a parse and
+  release take ~2 us.
+- `eth_ipstack.v`: one address (192.168.1.200, MAC 02:4c:49:53:41:00,
+  parameters of `lisa_arty.v`): answers ARP for it, echoes pings, delivers
+  UDP datagrams to port 14500 as a byte stream and sends them from it.  A
+  parser walks each received frame a byte a clock (the IP header checksum
+  summed on the way) and releases it; a builder writes replies into the
+  MAC's buffer, with a pass over the IP header for its checksum first,
+  waiting for the transmitter while the parser goes on.  No fragments,
+  options or gateway; the UDP checksum is sent as zero and not checked.
+- `ttlc_eth_app.v`: the commands.  A datagram is a command byte: `I` with
+  six little-endian bytes sets the inputs, `R` reads, `S` subscribes the
+  sender to an `E` datagram whenever the outputs change (at most one per
+  100 us), `U` ends that.  Every datagram is answered with 20 bytes: type
+  (`S`, or `E` for an event), flags (bit 0 subscribed, bit 1 SW3, bits
+  7:4 the format's version, 1), microseconds since reset, the outputs,
+  the inputs, the events sent.
+- `eth_ttlc.v` joins the three; `lisa_arty.v` adds the PHY's 25 MHz
+  reference clock (the MMCM's second output through an ODDR), its reset
+  (from the MMCM's lock only, 26 ms, so the link survives the RESET
+  button and the UART's DTR; no MDIO, the PHY autonegotiates from its
+  straps) and LD0.  The XDC constrains the two PHY clocks, marks the three
+  clocks asynchronous and gives the MII pins the datasheet's delays.
+
+`test/` is the bridge's own testbench (cocotb on Verilator, `make -C
+fpga/arty_a7 test`): the PHY's pins driven with frames built in Python
+(ARP, pings of several sizes, UDP commands; the wrong MAC, IP, port and
+FCS; back-to-back bursts), the chains scanned by the chip's
+`shift_reg_io.v`.  On the board, from andromeda or the Mac:
+
+    ping 192.168.1.200
+    ttlc_io.py read                      # or: in <hex48>, watch [quiet s], ping
+    arty_ttlc.py ../images/ttlc_loopback.hex   # on andromeda, the serial side
+
+`ttlc_io.py` is the client (a class, `TtlcIo`: `read`, `inputs`,
+`subscribe`, `events`, and a command line); `arty_ttlc.py` loads a TTLC
+program (readmemh bytes, as the chip testbench's flash image) into the
+Pmod's flash at byte 0x10000 through the debug port, starts the TTLC (0x1f
+= 0x100, 0x15 = 4, 0x1b = 0x3cff) and runs the loopback check over
+Ethernet.  2026-10-17: `test/progs/ttlc/ttlc_loopback.hex` copies all
+seven patterns from the inputs to the outputs on the board (the first TTLC
+run outside simulation, the 12-bit slot format fetched from the flash),
+`watch` shows an event per change with the board's timestamps, ping
+answers in 0.1 ms from the wired host, a UDP round trip is 2.5 ms from
+the Mac over wifi.  The build with the bridge closes 40 MHz with 0.23 ns
+of setup slack.
