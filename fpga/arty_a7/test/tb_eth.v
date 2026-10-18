@@ -24,7 +24,8 @@ module tb_eth
    output wire [47:0]   ttlc_out,
    output wire          rx_act,
    output wire          accepted,
-   output wire          tx_act
+   output wire          tx_act,
+   output wire          spi_own
 );
 
    wire [2:0]     dout;
@@ -59,6 +60,26 @@ module tb_eth
       .outputs    ( ttlc_out )
    );
 
+   // the QSPI Pmod's flash on the bus the bridge takes (test/spiflash.v, the
+   // chip testbench's model, its image from +FIRMWARE)
+   wire           spi_cs_n;
+   wire           spi_sclk;
+   wire           spi_mosi;
+   wire           io0, io1, io2, io3;
+   assign io0 = spi_own ? spi_mosi : 1'bz;
+   pullup (io1);
+   pullup (io2);
+   pullup (io3);
+   spiflash flash
+   (
+      .csb  ( spi_cs_n ),
+      .clk  ( spi_sclk ),
+      .io0  ( io0      ),
+      .io1  ( io1      ),
+      .io2  ( io2      ),
+      .io3  ( io3      )
+   );
+
    eth_ttlc #( .TICKS_PER_US(40), .EVENT_GAP_US(20) ) eth
    (
       .clk        ( clk        ),
@@ -73,6 +94,11 @@ module tb_eth
       .ttlc_in    ( ttlc_in    ),
       .ttlc_out   ( ttlc_out   ),
       .pmod_sel   ( pmod_sel   ),
+      .spi_own    ( spi_own    ),
+      .spi_cs_n   ( spi_cs_n   ),
+      .spi_sclk   ( spi_sclk   ),
+      .spi_mosi   ( spi_mosi   ),
+      .spi_miso   ( io1        ),
       .rx_act     ( rx_act     ),
       .accepted   ( accepted   ),
       .tx_act     ( tx_act     )

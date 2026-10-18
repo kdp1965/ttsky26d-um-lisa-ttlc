@@ -31,7 +31,11 @@
 // on a 25 MHz reference clock from the MMCM, is reset only by the MMCM's
 // lock (so the link survives the RESET button and the UART's DTR), and
 // has no MDIO: it autonegotiates from its straps.  LD0 shows it: red a
-// frame received, green one for us, blue one sent.
+// frame received, green one for us, blue one sent.  The bridge can also
+// take the QSPI Pmod's flash bus (its X command): the chip is held in
+// reset meanwhile and JC is driven by the bridge's SPI engine, so a host
+// programs the flash over Ethernet in milliseconds instead of through the
+// debug UART.
 module lisa_arty
 #(
    parameter CLK_DIVIDE = 20,      // 100 MHz / (CLK_DIVIDE / 10): 20 = 50 MHz, 25 = 40, 15 = 66.67
@@ -141,11 +145,21 @@ module lisa_arty
    assign uart_rxd_out = uo_out[4];
    assign uio_in = jc;
 
+   // JC: the chip's uio, or the bridge's SPI master while it holds the
+   // flash bus (CS on uio[0], MOSI [1], MISO [2], SCLK [3]; HOLD#, WP# and
+   // the PSRAM selects on [7:4] held high)
+   wire                 spi_own;
+   wire                 spi_cs_n;
+   wire                 spi_sclk;
+   wire                 spi_mosi;
+   wire [7:0]           spi_drive = {4'b1111, spi_sclk, 1'b1, spi_mosi, spi_cs_n};
+   wire [7:0]           spi_oe    = 8'b1111_1011;
+
    genvar i;
    generate
       for (i = 0; i < 8; i = i + 1)
       begin : UIO
-         assign jc[i] = uio_oe[i] ? uio_out[i] : 1'bz;
+         assign jc[i] = spi_own ? (spi_oe[i] ? spi_drive[i] : 1'bz) : (uio_oe[i] ? uio_out[i] : 1'bz);
       end
    endgenerate
 
@@ -158,7 +172,7 @@ module lisa_arty
       .uio_oe     ( uio_oe  ),
       .ena        ( 1'b1    ),
       .clk        ( clk     ),
-      .rst_n      ( rst_n   )
+      .rst_n      ( rst_n & ~spi_own )
    );
 
    ttlc_chains_fpga chains
@@ -191,6 +205,11 @@ module lisa_arty
       .ttlc_in    ( ttlc_in      ),
       .ttlc_out   ( ttlc_out     ),
       .pmod_sel   ( pmod_sel     ),
+      .spi_own    ( spi_own      ),
+      .spi_cs_n   ( spi_cs_n     ),
+      .spi_sclk   ( spi_sclk     ),
+      .spi_mosi   ( spi_mosi     ),
+      .spi_miso   ( jc[2]        ),
       .rx_act     ( eth_rx_act   ),
       .accepted   ( eth_accepted ),
       .tx_act     ( eth_tx_act   )

@@ -150,11 +150,39 @@ FCS; back-to-back bursts), the chains scanned by the chip's
     arty_ttlc.py ../images/ttlc_loopback.hex   # on andromeda, the serial side
 
 `ttlc_io.py` is the client (a class, `TtlcIo`: `read`, `inputs`,
-`subscribe`, `events`, and a command line); `arty_ttlc.py` loads a TTLC
-program (readmemh bytes, as the chip testbench's flash image) into the
-Pmod's flash at byte 0x10000 through the debug port, starts the TTLC (0x1f
-= 0x100, 0x15 = 4, 0x1b = 0x3cff) and runs the loopback check over
-Ethernet.  2026-10-17: `test/progs/ttlc/ttlc_loopback.hex` copies all
+`subscribe`, `events`, the flash methods below, and a command line);
+`arty_ttlc.py` loads a TTLC program (readmemh bytes, as the chip
+testbench's flash image) into the Pmod's flash at byte 0x10000 through the
+debug port, starts the TTLC (0x1f = 0x100, 0x15 = 4, 0x1b = 0x3cff) and
+runs the loopback check over Ethernet.
+
+### The flash over Ethernet (2026-10-18)
+
+The debug UART writes the flash a word at a time with a status poll each,
+minutes for a big image.  The bridge can take the QSPI Pmod's bus instead:
+`X` holds the chip in reset and drives CS, SCLK and MOSI (uio[0], [3],
+[1]), reads MISO (uio[2]) and holds uio[7:4] (HOLD#, WP#, the PSRAM
+selects) high; `T <bytes>` is one SPI transaction (CS low, the bytes out
+in mode 0 at clk/4, CS high), answered with `T` and the bytes read on
+MISO, up to 1024 - a page program is one datagram, a read 1020 bytes; `Y`
+gives the bus back and the chip restarts (the bridge also gives it back
+5 s after the last `X` or `T`, should the host die).  Status flag bit 2
+says the bus is held; the format's version is 2.  The bridge testbench's
+test_flash runs the sequence against the chip testbench's flash model.
+
+    ttlc_io.py flash id                       # the JEDEC id, through a continuous-read exit
+    ttlc_io.py flash write hello_rev2.ihx     # erase, program, verify (an Intel HEX, readmemh bytes or a binary)
+    ttlc_io.py flash write ttlc_loopback.hex 10000
+    ttlc_io.py flash read 0 64
+    ETH=1 CACHE=1 arty_run.py hello_rev2.ihx  # the image over Ethernet, then the debug port only sets up and runs
+    ETH=1 arty_ttlc.py ttlc_loopback.hex
+
+`TtlcIo.flash_write(addr, data)` erases the 64 KB blocks the image
+covers, programs it page by page, reads it back and releases the bus;
+`load_image(path)` gives the bytes (Intel HEX with gaps as zeros, like
+the debug loader).  Open the debug port after the Ethernet write: opening
+it resets the design, and the flashing resets the chip too (the debug
+registers are set up afresh by the scripts).  2026-10-17: `test/progs/ttlc/ttlc_loopback.hex` copies all
 seven patterns from the inputs to the outputs on the board (the first TTLC
 run outside simulation, the 12-bit slot format fetched from the flash),
 `watch` shows an event per change with the board's timestamps, ping

@@ -1,5 +1,6 @@
-// The TTLC I/O bridge: the MII MAC, the IP endpoint and the TTLC command
-// app together, from the PHY's pins to the two 48-bit registers.
+// The TTLC I/O bridge: the MII MAC, the IP endpoint and the command app
+// together, from the PHY's pins to the two 48-bit registers and, while the
+// host holds it, the QSPI Pmod's flash bus.
 module eth_ttlc
 #(
    parameter [47:0]  MAC          = 48'h02_4c_49_53_41_00,
@@ -23,6 +24,12 @@ module eth_ttlc
    output wire [47:0]   ttlc_in,
    input  wire [47:0]   ttlc_out,
    input  wire          pmod_sel,
+
+   output wire          spi_own,        // the bridge holds the QSPI Pmod's flash bus
+   output wire          spi_cs_n,
+   output wire          spi_sclk,
+   output wire          spi_mosi,
+   input  wire          spi_miso,
 
    output wire          rx_act,         // pulses: any frame, one for us, one sent
    output wire          accepted,
@@ -137,7 +144,12 @@ module eth_ttlc
       .udp_tx_ready    ( udp_tx_ready    ),
       .ttlc_in         ( ttlc_in         ),
       .ttlc_out        ( ttlc_out        ),
-      .pmod_sel        ( pmod_sel        )
+      .pmod_sel        ( pmod_sel        ),
+      .spi_own         ( spi_own         ),
+      .spi_cs_n        ( spi_cs_n        ),
+      .spi_sclk        ( spi_sclk        ),
+      .spi_mosi        ( spi_mosi        ),
+      .spi_miso        ( spi_miso        )
    );
 
 endmodule

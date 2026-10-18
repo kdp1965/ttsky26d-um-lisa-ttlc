@@ -10,10 +10,20 @@ as UDP datagrams to port 14500 at the board's address (192.168.1.200).
     for ev in io.events():          # subscribe; an Event per output change
         print(ev)
 
+The bridge can also take the QSPI Pmod's flash bus (the chip held in
+reset meanwhile) and run SPI transactions on it, so a program image goes
+into the flash in milliseconds instead of through the debug UART:
+
+    io.flash_write(0, load_image('hello_rev2.ihx'))     # erase, program, verify
+    io.flash_read(0x10000, 64)
+
 Command line: ttlc_io.py [host] read | in <hex48> | watch [quiet seconds] | ping
+               | flash id | flash read <hexaddr> <n> | flash erase <hexaddr>
+               | flash write <file> [hexbase] | flash release
 Protocol: a command byte, I with six little-endian bytes; every datagram
 is answered with the 20-byte status (ttlc_eth_app.v); E is the same for a
-change of the outputs after S."""
+change of the outputs after S.  X takes the flash bus, Y gives it back,
+T <bytes> is one SPI transaction answered with T and the bytes read."""
 import socket
 import struct
 import sys
@@ -37,15 +47,23 @@ class TtlcIo:
         t, flags, us, out, inp, events = struct.unpack('<BBI6s6sH', data[:20])
         return Status(chr(t), flags, us, int.from_bytes(out, 'little'), int.from_bytes(inp, 'little'), events)
 
-    def request(self, payload):
-        """send a command, return its status reply; a reply lost on the
-        wire (or dropped by the bridge under a burst) is retried"""
+    def request(self, payload, kind=b'S'):
+        """send a command, return its reply: the Status for an S reply, the
+        bytes read for a T reply.  A reply lost on the wire (or dropped by
+        the bridge under a burst) is retried; a T answered with a status
+        means the bus is not held"""
         for _ in range(self.retries):
             self.sock.sendto(payload, self.addr)
             try:
                 while True:
-                    data, src = self.sock.recvfrom(64)
-                    if len(data) >= 20 and data[0] == ord('S'):
+                    data, src = self.sock.recvfrom(2048)
+                    if not data:
+                        continue
+                    if data[0] == ord('T') and kind == b'T':
+                        return data[1:]
+                    if data[0] == ord('S') and len(data) >= 20:
+                        if kind == b'T':
+                            raise RuntimeError('the bridge does not hold the flash bus (flash_take first)')
                         return self.parse(data)
             except socket.timeout:
                 continue
@@ -62,6 +80,86 @@ class TtlcIo:
 
     def unsubscribe(self):
         return self.request(b'U')
+
+    # ------------------------------------------------------------- the flash
+    def flash_take(self):
+        st = self.request(b'X')
+        if not st.flags & 4:
+            raise RuntimeError('the bridge did not take the flash bus')
+        return st
+
+    def flash_release(self):
+        return self.request(b'Y')
+
+    def spi(self, data):
+        """one transaction while the bus is held: CS low, the bytes out, the
+        bytes read on MISO back (up to 1024)"""
+        return self.request(b'T' + bytes(data), kind=b'T')
+
+    def flash_id(self):
+        return self.spi(b'\x9f\0\0\0')[1:4]
+
+    def flash_status(self):
+        return self.spi(b'\x05\0')[1]
+
+    def flash_wait(self, timeout=5.0):
+        t = time.time()
+        while self.flash_status() & 1:
+            if time.time() - t > timeout:
+                raise TimeoutError('the flash stayed busy')
+
+    def flash_erase_block(self, addr):
+        """the 64 KB block holding addr"""
+        self.spi(b'\x06')
+        self.spi(bytes([0xd8, (addr >> 16) & 0xff, (addr >> 8) & 0xff, addr & 0xff]))
+        self.flash_wait()
+
+    def flash_program_page(self, addr, data):
+        """up to 256 bytes within one page"""
+        assert len(data) <= 256 - (addr & 0xff)
+        self.spi(b'\x06')
+        self.spi(bytes([0x02, (addr >> 16) & 0xff, (addr >> 8) & 0xff, addr & 0xff]) + bytes(data))
+        self.flash_wait()
+
+    def flash_read(self, addr, n):
+        out = b''
+        while len(out) < n:
+            k = min(1020, n - len(out))
+            a = addr + len(out)
+            out += self.spi(bytes([0x03, (a >> 16) & 0xff, (a >> 8) & 0xff, a & 0xff]) + b'\0' * k)[4:]
+        return out
+
+    def flash_write(self, addr, data, erase=True, verify=True, log=None):
+        """take the bus, erase the 64 KB blocks the image covers, program
+        it page by page, read it back, give the bus back.  The chip
+        restarts when the bus is released (open the debug port after)."""
+        log = log or (lambda *a: None)
+        t0 = time.time()
+        self.flash_take()
+        try:
+            self.spi(b'\xff\xff')                     # out of a continuous-read mode, if the chip left it there
+            ident = self.flash_id()
+            log('flash id %s' % ident.hex())
+            if ident in (b'\x00\x00\x00', b'\xff\xff\xff'):
+                raise RuntimeError('no flash answers (id %s)' % ident.hex())
+            if erase:
+                for b in range(addr >> 16, ((addr + len(data) - 1) >> 16) + 1):
+                    self.flash_erase_block(b << 16)
+                log('erased %d block(s) of 64 KB in %.2f s' % (((addr + len(data) - 1) >> 16) - (addr >> 16) + 1, time.time() - t0))
+            a = addr
+            while a < addr + len(data):
+                k = min(256 - (a & 0xff), addr + len(data) - a)
+                self.flash_program_page(a, data[a - addr:a - addr + k])
+                a += k
+            log('programmed %d bytes at 0x%x in %.2f s' % (len(data), addr, time.time() - t0))
+            if verify:
+                back = self.flash_read(addr, len(data))
+                bad = [i for i in range(len(data)) if back[i] != data[i]]
+                if bad:
+                    raise RuntimeError('verify failed at %d bytes, the first at 0x%x: %02x read, %02x written' % (len(bad), addr + bad[0], back[bad[0]], data[bad[0]]))
+                log('verified in %.2f s' % (time.time() - t0))
+        finally:
+            self.flash_release()
 
     def events(self, timeout=None):
         """subscribe and yield each E datagram (an output change) as it
@@ -84,6 +182,34 @@ class TtlcIo:
                 pass
 
 
+def load_image(path):
+    """a program image as flash bytes: Intel HEX (sdcc -mlisa's .ihx; byte
+    addresses, gaps zero as the debug loader writes them), readmemh bytes
+    ('@addr' then hex bytes, the testbench's flash images), or raw binary"""
+    data = {}
+    text = open(path, 'rb').read()
+    if text.startswith(b':'):
+        for line in text.decode().split():
+            n, a, t = int(line[1:3], 16), int(line[3:7], 16), int(line[7:9], 16)
+            if t == 1:
+                break
+            if t == 0:
+                for i in range(n):
+                    data[a + i] = int(line[9 + 2 * i:11 + 2 * i], 16)
+    elif text.lstrip().startswith(b'@') or all(c in b'0123456789abcdefABCDEF@ \t\r\n' for c in text[:64]):
+        a = 0
+        for tok in text.decode().split():
+            if tok.startswith('@'):
+                a = int(tok[1:], 16)
+            else:
+                data[a] = int(tok, 16); a += 1
+    else:
+        return bytes(text)
+    if not data:
+        return b''
+    return bytes(data.get(i, 0) for i in range(max(data) + 1))
+
+
 def main(argv):
     args = list(argv)
     host = HOST
@@ -100,6 +226,37 @@ def main(argv):
         for _ in range(100):
             io.read()
         print('100 round trips: %.2f ms each' % ((time.time() - t) * 10))
+        return
+    elif cmd == 'flash':
+        sub = args[1] if len(args) > 1 else 'id'
+        if sub == 'id':
+            io.flash_take()
+            try:
+                io.spi(b'\xff\xff'); print('flash id', io.flash_id().hex(), 'status %02x' % io.flash_status())
+            finally:
+                io.flash_release()
+        elif sub == 'read':
+            a, n = int(args[2], 16), int(args[3])
+            io.flash_take()
+            try:
+                io.spi(b'\xff\xff'); d = io.flash_read(a, n)
+            finally:
+                io.flash_release()
+            for i in range(0, len(d), 16):
+                print('%06x: %s' % (a + i, ' '.join('%02x' % b for b in d[i:i + 16])))
+        elif sub == 'erase':
+            io.flash_take()
+            try:
+                io.spi(b'\xff\xff'); io.flash_erase_block(int(args[2], 16)); print('erased the 64 KB block at 0x%x' % (int(args[2], 16) & ~0xffff))
+            finally:
+                io.flash_release()
+        elif sub == 'write':
+            base = int(args[3], 16) if len(args) > 3 else 0
+            io.flash_write(base, load_image(args[2]), log=print)
+        elif sub == 'release':
+            print(io.flash_release())
+        else:
+            print(__doc__)
         return
     elif cmd == 'watch':
         quiet = float(args[1]) if len(args) > 1 else None

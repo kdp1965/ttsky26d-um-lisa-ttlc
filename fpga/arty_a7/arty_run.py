@@ -9,7 +9,12 @@ SIO2/3 on uio[4:5], CE1 on uio[6], uio[7] high), CS1 quad (0x17 = 6, the
 flash on CS0 single SPI), 6 dummy clocks after its EB read (0x18 = 0x6a),
 the cache on CS1 (0x15 = 6), invalidated and on with the 32K map (0x1d =
 0x13).
-usage: [CACHE=1] arty_run.py <file.ihx> [seconds] [baud]   (any rate; 460800 as the demo board)"""
+ETH=1 loads the flash over Ethernet instead (ttlc_io.py's flash_write:
+the bridge takes the QSPI Pmod's bus with the chip in reset, programs and
+verifies the image in well under a second, gives the bus back) and uses
+the debug port only to set up and run; the UART path takes minutes for a
+big image.
+usage: [CACHE=1] [ETH=1] arty_run.py <file.ihx> [seconds] [baud]   (any rate; 460800 as the demo board)"""
 import os, sys, time
 img = sys.argv[1]
 secs = float(sys.argv[2]) if len(sys.argv) > 2 else 5
@@ -17,12 +22,22 @@ baud = int(sys.argv[3]) if len(sys.argv) > 3 else 460800
 sys.argv = ["x"]
 sys.path.insert(0, os.environ.get("LISA_PYDB", os.path.expanduser("~/projects/tiny-tapeout/ttsky26d/lisa_pydb")))
 import lisa_pydb as m
+eth = os.environ.get("ETH") == "1"
+if eth:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from ttlc_io import TtlcIo, load_image
+    TtlcIo().flash_write(0, load_image(img), log=lambda *a: print("ethernet:", *a, flush=True))
 class A: flashbase = 0
 d = m.LisaPyDb(); d.iwidth = 16; d.args = A()
 d.openPort("/dev/ttyUSB1", baud)
 print("debugger", d.getVer(), flush=True)
 d.readHexFile(img)
-d.loadFlash()
+if eth:
+    # what loadFlash sets besides erasing and writing: the core halted at 0,
+    # the debug and fetch bases, the uo / uio muxes, the flash single SPI
+    d.halt(); d.writePC(0); d.setFlashBase(); d.writeReg(0x17, 4); d.writeReg(0x1e, 0x08d3)
+else:
+    d.loadFlash()
 d.writeReg(0x10, 0)
 bad = 0
 for i, w in enumerate(d.opcodes[:64]):

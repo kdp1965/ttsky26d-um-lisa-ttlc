@@ -13,7 +13,7 @@ PYTHON_BIN := $(shell cocotb-config --python-bin)
 test:
 	$(MAKE) PYTHON3=$(PYTHON_BIN) sim
 .PHONY: test
-EXTRA_ARGS += -Wno-fatal -Wno-lint -Wno-style
+EXTRA_ARGS += -Wno-fatal -Wno-lint -Wno-style --timing
 ifeq ($(shell uname),Darwin)
 ifeq ($(shell $(shell cocotb-config --python-bin) -c "import platform; print(platform.machine())"),x86_64)
 EXTRA_ARGS += -CFLAGS "-arch x86_64" -LDFLAGS "-arch x86_64"
@@ -24,7 +24,8 @@ endif
 HERE    = $(PWD)
 SRC_DIR = $(PWD)/../../../src
 VERILOG_SOURCES = $(addprefix $(HERE)/../,eth_crc32_byte.v eth_mii_mac.v eth_ipstack.v ttlc_eth_app.v eth_ttlc.v ttlc_chains_fpga.v)
-VERILOG_SOURCES += $(SRC_DIR)/shift_reg_io.v $(HERE)/tb_eth.v
+VERILOG_SOURCES += $(SRC_DIR)/shift_reg_io.v $(HERE)/../../../test/spiflash.v $(HERE)/tb_eth.v
+PLUSARGS += +FIRMWARE=$(HERE)/../../../test/progs/hello.hex
 COMPILE_ARGS += -I$(SRC_DIR)
 TOPLEVEL = tb_eth
 COCOTB_TEST_MODULES = test_eth

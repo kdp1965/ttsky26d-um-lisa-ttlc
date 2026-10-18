@@ -5,7 +5,9 @@ Ethernet: the program (test/progs/ttlc/ttlc_loopback.hex, the chip
 testbench's) copies the 48 inputs to the 48 outputs through the FPGA's
 chains, which ttlc_io.py reaches at 192.168.1.200.  One serial session:
 opening the port resets the design.  SW3 must be down (the inside chains).
-usage: arty_ttlc.py <program.hex> [baud]   (readmemh bytes, as the testbench's flash image; any baud rate, 460800 as the demo board)"""
+ETH=1 writes the image over Ethernet (ttlc_io.py's flash_write) and uses
+the debug port only to set up and start the TTLC.
+usage: [ETH=1] arty_ttlc.py <program.hex> [baud]   (readmemh bytes, as the testbench's flash image; any baud rate, 460800 as the demo board)"""
 import os
 import sys
 import time
@@ -31,12 +33,19 @@ words = (max(data) + 2) // 2
 opcodes = ['%02x%02x' % (data.get(2 * w + 1, 0), data.get(2 * w, 0)) for w in range(words)]
 
 
+eth = os.environ.get('ETH') == '1'
+if eth:
+    from ttlc_io import load_image
+    TtlcIo().flash_write(0x10000, load_image(img), log=lambda *a: print('ethernet:', *a, flush=True))
 class A: flashbase = 0x10000
 d = m.LisaPyDb(); d.iwidth = 16; d.args = A()
 d.openPort('/dev/ttyUSB1', baud)
 print('debugger', d.getVer(), flush=True)
 d.opcodes = opcodes
-d.loadFlash()                                   # halts LISA, erases the 64K block at 0x10000, writes
+if eth:
+    d.halt(); d.writePC(0); d.setFlashBase(); d.writeReg(0x17, 4); d.writeReg(0x1e, 0x08d3)
+else:
+    d.loadFlash()                               # halts LISA, erases the 64K block at 0x10000, writes
 d.writeReg(0x11, 1); d.writeReg(0x10, 0)        # read back from 0x10000
 bad = 0
 for w in opcodes:

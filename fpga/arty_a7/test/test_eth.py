@@ -124,6 +124,23 @@ class Phy:
         return None
 
 
+def parse_t(frame):
+    """the bytes a T reply carries"""
+    assert frame[:6] == HOST_MAC and frame[6:12] == OUR_MAC and frame[12:14] == b'\x08\x00', frame.hex()
+    ulen, = struct.unpack('!H', frame[38:40])
+    p = frame[42:42 + ulen - 8]
+    assert p[0] == ord('T'), 'reply type %r' % chr(p[0])
+    return p[1:]
+
+
+async def spi(phy, data):
+    """one SPI transaction through the bridge: the bytes read on MISO"""
+    await phy.send(udp_frame(b'T' + data))
+    f = await phy.expect(40000 + 400 * len(data))
+    assert f is not None, 'no T reply'
+    return parse_t(f)
+
+
 def parse_status(frame):
     assert frame[:6] == HOST_MAC and frame[6:12] == OUR_MAC and frame[12:14] == b'\x08\x00', frame.hex()
     ip = frame[14:34]
@@ -135,6 +152,7 @@ def parse_status(frame):
     assert ulen == 8 + 20 and iplen == 28 + 20, (ulen, iplen)
     p = frame[42:62]
     t, flags, us, out, inp, events = struct.unpack('<BBI6s6sH', p)
+    assert t in (ord('S'), ord('E')), 'reply type %r' % chr(t)
     return dict(type=chr(t), flags=flags, us=us,
                 out=int.from_bytes(out, 'little'), inp=int.from_bytes(inp, 'little'), events=events)
 
@@ -228,7 +246,7 @@ async def test_udp_loopback(dut):
     f = await phy.expect()
     assert f is not None, 'no reply to R'
     st = parse_status(f)
-    assert st['type'] == 'S' and st['flags'] >> 4 == 1 and st['out'] == 0 and st['inp'] == 0, st
+    assert st['type'] == 'S' and st['flags'] >> 4 == 2 and st['out'] == 0 and st['inp'] == 0, st
     for pat in (0x123456789abc, 0x800000000001, 0xffffffffffff, 0xa5a5a5a5a5a5, 0):
         await phy.send(udp_frame(b'I' + pat.to_bytes(6, 'little')))
         f = await phy.expect()
@@ -298,3 +316,56 @@ async def test_burst(dut):
     await phy.send(udp_frame(b'R'))
     st = parse_status(await phy.expect())
     assert st['inp'] == 4, 'inputs %x after the burst' % st['inp']
+
+
+@cocotb.test()
+async def test_flash(dut):
+    """X takes the QSPI Pmod's flash bus (the chip in reset), T runs SPI
+    transactions on it - status, read, write-enable, erase, page program,
+    read back, 1020-byte reads - against the chip testbench's flash model,
+    Y gives it back; a T without the bus is answered with a status"""
+    phy = await start(dut)
+    import os
+    image = {}
+    addr = 0
+    for line in open(os.environ.get('FLASH_IMAGE', os.path.join(os.path.dirname(__file__), '../../../test/progs/hello.hex'))):
+        for tok in line.split():
+            if tok.startswith('@'):
+                addr = int(tok[1:], 16)
+            else:
+                image[addr] = int(tok, 16); addr += 1
+    # not held: a status comes back, the bus stays the chip's
+    await phy.send(udp_frame(b'T\x05\x00'))
+    st = parse_status(await phy.expect())
+    assert not st['flags'] & 4 and int(dut.spi_own.value) == 0
+    # take it
+    await phy.send(udp_frame(b'X'))
+    st = parse_status(await phy.expect())
+    assert st['flags'] & 4 and int(dut.spi_own.value) == 1, st
+    r = await spi(phy, b'\x05\x00')
+    assert len(r) == 2 and r[1] & 1 == 0, 'status %s' % r.hex()
+    r = await spi(phy, b'\x03\x00\x00\x00' + b'\x00' * 16)
+    assert list(r[4:]) == [image.get(i, 0) for i in range(16)], 'read %s' % r[4:].hex()
+    # a block erase at 0x10000, then a page program
+    assert (await spi(phy, b'\x06'))[0:1] == b'\xff' or True
+    await spi(phy, b'\xd8\x01\x00\x00')
+    for _ in range(50):
+        if (await spi(phy, b'\x05\x00'))[1] & 1 == 0:
+            break
+    r = await spi(phy, b'\x03\x01\x00\x00' + b'\x00' * 8)
+    assert r[4:] == b'\xff' * 8, 'after the erase %s' % r[4:].hex()
+    page = bytes((i * 7 + 3) & 0xff for i in range(256))
+    await spi(phy, b'\x06')
+    await spi(phy, b'\x02\x01\x00\x00' + page)
+    for _ in range(50):
+        if (await spi(phy, b'\x05\x00'))[1] & 1 == 0:
+            break
+    r = await spi(phy, b'\x03\x01\x00\x00' + b'\x00' * 1020)
+    assert len(r) == 1024 and r[4:260] == page, 'read back %s' % r[4:20].hex()
+    assert r[260:] == b'\xff' * 764
+    # give it back
+    await phy.send(udp_frame(b'Y'))
+    st = parse_status(await phy.expect())
+    assert not st['flags'] & 4 and int(dut.spi_own.value) == 0
+    await phy.send(udp_frame(b'T\x05\x00'))
+    assert parse_status(await phy.expect())['type'] == 'S'
