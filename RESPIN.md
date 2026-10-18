@@ -453,7 +453,7 @@ through the quad PSRAM model included; on the Arty the debug port reads
 the image back through quad with no mismatch, hello, test_core and the
 TTLC loopback run quad on both selects, and lisa_monitor runs 3 to 5
 times faster than from single-SPI flash (fpga/README.md).  rc4's GDS
-predates this: the next harden is rc5.
+predates this; rc5 and rc6 (promoted) have it.
 
 ## 22. Bank registers: 512 KB of code, 256 KB of data
 
@@ -981,6 +981,33 @@ code banks (arty_ttlc.py puts it at byte 0x10000 = code bank 2).
   anchor table its placement (placements/macro-rc4-art_final_cells.json);
   rc3's and rc2's tables stay as overlays (trial_anchor_rc3.json,
   trial_anchor_rc2.json).  Tag rc4.
+* rc5 (2026-10-18, runs/macro-rc5 on 9628a73: item 21's RTL, rc4's
+  placement replayed as the anchor table, the art): clean (Magic DRC /
+  LVS / antenna 0, hold +0.077, setup +5.6 / -5.6) and the local precheck
+  passes, but 917K um of wire in 46 routing iterations against rc4's 790K
+  in 34 - the anchored replay routed heavier again, as rc3 had after rc2.
+  rc5-free (runs/macro-rc5-free, the same RTL as a free draw): clean,
+  796K um, setup +5.4 / -5.0, the precheck passes.  Neither promoted:
+  item 22 came the same day.
+* rc6 (2026-10-18, runs/macro-rc6 on the RTL of f1257d1 - item 22, the
+  bank registers - a free draw with the art): 63270 instances,
+  synthesized 152770 um2 against rc5-free's 150557 (+1.5%: the three
+  registers, the bank in each cache line's tag, the 18-bit addresses),
+  placed at 66.6%, 824K um of wire in 57 iterations, Magic DRC / LVS /
+  antenna 0, hold +0.075, setup +5.6 nominal and -4.9 at ss.  Its worst
+  paths: the debugger's step flop into the BF16 accumulator cone (3-cycle
+  in the FPGA's constraints, not in lisa.sdc), the debug data register
+  into PC, the cache-map register into the RAM32's half-cycle write - all
+  quasi-static or multicycle; a timing-only run of the routed design at
+  20 ns closes at the typical corner with +1.2 ns, so a 50 MHz part at
+  room temperature and about 30 MHz at the slow corner, consistent with
+  TT07's 66 MHz under the same 30 ns constraint (which stays: tightening
+  it would only upsize those cones).  The local precheck passes.  The
+  banks' test runs on this RTL on the Arty (fpga/README.md).
+  Promoted 2026-10-18 (Ken): gds/, lef/, pnl/ are rc6's, macro.json's
+  anchor table its placement (placements/macro-rc6_final_cells.json);
+  rc4's table stays as the overlay trial_anchor_rc4.json.  Tag rc6.
+  Next: rc7 with the UART overrun flags (item 14).
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
