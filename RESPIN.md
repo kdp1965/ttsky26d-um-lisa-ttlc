@@ -520,8 +520,11 @@ the callee's frame 3 bytes deeper, 3-byte banked function pointers, the
 linker mapping every code word >= 0x4000 into the window; README-lisa.md
 "Code banks"); `lisa-tools/sdcc_test/test_bank` (banks 2 and 3) passes on
 lisa_sim, on this testbench and on the Arty (the bitstream with the banks
-closes at 50 MHz, setup +0.25 ns).  Not done: far data pointers in the
-compiler, a linker check that the common code stays below word 0x4000, the
+closes at 50 MHz, setup +0.25 ns).  Data banks followed (sdcc-lisa
+85513a3): SDCC named address spaces with a switch function writing the
+data bank, the linker checking every bank area's placement and that the
+common code and ordinary data stay in the lower halves;
+sdcc_test/test_dbank passes on lisa_sim and this testbench.  Not done: the
 debugger tools' view of banked code, a TTLC program convention above the
 code banks (arty_ttlc.py puts it at byte 0x10000 = code bank 2).
 
