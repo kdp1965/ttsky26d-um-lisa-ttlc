@@ -11,6 +11,8 @@ name: gds
 
 on:
   push:
+    tags-ignore:
+      - '**'       # a tag's push is the same commit again
   workflow_dispatch:
 
 jobs:
