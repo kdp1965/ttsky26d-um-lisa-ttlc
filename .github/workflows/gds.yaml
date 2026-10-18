@@ -11,8 +11,9 @@ name: gds
 
 on:
   push:
-    tags-ignore:
-      - '**'       # a tag's push is the same commit again
+    branches:
+      - '**'       # every branch push; not a tag's (the same commit again) - a
+                   # filter naming only tags would have skipped the branches too
   workflow_dispatch:
 
 jobs:
