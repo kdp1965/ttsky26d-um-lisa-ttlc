@@ -1,0 +1,42 @@
+{
+  "gds": "/Users/Ken2/projects/lisa/ttsky26d-um-lisa-ttlc/harden/art/calvin/tt_um_pettit_calvin.gds",
+  "cell": "tt_um_pettit_calvin",
+  "lef": "/Users/Ken2/projects/lisa/ttsky26d-um-lisa-ttlc/harden/art/calvin/tt_um_pettit_calvin.lef",
+  "origin": [
+    646.0,
+    460.0
+  ],
+  "box": [
+    646.0,
+    460.0,
+    678.4,
+    507.4
+  ],
+  "pixel": 0.6,
+  "pixels": [
+    54,
+    79
+  ],
+  "metal_pixels": 2354,
+  "rectangles": 351,
+  "merged_polygons": 41,
+  "metal_area_um2": 847.44,
+  "routing_obstruction": [
+    "met4",
+    646.0,
+    460.0,
+    678.4,
+    507.4
+  ],
+  "exclusions": [],
+  "clearance": 1.0,
+  "mode": "plate",
+  "slot": 15,
+  "extent": [
+    644.2,
+    460.0,
+    680.2,
+    507.4
+  ],
+  "image": "/Users/Ken2/projects/lisa/ttsky26d-um-lisa-ttlc/harden/art/calvin/source.gds"
+}

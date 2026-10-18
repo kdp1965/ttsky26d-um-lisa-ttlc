@@ -826,6 +826,36 @@ at each.  On the Arty at 50 MHz: hello with the cache on at 115200,
   rc2's placement stays an option (`make macro OVERLAY=trial_anchor_rc2.json`,
   and `trial_anchor_free.json` is a free draw).  Tag rc3; the
   gds_custom.yaml precheck is next.
+* Chip art and a free draw (2026-10-18): Ken's calvin, the met4-only
+  picture of ihp-um-janestreet-prism, on this tile.  `harden/chip_art.py`
+  (prism's tool for sky130A: met4 71/20, the rules of sky130A_mr.drc met
+  on a 0.6 um pixel grid - m4.1/m4.2 width and spacing 0.3, m4.4a area
+  0.24, m4.7 holes 0.2, m4.5ab 0.4 to 3 um wide metal, and m4.11, no solid
+  metal wider than 10 um both ways, so every 15th pixel row of the plate
+  is a slot - re-checked on the merged shapes) re-grids prism's hand-edited
+  cell (`harden/art/calvin/source.gds`) onto the 54 x 79 pixel box that
+  fits the channel between a PDN stripe pair and the next (32.4 x 47.4 um).
+  As in prism the picture sits on bare oxide (Ken: that is what makes it
+  visible): `Project.ArtKeepout` (flow.py, `odb_art_keepout.py`) cuts the
+  rows under the box after OpenROAD.CutRows, `ROUTING_OBSTRUCTIONS` keeps
+  the router off it on met1-met4, and `Project.ChipArt` merges the cell
+  into every GDS view after Magic.WriteLEF (before Magic.DRC, which checks
+  it in place) and adds the box to the tile LEF as a met4 obstruction;
+  nothing of it is in the netlist, so LVS sees nothing.  The keep-out
+  runs to the rows' end (x 679.88), not the art's edge: 3-site row stubs
+  were a channel pdngen could not strap (PDN-0179).  Where: three
+  free-draw trials to the global route - a met4-only box in the centre
+  (x 296, y 460: 1.139M um of wire), the full keep-out at mid height on
+  the right edge (1.151M, met3 45.4% / overflow 9) and in the upper-right
+  corner (1.133M, met3 41.4% / 3).  Ken's structural argument decided it
+  for the corner: nothing routes around a keep-out in a corner, the cells
+  just move inward.  Found on the way: a free draw of the current netlist
+  global-routes far lighter than the anchored replay rc3 was (rc3 1.322M
+  um, met2 79.6% / overflow 82, met3 57.9% / 47; the free centre trial
+  1.139M, 70.1% / 41, 41.2% / 2) - the replayed placement had carried
+  rc1's distortion through rc2 into rc3 - so the harden with the art,
+  rc4, is a free draw (`trial_anchor_free.json`), and its placement is
+  the table to replay from then on.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception

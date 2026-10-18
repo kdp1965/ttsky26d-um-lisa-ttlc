@@ -66,5 +66,11 @@
   "ANCHOR_CELLS_TABLE": "dir::placements/macro-rc3_final_cells.json",
   "EXTRA_VERILOG_MODELS": [
     "dir::../src/RAM32.v"
-  ]
+  ],
+  "//art": "The chip art (art/calvin, chip_art.py 2026-10-18, Ken's calvin from prism's hand-edited cell): met4 only, 32.4 x 47.4 um, on bare oxide as in prism (Ken: that is what makes it visible): Project.ArtKeepout cuts the rows under the box and ROUTING_OBSTRUCTIONS keeps the router off it on met1-met4, Project.ChipArt merges the cell into the GDS after stream-out and adds the box to the LEF. The box is the upper-right corner, in the channel between the last PDN stripe pair (x 641/644) and the right edge's stripe (679.9): Ken's choice - in a corner nothing routes around the keep-out, the cells just move inward - and the best of three free-draw trials to the global route (corner 1.133M um of wire, met3 41.4% / overflow 3; mid right edge 1.151M, 45.4% / 9; a met4-only box in the centre 1.139M).",
+  "ROUTING_OBSTRUCTIONS": [["met1", 646.0, 460.0, 679.88, 507.4], ["met2", 646.0, 460.0, 679.88, 507.4], ["met3", 646.0, 460.0, 679.88, 507.4], ["met4", 646.0, 460.0, 678.4, 507.4]],
+  "CHIP_ART_JSON": "dir::art/calvin/art.json",
+  "CHIP_ART_CUT_ROWS": true,
+  "CHIP_ART_KEEPOUT_BOX": [646.0, 460.0, 679.88, 507.4],
+  "//art-keepout": "The rows are cut, and met1-met3 kept out, to the rows' end at x 679.88, not the art's 678.4: the 3-site stubs beyond the art were a channel pdngen could not strap (PDN-0179). The met4 stripe at 679.87 runs on through the keep-out."
 }

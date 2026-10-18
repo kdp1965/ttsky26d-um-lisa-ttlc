@@ -4,6 +4,7 @@
 #   make            # the standard Tiny Tapeout flow: the RAM synthesized from src/RAM32.v
 #   make macro      # with the RAM32 DFFRAM macro (macro.json, the stripe step of flow.py)
 #   make synth      # synthesis only (runs/synth-<tag>/*-yosys-synthesis/reports): area, cell types
+#   chip_art.py     # the met4 picture (art/calvin): see its header and macro.json's "//art"
 #   make clean
 #
 # LibreLane and the tools come from the dev shell of a LibreLane checkout
