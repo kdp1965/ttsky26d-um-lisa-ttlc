@@ -32,6 +32,7 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 18 | The Tiny Tapeout QSPI Pmod's pin order (psram_mod) | `lisa_io_mux.v`, `debug_regs.v` 0x1c bit 10 | done: the FPGA, cache on |
 | 19 | TTLC program format: 12-bit slots, four to three words; the old `jmp` never worked | `ttlc_fetch.v`, `tt_um_lisa.v`, `debug_regs.v` | done: test_ttlc, test_ttlc_jump, test_ttlc_debug |
 | 20 | The autobaud and BRG count in 32-clock steps: only rates with a bit a multiple of 32 clocks | `debug_autobaud.v`, `debug_brg.v` | done: test_autobaud; the FPGA at 115200 .. 921600 |
+| 21 | Quad flash reads float the mode bits: continuous-read mode by accident | `lisa_qqspi.v` S12_MODE | done: the FPGA quad on both selects |
 
 Status: open / fixed (the test that shows it, in test/: a program of test/progs, a cocotb test of test/core or the fops bench).
 
@@ -419,6 +420,39 @@ through `debug_ctrl.v` and `tt_um_lisa.v`.
 with ui_in[7] low trains on the LF and answers `v` and a register write
 at each.  On the Arty at 50 MHz: hello with the cache on at 115200,
 156250, 460800 and 921600, the TTLC loopback at 460800.
+
+## 21. Quad reads: the flash's mode bits floated
+
+**Symptom.** A quad read of the flash (`EB`, the fast read quad I/O) did
+not work on the Arty: the debug port's read-back of a freshly written
+image came back 31 or 60 words wrong of 64 whatever the dummy count
+(2026-10-18, when quad on both selects became the FPGA's default; the
+PSRAM had run quad from the start).  `lisa_qqspi.v` sends the command on
+one line, the address and the data on four, and floats the bus for the
+dummy clocks - but a flash samples its mode bits M7-0 from the first two
+of those, and M5:4 = 1,0 (0xA5 on a Macronix part) switches it into
+continuous-read mode, where every later command byte is taken as address
+bits.  With nothing driving the lines the mode byte is whatever they
+float to; TT07's demo board happened to work.  The chip has no pull-ups,
+so a pull-up on the FPGA would only have hidden it (Ken: fix it in the
+RTL).  tinyQV, on the same Pmod, never floats them: it drives 0xA for the
+two clocks to live in continuous-read mode and skips the state for its
+PSRAMs.
+
+**RTL.** `lisa_qqspi.v`: a quad read of a flash select goes through a
+new state after the address, S12_MODE, which drives all four lines 1 for
+two clocks (8 bits in quad through the shifter: 0xFF is nothing to any
+part), then S5_WAIT floats the rest of the dummy clocks, which the count
+still includes (6 = 2 + 4 for the W25Q128JV); a RAM select gets all its
+wait cycles floating as before.
+
+**Test.** The chip testbenches (quad flash and PSRAM models; the flash
+model enters its XIP mode on 0xA5 only) unchanged, the cache suite
+through the quad PSRAM model included; on the Arty the debug port reads
+the image back through quad with no mismatch, hello, test_core and the
+TTLC loopback run quad on both selects, and lisa_monitor runs 3 to 5
+times faster than from single-SPI flash (fpga/README.md).  rc4's GDS
+predates this: the next harden is rc5.
 
 ## Verification (test/, see test/README.md)
 

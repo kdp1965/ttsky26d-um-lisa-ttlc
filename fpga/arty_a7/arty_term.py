@@ -6,7 +6,7 @@ at 0 and hands it the UART, and this terminal stays on the port - the
 port must not be reopened, since opening it resets the design.  Keys go
 straight through (ctrl-] quits, as pyserial's miniterm).  For lisa_monitor
 press Enter for the banner and 'lisa> ', then 'help'.
-usage: [CACHE=0] arty_term.py <file.ihx> [baud]     (on andromeda, the board's host)"""
+usage: [CACHE=0] [QUAD=0] arty_term.py <file.ihx> [baud]     (on andromeda, the board's host)"""
 import os
 import sys
 import time
@@ -38,13 +38,19 @@ d = m.LisaPyDb(); d.iwidth = 16; d.args = A()
 d.openPort("/dev/ttyUSB1", baud)
 print("debugger", d.getVer(), flush=True)
 d.halt(); d.writePC(0); d.setFlashBase(); d.writeReg(0x17, 4); d.writeReg(0x1e, 0x08d3)
-if os.environ.get("CACHE", "1") != "0":
-    for a, v in ((0x1c, 0x04aa), (0x17, 0x0006), (0x18, 0x006a), (0x15, 0x0006), (0x1d, 0x0013)):
+cache = os.environ.get("CACHE", "1") != "0"
+quad = os.environ.get("QUAD", "1") != "0"                    # both selects quad, as the demo board
+d.writeReg(0x17, (0x0007 if cache else 0x0005) if quad else (0x0006 if cache else 0x0004))
+d.writeReg(0x18, int(os.environ.get("DUMMY", "0x66" if quad else "0x6a"), 0))
+if cache or quad:
+    d.writeReg(0x1c, 0x04aa)                                    # SIO2/3 on the Pmod's SD2/SD3
+if cache:
+    for a, v in ((0x15, 0x0006), (0x1d, 0x0013)):
         d.writeReg(a, v)
-    print("data cache on (PSRAM A on CS1)", flush=True)
+    print("data cache on (PSRAM A on CS1), flash %s" % ("quad" if quad else "single SPI"), flush=True)
 else:
     d.writeReg(0x1d, 7)
-    print("data cache off (the 128-byte RAM)", flush=True)
+    print("data cache off (the 128-byte RAM), flash %s" % ("quad" if quad else "single SPI"), flush=True)
 d.writePC(0); d.resume()
 time.sleep(0.1); d.ser.read(256)
 d.ser.write(b"l")                                 # the program has the UART from here

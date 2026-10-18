@@ -89,11 +89,24 @@ test_irq (rev-2 builds) give lisa_sim --rev2's output.  What it takes:
   floating HOLD# held the flash.
 - `CACHE=1 arty_run.py ...` runs with the data cache on the Pmod's PSRAM A
   (CS1): `psram_mod` (0x1c bit 10, from ttgf-um-lisa) with the uio mux at
-  2 (0x1c = 0x4aa), CS1 quad and the flash single SPI (0x17 = 6), 6 dummy
-  clocks for the PSRAM (0x18 = 0x6a), the cache on CS1 (0x15 = 6), on with
-  the 32K map (0x1d = 0x13).  hello, test_core, test_printf, test_irq and
-  the two 32K tests (test_bigframe, test_ptroff) pass that way; with
-  psram_mod off test_bigframe prints nothing.
+  2 (0x1c = 0x4aa), the cache on CS1 (0x15 = 6), on with the 32K map (0x1d
+  = 0x13).  hello, test_core, test_printf, test_irq and the two 32K tests
+  (test_bigframe, test_ptroff) pass that way; with psram_mod off
+  test_bigframe prints nothing.
+- Both selects run quad since 2026-10-18 (Ken: the default, as the chip
+  testbench and the demo board): 0x17 = 7 with the cache, 5 without (bits
+  1:0 quad per select, 3:2 the flash), 0x18 = 0x66 (6 dummy clocks after
+  the EB address on each; the Pmod's flash is a W25Q128JV with its QE bit
+  set).  `QUAD=0` is the single-SPI flash of before (0x17 = 6 / 4, 0x18 =
+  0x6a), `DUMMY=0x..` another count.  Quad reads of the flash needed
+  RESPIN item 21 first: the chip floated the bus during the dummy clocks
+  and the flash took its mode bits from whatever the lines did, which on
+  the Arty put it into continuous-read mode; the engine drives them 1 now
+  (the chip has no pull-ups, so the FPGA has none there either).  Quad on
+  both: the debug port's read-back exact, hello, test_core (8 s end to
+  end) and the TTLC loopback pass, and lisa_monitor's calc runs 3 to 5
+  times faster than from single-SPI flash - a float32 add 810 us (2720), a
+  bf16 add on the FPU 30 us (100), nine of them 190 us (900).
 
 
 ## The TTLC's I/O over Ethernet

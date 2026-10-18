@@ -88,6 +88,7 @@ module lisa_qqspi
    localparam [3:0] S9_SEND_WREN          = 4'd9;
    localparam [3:0] S10_DESELECT_WREN     = 4'd10;
    localparam [3:0] S11_WREN_WAIT         = 4'd11;
+   localparam [3:0] S12_MODE              = 4'd12;   // a quad read's mode bits, driven 1
    
    reg  [3:0]                 sio_out;
    wire [3:0]                 sio_in;
@@ -341,12 +342,34 @@ module lisa_qqspi
               
                is_quad_next = quad_mode_c;
                next_state = custom_spi_cmd ? S7_WAIT_FOR_XFER_DONE: quad_mode_c && read ?
-                              S5_WAIT : S6_XFER;
+                              (is_flash_c ? S12_MODE : S5_WAIT) : S6_XFER;
             end
-          
+
+            // A quad read (EB) continues with the dummy clocks, of which a
+            // flash samples the first two as its mode bits M7-0: M5:4 = 1,0
+            // puts a W25Q (0xA5 a Macronix part) into continuous-read mode,
+            // where every later command is misread.  TT07 floated the bus
+            // here, so the mode byte was whatever the lines did (on the Arty
+            // it failed; the chip has no pull-ups either).  On a flash
+            // select, drive all four lines 1 for those two clocks - 0xFF is
+            // nothing to any part - and float the rest, which the dummy
+            // count includes (6 = 2 + 4 for the W25Q128JV); a RAM has no
+            // mode bits and gets all its wait cycles floating, as before
+            // (tinyQV does the same, driving 0xA to live in continuous-read
+            // mode and skipping the state for its PSRAMs).  RESPIN item 21,
+            // 2026-10-18.
+            S12_MODE: begin
+               spi_buf_next[23:16] = 8'hff;
+               sio_oe_next = 4'b1111;
+               is_quad_next = 1'b1;
+               xfer_cycles_next = 5'd8;
+               next_state = S5_WAIT;
+            end
+
             S5_WAIT: begin
                sio_oe_next = 4'b0000;
-               xfer_cycles_next = {1'h0, dummy_cycles};
+               xfer_cycles_next = !is_flash_c ? {1'h0, dummy_cycles} :
+                                  dummy_cycles > 4'd2 ? {1'h0, dummy_cycles - 4'd2} : 5'd0;
                is_quad_next = 0;
                next_state = S6_XFER;
             end

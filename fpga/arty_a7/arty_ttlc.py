@@ -7,7 +7,7 @@ chains, which ttlc_io.py reaches at 192.168.1.200.  One serial session:
 opening the port resets the design.  SW3 must be down (the inside chains).
 ETH=1 writes the image over Ethernet (ttlc_io.py's flash_write) and uses
 the debug port only to set up and start the TTLC.
-usage: [ETH=1] arty_ttlc.py <program.hex> [baud]   (readmemh bytes, as the testbench's flash image; any baud rate, 460800 as the demo board)"""
+usage: [ETH=1] [QUAD=0] arty_ttlc.py <program.hex> [baud]   (readmemh bytes, as the testbench's flash image; any baud rate, 460800 as the demo board)"""
 import os
 import sys
 import time
@@ -54,7 +54,9 @@ for w in opcodes:
 print('%d words at 0x10000, read back: %d mismatches' % (len(opcodes), bad), flush=True)
 # the TTLC: its base 0x10000, CS0, uo_out to its chains (0x1b), the scan's
 # shift clock from 0x1c bits 9:8 (0: clk/2); the flash stays single SPI
-for a, v in ((0x1f, 0x0100), (0x15, 0x0004), (0x1b, 0x3cff), (0x1c, 0x0000)):
+quad = os.environ.get('QUAD', '1') != '0'                    # the flash quad, as the testbench runs the TTLC
+d.writeReg(0x17, 0x0005 if quad else 0x0004); d.writeReg(0x18, int(os.environ.get('DUMMY', '0x66' if quad else '0x6a'), 0))
+for a, v in ((0x1f, 0x0100), (0x15, 0x0004), (0x1b, 0x3cff), (0x1c, 0x04aa if quad else 0x0000)):
     d.writeReg(a, v)
 d.writeReg(0x40, 1)                             # run
 time.sleep(0.05)

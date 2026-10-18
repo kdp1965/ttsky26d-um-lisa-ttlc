@@ -5,10 +5,15 @@ the port resets the design (the Arty's DTR-to-reset jumper).
 The data cache is off (0x1d = 7: the 128-byte RAM as scratchpad) unless
 CACHE=1 in the environment: then it runs through the Tiny Tapeout QSPI
 Pmod's PSRAM A on CS1 - psram_mod with the uio mux at 2 (0x1c = 0x4aa:
-SIO2/3 on uio[4:5], CE1 on uio[6], uio[7] high), CS1 quad (0x17 = 6, the
-flash on CS0 single SPI), 6 dummy clocks after its EB read (0x18 = 0x6a),
-the cache on CS1 (0x15 = 6), invalidated and on with the 32K map (0x1d =
-0x13).
+SIO2/3 on uio[4:5], CE1 on uio[6], uio[7] high), the cache on CS1 (0x15 =
+6), invalidated and on with the 32K map (0x1d = 0x13).
+Both selects run quad (0x17: bits 1:0 quad per select, 3:2 the flash:
+0x7, or 0x5 without the cache) with 6 dummy clocks after the EB address on
+each (0x18 = 0x66, the Commander's and the testbench's values; the flash,
+a W25Q128JV, has its QE bit set), the uio mux at 2 with psram_mod (0x1c =
+0x4aa) for SIO2/3 on the Pmod's pins, since 2026-10-18 (Ken: quad for
+both as the default); QUAD=0 is single SPI on the flash as before (0x17 =
+6 / 4, 0x18 = 0x6a), DUMMY=0x.. another dummy setting.
 ETH=1 loads the flash over Ethernet instead (ttlc_io.py's flash_write:
 the bridge takes the QSPI Pmod's bus with the chip in reset, programs and
 verifies the image in well under a second, gives the bus back) and uses
@@ -17,7 +22,7 @@ big image.
 SEND='text' is written to the program after it has the UART, a line at
 a time with a pause between (escapes as in Python: SEND='\\rhelp' wakes
 lisa_monitor and asks for its help; arty_term.py is the live terminal).
-usage: [CACHE=1] [ETH=1] [SEND=..] arty_run.py <file.ihx> [seconds] [baud]   (any rate; 460800 as the demo board)"""
+usage: [CACHE=1] [ETH=1] [QUAD=0] [DUMMY=0x66] [SEND=..] arty_run.py <file.ihx> [seconds] [baud]   (any rate; 460800 as the demo board)"""
 import os, sys, time
 img = sys.argv[1]
 secs = float(sys.argv[2]) if len(sys.argv) > 2 else 5
@@ -41,21 +46,26 @@ if eth:
     d.halt(); d.writePC(0); d.setFlashBase(); d.writeReg(0x17, 4); d.writeReg(0x1e, 0x08d3)
 else:
     d.loadFlash()
+cache = os.environ.get("CACHE") == "1"
+quad = os.environ.get("QUAD", "1") != "0"
+cs_cfg = (0x0007 if cache else 0x0005) if quad else (0x0006 if cache else 0x0004)
+dummy = int(os.environ.get("DUMMY", "0x66" if quad else "0x6a"), 0)
+if cache or quad:                                # psram_mod + the uio mux at 2: SIO2/3 on uio[4:5], the Pmod's SD2/SD3
+    d.writeReg(0x1c, 0x04aa)
+d.writeReg(0x17, cs_cfg); d.writeReg(0x18, dummy)
+print("flash %s, 0x17 = %x, 0x18 = %02x" % ("quad" if quad else "single SPI", cs_cfg, dummy), flush=True)
 d.writeReg(0x10, 0)
 bad = 0
-for i, w in enumerate(d.opcodes[:64]):
+for i, w in enumerate(d.opcodes[:64]):          # read back through the selected mode: a check of it
     d.ser.write(b"r20\n"); r = d.ser.read_until(b"\r").strip().decode()
     if r != w: bad += 1
 print("words %d, first 64 read back: %d mismatches" % (len(d.opcodes), bad), flush=True)
-cache = os.environ.get("CACHE") == "1"
 if cache:
-    for a, v in ((0x1c, 0x04aa), (0x17, 0x0006), (0x18, 0x006a), (0x15, 0x0006), (0x1d, 0x0013)):
+    for a, v in ((0x15, 0x0006), (0x1d, 0x0013)):
         d.writeReg(a, v)
-    for a in (0x1c, 0x17, 0x18, 0x15):
-        d.ser.write(b"r%02x\n" % a); print("reg %02x = %s" % (a, d.ser.read_until(b"\r").strip().decode()))
 else:
     d.writeReg(0x1d, 7)
-print("data cache", "on (PSRAM A on CS1)" if cache else "off", flush=True)
+print("data cache", "on (PSRAM A on CS1, quad)" if cache else "off", flush=True)
 d.writePC(0); d.resume()
 time.sleep(0.1); d.ser.read(256)
 d.ser.write(b"l")
