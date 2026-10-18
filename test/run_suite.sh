@@ -15,8 +15,11 @@ case "$*" in *REV2=1*) sfx=_rev2; set -- $(printf '%s\n' "$@" | grep -v '^REV2='
 SDCC_TEST=${SDCC_TEST:-$(cd "$(dirname "$0")/../../lisa-tools/sdcc_test" && pwd)}
 SELFCHECK="test_core test_negate test_union test_varargs test_digits test_signed test_strs test_regress test_pfu test_loop test_irq test_irq2 test_divsh test_divl test_bf16 test_bf16f test_rot test_index test_vshift"
 BIGDATA="test_bigframe test_ptroff"
+# rev 2 only: RMW on a miss with evictions 0x80 apart (this cache's 8 lines;
+# test_cachermw's 0x40 never misses here)
+REV2CACHE="test_cachermw8"
 CACHE_TESTS="test_cacherm test_cachermw test_cachepush test_cachewb test_cacheseq test_cacheloop test_cacheperiph"
-case "$*" in *CACHE=1*) list="$(test -n "$sfx" || echo $CACHE_TESTS) $BIGDATA";; *) list="$SELFCHECK";; esac
+case "$*" in *CACHE=1*) list="$(test -n "$sfx" && echo $REV2CACHE || echo $CACHE_TESTS) $BIGDATA";; *) list="$SELFCHECK";; esac
 dir=$(dirname "$0"); [ "$where" = core ] && dir="$dir/core"
 pass=0; fail=0
 for t in $list; do

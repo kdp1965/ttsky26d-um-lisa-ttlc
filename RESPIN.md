@@ -13,7 +13,7 @@ the list for this revision: what the silicon does, where it is in the RTL
 | #  | Issue | Where | Status |
 |----|-------|-------|--------|
 | 1  | Data cache aliases X and X ^ 0x4000: 16K of RAM reachable, not 32K | `data_cache8.v` 213 | fixed: cache14 |
-| 2  | Read-modify-write (`inx`/`dcx`/`swap`/`swapi`/`shl16`/`shr16`) on a cache miss uses stale data | `data_cache8.v` 223, `lisa_core.v` 681-684 | fixed: test_cachermw (write-first RAM32) |
+| 2  | Read-modify-write (`inx`/`dcx`/`swap`/`swapi`/`shl16`/`shr16`) on a cache miss uses stale data | `data_cache8.v` 223, `lisa_core.v` 681-684 | fixed: test_cachermw8 (cache on: testbench, FPGA; fails with the fix removed) |
 | 3  | `swap n(sp)` addresses sp + n - 512 | `lisa_core.v` 709, 630 | fixed: swap |
 | 4  | BF16 `fadd`/`fsub` wrong on a significand carry-out and on a rounding carry | `fops.v` 145-166, 193-194 | fixed: test/fops |
 | 5  | `ret #imm8` loads A from the wrong word | `lisa_core.v` 757, 527 | fixed: reti |
@@ -63,6 +63,22 @@ Fix: hold `d_ready` one more cycle after a fill (so the first hit cycle has
 the RAM data), or register the read data for the RMW ops before the write.
 Verify: cache test with an RMW on a cold line, and `test_cachermw` (its
 `cmp`-before-`inx` workaround removed in a build) through the RAM model.
+
+**Fixed** (0aff1c7): an RMW raises `d_we` only once its read is done
+(`lisa_core.v`, `d_ok && cond[0] && (... op_inx_r ...)`). **Tested**
+(2026-10-17) with `test_cachermw8` (lisa-tools sdcc_test, rev-2 build):
+test_cachermw evicts with an address 0x40 away, which is the same line in
+TT07's 4-line cache but another line in this 8-line one (index d_addr[6:4]),
+so it never missed here and did not test the fix; test_cachermw8 evicts
+with 0x80 (and puts the sp cases' byte 0x80 above a stack at 0x3fff). With
+the data cache on it passes on the chip testbench (run_suite.sh chip
+CACHE=1 REV2=1) and on the FPGA through the QSPI Pmod's PSRAM; with
+`d_ok &&` removed from that condition it fails as TT07 did (every RMW
+result 0x02, ix_rd_first alone right). The compiler's TT07 workaround (a
+`cmp` touch before each inx / dcx / swap of a stack or IX byte) is only
+under `--tt07-cache`, which `--rev2` refuses: no rev-2 build carries it (0
+of 940 RMW ops in the rev-2 tests, 0 of 366 in lib/lisa-rev2; the
+hand-written memcpy.s / memset.s touches are `.if TT07_CACHE`, 0 there).
 
 ## 3. `swap n(sp)`
 
