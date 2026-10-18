@@ -885,7 +885,8 @@ at each.  On the Arty at 50 MHz: hello with the cache on at 115200,
   redone from Magic.StreamOut - a resume starts from the run's last
   state, which already carried the art, so a resume from Project.ChipArt
   had stacked a second art cell on the first (merge_art prunes an old
-  art cell now).  Not promoted: gds/ is rc3's until Ken says so.
+  art cell now).  The precheck passes on the slot-free GDS as well.
+  Not promoted: gds/ is rc3's until Ken says so.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
