@@ -103,10 +103,14 @@ test_irq (rev-2 builds) give lisa_sim --rev2's output.  What it takes:
   and the flash took its mode bits from whatever the lines did, which on
   the Arty put it into continuous-read mode; the engine drives them 1 now
   (the chip has no pull-ups, so the FPGA has none there either).  Quad on
-  both: the debug port's read-back exact, hello, test_core (8 s end to
-  end) and the TTLC loopback pass, and lisa_monitor's calc runs 3 to 5
-  times faster than from single-SPI flash - a float32 add 810 us (2720), a
-  bf16 add on the FPU 30 us (100), nine of them 190 us (900).
+  both: the debug port's read-back exact, hello, test_core and the TTLC
+  loopback pass, and lisa_monitor's calc runs 3 to 5 times faster than
+  from single-SPI flash - a float32 add 810 us (2720), a bf16 add on the
+  FPU 30 us (100), nine of them 190 us (900).  test_core itself takes
+  0.05 s from the UART hand-over to ALL PASSED (0.10 single SPI; the
+  serial reads are 0.05 s grained): a run's seconds are the load, the
+  serial setup and the capture window, which now ends at the first of
+  STOP's markers (ALL PASSED / SOME FAILED) and prints the program's time.
 
 
 ## The TTLC's I/O over Ethernet

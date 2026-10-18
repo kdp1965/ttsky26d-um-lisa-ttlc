@@ -22,7 +22,10 @@ big image.
 SEND='text' is written to the program after it has the UART, a line at
 a time with a pause between (escapes as in Python: SEND='\\rhelp' wakes
 lisa_monitor and asks for its help; arty_term.py is the live terminal).
-usage: [CACHE=1] [ETH=1] [QUAD=0] [DUMMY=0x66] [SEND=..] arty_run.py <file.ihx> [seconds] [baud]   (any rate; 460800 as the demo board)"""
+The capture ends at the first of STOP's markers ("ALL PASSED|SOME FAILED"
+unless set; STOP= for none) or after the seconds, and the program's time
+from the UART hand-over is printed.
+usage: [CACHE=1] [ETH=1] [QUAD=0] [DUMMY=0x66] [SEND=..] [STOP=..] arty_run.py <file.ihx> [seconds] [baud]   (any rate; 460800 as the demo board)"""
 import os, sys, time
 img = sys.argv[1]
 secs = float(sys.argv[2]) if len(sys.argv) > 2 else 5
@@ -78,6 +81,11 @@ if os.environ.get("SEND"):
             d.ser.write(bytes([c])); time.sleep(0.005)   # RX FIFO is slower to drain than 460800 baud
     time.sleep(0.3)
 t = time.time(); out = b""
+stop = [m.encode() for m in os.environ.get("STOP", "ALL PASSED|SOME FAILED").split("|") if m]
 while time.time() - t < secs:
     out += d.ser.read(256)
+    if any(m in out for m in stop):
+        break
+ran = time.time() - t
 sys.stdout.write(out.decode(errors="replace")); print()
+print("program: %.2f s from the UART hand-over%s" % (ran, " to " + next(m.decode() for m in stop if m in out) if any(m in out for m in stop) else " (window)"), flush=True)
