@@ -182,7 +182,12 @@ covers, programs it page by page, reads it back and releases the bus;
 `load_image(path)` gives the bytes (Intel HEX with gaps as zeros, like
 the debug loader).  Open the debug port after the Ethernet write: opening
 it resets the design, and the flashing resets the chip too (the debug
-registers are set up afresh by the scripts).  2026-10-17: `test/progs/ttlc/ttlc_loopback.hex` copies all
+registers are set up afresh by the scripts).  On the board (2026-10-18):
+hello's 860 bytes and test_core's 4264 bytes each erase, program and
+verify in 0.25 s, the debug port reads them back with no mismatch, and
+test_core's whole run is 10 s where the UART load alone took two minutes;
+the TTLC loopback passes loaded the same way (2.3 s end to end).  The
+Pmod's flash answers EF 70 18 (Winbond, 128 Mbit).  2026-10-17: `test/progs/ttlc/ttlc_loopback.hex` copies all
 seven patterns from the inputs to the outputs on the board (the first TTLC
 run outside simulation, the 12-bit slot format fetched from the flash),
 `watch` shows an event per change with the board's timestamps, ping
