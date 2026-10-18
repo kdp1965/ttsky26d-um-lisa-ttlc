@@ -806,6 +806,23 @@ at each.  On the Arty at 50 MHz: hello with the cache on at 115200,
   the anchor table (placements/macro-stream-fo16-hold07_final_cells.json;
   ao5's kept) - rc2, the release candidate for the streaming fetch and the
   stack convention (item 16).
+* rc3 (2026-10-17, night; runs/macro-rc3 on 37500a3: items 17-20 and
+  lisa.sdc's `win_data` on top of rc2, the same recipe - fanout 16, hold
+  margin 0.07, rc2's placement as the anchor table): hardened clean on the
+  first run.  Synthesis 20063 cells / 150.2K um2 (rc2 19401 / 144.6K,
+  +3.9%: item 20's autobaud and generator twice over, the debug UART's and
+  LISA's, two thirds of it, the TTLC slot format most of the rest - a
+  hierarchical Yosys stat of both trees, since the flattened netlist does
+  not say).  The anchor table matched 5354 cells (rc2 replayed 6644 of
+  rc1's; 317 registers are new or renamed).  Placed at 65.8% (64.2%),
+  routed in 54 iterations (rc2 13; the global route's overflow 181
+  against 68, met2 at 79.6% against 76.9%), 913K um of wire (889K), Magic
+  DRC / LVS / antenna 0, both power nets connected, hold +0.078 ns at the
+  fast corner (0.077), setup +5.4 ns nominal and -4.7 / -5.7 at the ss
+  corners (rc2 -5.8 / -7.2: the window-data exception), 525 hold buffers
+  (576), max-slew 1859 (1868), max-fanout 35 (35), max-cap 6 (3).  Not
+  promoted: gds/, lef/, pnl/ and macro.json's anchor table are still
+  rc2's until Ken says so, then the gds_custom.yaml precheck.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
