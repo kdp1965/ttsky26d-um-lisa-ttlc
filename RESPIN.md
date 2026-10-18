@@ -524,8 +524,11 @@ closes at 50 MHz, setup +0.25 ns).  Data banks followed (sdcc-lisa
 85513a3): SDCC named address spaces with a switch function writing the
 data bank, the linker checking every bank area's placement and that the
 common code and ordinary data stay in the lower halves;
-sdcc_test/test_dbank passes on lisa_sim and this testbench.  Not done: the
-debugger tools' view of banked code, a TTLC program convention above the
+sdcc_test/test_dbank passes on lisa_sim and this testbench.  The debugger
+tools followed (lisa-tools 769bb03): lisa_sim, lisa_ide and lisa_pydb work
+in physical code addresses, read the banks through the debug port (data
+address 0x8015-0x8017), pass over a breakpoint hit in another bank and
+backtrace through ___sdcc_bcall - checked on the Arty.  Not done: a TTLC program convention above the
 code banks (arty_ttlc.py puts it at byte 0x10000 = code bank 2).
 
 ## 23. A transmit pops the receive FIFO
