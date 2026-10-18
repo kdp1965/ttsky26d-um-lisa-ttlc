@@ -189,13 +189,16 @@ def load_image(path):
     data = {}
     text = open(path, 'rb').read()
     if text.startswith(b':'):
+        upper = 0                       # type 02 / 04: the address above 64 KB (code banks)
         for line in text.decode().split():
             n, a, t = int(line[1:3], 16), int(line[3:7], 16), int(line[7:9], 16)
             if t == 1:
                 break
+            if t in (2, 4):
+                upper = int(line[9:13], 16) << (16 if t == 4 else 4)
             if t == 0:
                 for i in range(n):
-                    data[a + i] = int(line[9 + 2 * i:11 + 2 * i], 16)
+                    data[upper + a + i] = int(line[9 + 2 * i:11 + 2 * i], 16)
     elif text.lstrip().startswith(b'@') or all(c in b'0123456789abcdefABCDEF@ \t\r\n' for c in text[:64]):
         a = 0
         for tok in text.decode().split():

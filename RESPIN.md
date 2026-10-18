@@ -33,7 +33,7 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 19 | TTLC program format: 12-bit slots, four to three words; the old `jmp` never worked | `ttlc_fetch.v`, `tt_um_lisa.v`, `debug_regs.v` | done: test_ttlc, test_ttlc_jump, test_ttlc_debug |
 | 20 | The autobaud and BRG count in 32-clock steps: only rates with a bit a multiple of 32 clocks | `debug_autobaud.v`, `debug_brg.v` | done: test_autobaud; the FPGA at 115200 .. 921600 |
 | 21 | Quad flash reads float the mode bits: continuous-read mode by accident | `lisa_qqspi.v` S12_MODE | done: the FPGA quad on both selects |
-| 22 | Bank registers (an extension): the upper 16K of the code and of the data space a window on 16 banks, 512 KB / 256 KB | `lisa_periph.v` 0x15-0x17, `tt_um_lisa.v`, `inst_stream.v`, `data_cache8.v`, `lisa_core.v` d_sp | done: test/progs/bank.c (make BANK=1); lisa_sim and sdcc to follow |
+| 22 | Bank registers (an extension): the upper 16K of the code and of the data space a window on 16 banks, 512 KB / 256 KB | `lisa_periph.v` 0x15-0x17, `tt_um_lisa.v`, `inst_stream.v`, `data_cache8.v`, `lisa_core.v` d_sp | done: test/progs/bank.c (make BANK=1), lisa_sim --rev2, sdcc __banked (sdcc_test/test_bank on the testbench and the Arty) |
 
 Status: open / fixed (the test that shows it, in test/: a program of test/progs, a cocotb test of test/core or the fops bench).
 
@@ -498,10 +498,18 @@ width, calls into the three code banks, one address in three data banks
 through the cache, bank 0 as the lower half, evictions between banks 2 and
 3, the stack in bank 2 (pushed there, read back through the data bank, bank
 1 untouched), and the write right before the access it applies to.  The
-default suite and the core testbench unchanged.  To follow: `lisa_sim
---rev2` (the registers, the 18-bit spaces), `sdcc -mlisa` (`__banked`
-functions through per-bank trampolines, 3-byte banked function pointers,
-the linker's `.bank`), the FPGA build, the debugger tools.
+default suite and the core testbench unchanged.  `lisa_sim --rev2` models
+the banks (code_pa / data_pa, 18-bit memories; mem / dis through the
+bank); `sdcc -mlisa` has `__banked` functions and `#pragma bank n` through
+one common trampoline, `___sdcc_bcall` (the bank byte pushed by the caller,
+the callee's frame 3 bytes deeper, 3-byte banked function pointers, the
+linker mapping every code word >= 0x4000 into the window; README-lisa.md
+"Code banks"); `lisa-tools/sdcc_test/test_bank` (banks 2 and 3) passes on
+lisa_sim, on this testbench and on the Arty (the bitstream with the banks
+closes at 50 MHz, setup +0.25 ns).  Not done: far data pointers in the
+compiler, a linker check that the common code stays below word 0x4000, the
+debugger tools' view of banked code, a TTLC program convention above the
+code banks (arty_ttlc.py puts it at byte 0x10000 = code bank 2).
 
 ## Verification (test/, see test/README.md)
 

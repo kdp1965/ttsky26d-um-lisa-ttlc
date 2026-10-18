@@ -220,3 +220,16 @@ run outside simulation, the 12-bit slot format fetched from the flash),
 answers in 0.1 ms from the wired host, a UDP round trip is 2.5 ms from
 the Mac over wifi.  At 50 MHz (2026-10-17, the exceptions above) the
 same checks pass, hello and test_core with the cache on included.
+
+## Code banks (RESPIN 22)
+
+A program with `__banked` functions (`sdcc -mlisa --rev2`, `#pragma bank n`,
+linked `-Wl-bBANKn=<n * 0x8000>`: README-lisa.md "Code banks") has code at
+flash byte n * 0x8000 and up, as Intel HEX type-04 records; `ttlc_io.py`'s
+`load_image`, `lisa_pydb` and `arty_run.py` take them, so `ETH=1
+arty_run.py test_bank_rev2.ihx` runs as any other program (14 of 14 on the
+board, 2026-10-18, the bitstream with the bank registers at 50 MHz: setup
+slack 0.246 ns).  Mind the TTLC convention of `arty_ttlc.py` / the testbench:
+a TTLC program at byte 0x10000 sits where code bank 2 lives, so a banked LISA
+program and a TTLC program in one flash need the TTLC base register moved up
+(0x1f, in 256-byte units; 0x80000 is above all 16 code banks).
