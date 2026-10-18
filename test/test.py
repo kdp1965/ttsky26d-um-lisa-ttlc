@@ -178,7 +178,7 @@ async def test_ttlc_debug(dut):
     assert int(dut.ttlc_out.value) == 0x0f0f0f0f0f0f, 'the loopback did not resume'
 
 
-@cocotb.test(skip=plusarg('DEFAULT') is not None or plusarg('TTLC') is not None)
+@cocotb.test(skip=plusarg('DEFAULT') is not None or plusarg('TTLC') is not None or plusarg('BANK') is not None)
 async def test_program(dut):
     """+FIRMWARE=<hex>: run it (the data cache on with +CACHE) and expect ALL PASSED;
     +STATS counts the fetch clocks"""
@@ -202,6 +202,18 @@ async def test_program(dut):
                           % (clocks, insts, clocks / max(1, insts), wait, 100.0 * wait / max(1, clocks),
                              xfers, words, words / max(1, xfers)))
     assert 'ALL PASSED' in text, 'the program did not pass: %r' % text[-200:]
+
+
+@cocotb.test(skip=plusarg('BANK') is None)
+async def test_bank(dut):
+    """+BANK (make BANK=1): progs/bank_test.hex - the bank registers (RESPIN 22):
+    calls into code banks 1-3 at word 0x4000, one address in three data banks
+    through the cache, bank 0 as the lower half, evictions between banks, the
+    stack in bank 2; the data cache on (the banks are PSRAM)"""
+    lisa = await start(dut)
+    await lisa.setup(cache=True, quad=plusarg('SPI') is None)
+    text = await lisa.run(timeout=int(plusarg('TIMEOUT', 2_000_000)))
+    assert 'ALL PASSED' in text, 'the bank test did not pass: %r' % text[-300:]
 
 
 @cocotb.test(skip=plusarg('TTLCTRACE') is None)

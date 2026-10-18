@@ -54,7 +54,7 @@ module inst_stream
    input  wire          rst_n,
 
    // The instruction bus
-   input  wire [14:0]   core_i_addr,
+   input  wire [17:0]   core_i_addr,      // The physical word: {bank, PC[13:0]} (tt_um_lisa.v)
    output wire [15:0]   core_inst,
    /* verilator lint_off UNUSEDSIGNAL */
    input  wire [15:0]   core_inst_i,      // The TT07 write path: the debugger writes the
@@ -64,7 +64,7 @@ module inst_stream
    output wire          core_i_ready,
 
    // Interface to the QSPI controller
-   output wire [14:0]   qspi_addr,           // The word the burst starts at
+   output wire [17:0]   qspi_addr,           // The word the burst starts at
    input  wire [15:0]   qspi_rdata,          // Read data
    output wire [15:0]   qspi_wdata,          // Data to write (never)
    output wire [1:0]    qspi_wstrb,          // Which bytes to write (none)
@@ -91,13 +91,13 @@ module inst_stream
    reg   [1:0]          state;
    reg   [127:0]        window;              // Word i at [i*16 +: 16]
    reg   [3:0]          count;               // Words in the window (0..8)
-   reg   [14:0]         head_addr;           // The address of word 0
+   reg   [17:0]         head_addr;           // The address of word 0
    reg   [2:0]          cur_lo;              // The word the core last took (its low bits: it is within the window)
    reg                  have_pos;            // head_addr + count is where the burst goes on
    reg                  pushed;              // This ready pulse's word has been taken
    reg                  abort_req;           // End the burst as soon as its first word is in
 
-   wire  [14:0]         offset;              // The core's word, counted from word 0
+   wire  [17:0]         offset;              // The core's word, counted from word 0
    wire                 near;                // ... it is in the window or just past it
    wire                 hit;
    wire                 waits;               // The burst will deliver it: a fetch to wait on
@@ -112,13 +112,13 @@ module inst_stream
    assign qspi_wdata    = core_inst_i;
    assign qspi_wstrb    = 2'b00;
    assign qspi_xfer_len = 4'h0;
-   assign qspi_addr     = head_addr + {11'h0, count};
+   assign qspi_addr     = head_addr + {14'h0, count};
 
    // ==========================================================================
    // The core side: a hit is a word the window holds
    // ==========================================================================
    assign offset       = core_i_addr - head_addr;
-   assign near         = (offset[14:4] == 11'h0);
+   assign near         = (offset[17:4] == 14'h0);
    assign hit          = near && (offset[3:0] < count);
    assign core_i_ready = hit & core_i_fetch;
    assign core_inst    = window[offset[2:0]*16 +: 16];
@@ -148,7 +148,7 @@ module inst_stream
       begin
          window    <= 128'h0;
          count     <= 4'd0;
-         head_addr <= 15'h0;
+         head_addr <= 18'h0;
          cur_lo    <= 3'h0;
          have_pos  <= 1'b0;
          pushed    <= 1'b0;
@@ -171,7 +171,7 @@ module inst_stream
             if (drop)
             begin
                window    <= {qspi_rdata, window[127:16]};
-               head_addr <= head_addr + 15'h1;
+               head_addr <= head_addr + 18'h1;
             end
             else if (push)
             begin

@@ -6,9 +6,9 @@ SDCC      ?= ../../../lisa-tools/sdcc-lisa/build/bin/sdcc
 SDCC_TEST ?= ../../../lisa-tools/sdcc_test
 CFLAGS    ?= -mlisa --rev2 --debug -I$(SDCC_TEST)
 
-PROGS = hello alu2 reti div16 cache14 dbg swap
+PROGS = hello alu2 reti div16 cache14 dbg swap bank
 
-all: $(PROGS:%=%.hex) ttlc_test.hex ttlc_jump_test.hex
+all: $(PROGS:%=%.hex) ttlc_test.hex ttlc_jump_test.hex bank_test.hex
 
 # the TTLC programs (ttlc/*.asm, assembled by ttlc/mc14500_as.py into the
 # slot format of ttlc_fetch.v) at byte 0x10000 of the flash, behind hello:
@@ -29,6 +29,12 @@ ttlc_jump_test.hex: hello.hex ttlc/ttlc_jump.hex ../hexcat.py
 # the cache test uses the 32K data space: stack at the top, data low (TT07's
 # --tt07-cache laid that out with its workarounds; --rev2 excludes it)
 cache14.ihx: CFLAGS += --stack-loc 0x7fff
+bank.ihx: CFLAGS += --stack-loc 0x7fff
+
+# the bank test (RESPIN 22): bank.c at 0 and `ldi #bank; ret` at word 0x4000
+# of code banks 1, 2, 3 (flash bytes 0x8000, 0x10000, 0x18000: bank_stubs.hex)
+bank_test.hex: bank.hex bank_stubs.hex ../hexcat.py
+	python3 ../hexcat.py $@ 0 bank.hex 0 bank_stubs.hex
 
 %.hex: %.ihx ../ihx2hex.py
 	python3 ../ihx2hex.py $< $@

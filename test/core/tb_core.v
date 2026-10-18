@@ -127,6 +127,7 @@ module tb_core;
       .d_o          ( d_o_c         ),
       .d_addr       ( d_addr_c      ),
       .d_periph     ( d_periph_c    ),
+      .d_sp         (               ),
       .d_we         ( d_we_c        ),
       .d_rd         ( d_rd_c        ),
       .d_valid      ( d_valid_c     ),
@@ -197,6 +198,7 @@ module tb_core;
       .rst_n                     ( rst_n                     ),
       .disabled                  ( cache_disabled            ),
       .d_addr                    ( d_addr                    ),
+      .d_bank                    ( {3'b0, d_addr[14]} ),   // bank 1 above 0x4000: the TT07 layout
       .d_i                       ( d_o                       ),
       .d_o                       ( d_i_cache                 ),
       .d_valid                   ( d_valid                   ),

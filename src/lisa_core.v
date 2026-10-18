@@ -190,6 +190,7 @@ module lisa_core
    (* keep = "true" *)
    output wire [D_BITS-1:0]   d_addr,
    output wire                d_periph,
+   output wire                d_sp,       // the address is SP-relative: the stack bank applies above 0x4000 (tt_um_lisa.v)
    (* keep = "true" *)
    output wire                d_we,
    (* keep = "true" *)
@@ -758,6 +759,10 @@ module lisa_core
    // debugger's last data byte to RAM[IX] and lost the store
    assign d_addr = dbg_d_access ? dbg_d_addr : (stop && !d_we_r) ? ix : d_addr_imm ? {{(D_BITS-D_STCK){1'b0}}, inst[D_STCK-1:0]} : (sp_sum_op) ? sp_sum :
                         inst[9] ? sp_addr : ix_addr;
+   // which bank register applies above 0x4000 (tt_um_lisa.v, RESPIN 22): the
+   // stack bank to an SP-relative address, the data bank to IX-relative and
+   // debugger ones; a direct [abs9] address is below 512
+   assign d_sp = !dbg_d_access && !(stop && !d_we_r) && !d_addr_imm && (sp_sum_op || inst[9]);
    assign acc_mul = acc * d_i;
    assign acc_muls = $signed(acc) * $signed(d_i);
 

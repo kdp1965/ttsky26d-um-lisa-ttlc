@@ -38,6 +38,14 @@ suite, the LISA Commander and lisa_ide; this revision fixes what was found
   high), its breakpoints halt before their instruction, its step bit runs
   one instruction, and a stepped `jmp`/`rtn`/`nopf` keeps its PC change.
 
+* Bank registers: the upper 16K of the code space and of the data space are
+  windows on one of 16 banks, chosen by three 4-bit peripheral registers -
+  0x15 the code bank (fetches above word 0x4000), 0x16 the data bank
+  (IX-relative accesses above 0x4000), 0x17 the stack bank (SP-relative
+  ones).  All reset to 1, the TT07 layout; below 0x4000 is bank 0, common.
+  Up to 512 KB of code and 256 KB of data through the QSPI Pmod (`RESPIN.md`
+  item 22, `lisa_isa.md` "Bank registers").
+
 ## The TTLC program format (revision 2)
 
 A TTLC instruction is 12 bits, {address[7:0], opcode[3:0]} (the I/O space

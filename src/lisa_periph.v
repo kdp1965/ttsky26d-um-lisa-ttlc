@@ -66,6 +66,15 @@ Address Map:
    ====
    0x10:       TX/RX register
    0x11:       Status register
+   0x12:       UART2 TX/RX register
+   0x13:       UART2 status
+   0x14:       UART interrupt enables
+
+   BANKS (revision 2, RESPIN 22)
+   =============================
+   0x15:       Code bank  [3:0]: fetches above word 0x4000             (reset 1)
+   0x16:       Data bank  [3:0]: IX-relative and debugger accesses above 0x4000 (reset 1)
+   0x17:       Stack bank [3:0]: SP-relative accesses above 0x4000     (reset 1)
 
    TIMER2
    =====
@@ -112,6 +121,11 @@ module lisa_periph
    output reg  [3:0]    portc_dir,
    input  wire [7:0]    portd_in,
    output reg  [7:0]    porte,
+
+   // The bank registers (RESPIN 22)
+   output reg  [3:0]    code_bank,
+   output reg  [3:0]    data_bank,
+   output reg  [3:0]    stack_bank,
 
    output wire [7:0]    int_o,
    output reg  [7:0]    int_en,
@@ -205,6 +219,9 @@ module lisa_periph
          portc        <= 4'h00;
          porte        <= 8'h00;
          portc_dir    <= 4'h0;
+         code_bank    <= 4'h1;
+         data_bank    <= 4'h1;
+         stack_bank   <= 4'h1;
          ms_prediv    <= 16'd29494;
          ms_count     <= 16'h0;
          ms_timer     <= 16'h0;
@@ -265,6 +282,17 @@ module lisa_periph
          // Latch porte
          if (d_periph && d_we && d_addr == 7'h05)
             porte <= d_i;
+
+         // The bank registers: code (fetches above word 0x4000), data
+         // (IX-relative and debugger accesses above 0x4000) and stack
+         // (SP-relative accesses above 0x4000).  1 = the upper half as the
+         // TT07 chip had it, so an image that never writes them runs as before
+         if (d_periph && d_we && d_addr == 7'h15)
+            code_bank <= d_i[3:0];
+         if (d_periph && d_we && d_addr == 7'h16)
+            data_bank <= d_i[3:0];
+         if (d_periph && d_we && d_addr == 7'h17)
+            stack_bank <= d_i[3:0];
 
          // Latch porta_int0
          if (d_periph && d_we && d_addr == 7'h06)
@@ -528,6 +556,11 @@ module lisa_periph
 `else
       7'h14:   d_o_r = {6'h0, uart_tx_ie, uart_rx_ie};
 `endif
+
+      // Bank registers
+      7'h15:   d_o_r = {4'h0, code_bank};
+      7'h16:   d_o_r = {4'h0, data_bank};
+      7'h17:   d_o_r = {4'h0, stack_bank};
 
       // Timer2 readback
 `ifdef TIMER2

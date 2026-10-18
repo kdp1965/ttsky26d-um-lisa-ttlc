@@ -33,6 +33,7 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 19 | TTLC program format: 12-bit slots, four to three words; the old `jmp` never worked | `ttlc_fetch.v`, `tt_um_lisa.v`, `debug_regs.v` | done: test_ttlc, test_ttlc_jump, test_ttlc_debug |
 | 20 | The autobaud and BRG count in 32-clock steps: only rates with a bit a multiple of 32 clocks | `debug_autobaud.v`, `debug_brg.v` | done: test_autobaud; the FPGA at 115200 .. 921600 |
 | 21 | Quad flash reads float the mode bits: continuous-read mode by accident | `lisa_qqspi.v` S12_MODE | done: the FPGA quad on both selects |
+| 22 | Bank registers (an extension): the upper 16K of the code and of the data space a window on 16 banks, 512 KB / 256 KB | `lisa_periph.v` 0x15-0x17, `tt_um_lisa.v`, `inst_stream.v`, `data_cache8.v`, `lisa_core.v` d_sp | done: test/progs/bank.c (make BANK=1); lisa_sim and sdcc to follow |
 
 Status: open / fixed (the test that shows it, in test/: a program of test/progs, a cocotb test of test/core or the fops bench).
 
@@ -453,6 +454,54 @@ the image back through quad with no mismatch, hello, test_core and the
 TTLC loopback run quad on both selects, and lisa_monitor runs 3 to 5
 times faster than from single-SPI flash (fpga/README.md).  rc4's GDS
 predates this: the next harden is rc5.
+
+## 22. Bank registers: 512 KB of code, 256 KB of data
+
+**Why.** Not a silicon issue: an extension.  Ken (2026-10-18) wanted more
+code and data than 32K words / 32 KB without leaving the 16-bit opcode, the
+PIC18's banking rather than a wider PC (the cond tag in bit 15 of a saved
+return address leaves no room for one, and widening PC, IX, SP, RA, IA and
+every stack frame would stop being "little").  Four-bit banks (Ken: "large
+enough to run some pretty decent size applications").
+
+**ISA** (`lisa_isa.md`, "Bank registers").  Three 4-bit registers in the
+peripheral space, reset 1 = the TT07 layout: `CB` 0x15, the code bank of a
+fetch above word 0x4000 (physical word `{CB, PC[13:0]}`); `DB` 0x16, the
+data bank of an IX-relative or debugger access above 0x4000; `SB` 0x17, the
+stack bank of an SP-relative access above 0x4000.  Below 0x4000 is bank 0,
+common; direct `[abs9]` accesses never leave it.  The stack bank is its own
+register (Ken: with one data bank an RTOS could not give each task a stack
+of its own - NuttX-style task stacks would all have to fit in one window -
+and banking the stack through the data bank would let a far pointer move
+the stack).  No shadows on an interrupt: an ISR runs under the interrupted
+code's banks, so handlers live in the lower 16K; a task switch is SP, SB,
+CB, DB.
+
+**RTL.** `lisa_periph.v`: the registers, read back with bits 7:4 zero.
+`lisa_core.v`: `d_sp`, the data address is SP-relative (`sp_sum` or `sp_addr`
+in the `d_addr` mux).  `tt_um_lisa.v`: `core_i_paddr` = `{CB or 0,
+PC[13:0]}` into the instruction stream, `d_bank_c` = 0 / `SB` / `DB`
+registered beside `d_addr_r` (and in `d_addr_good`), 18-bit words to the
+LISA1 flash address and 18-bit bytes to the LISA2 address.
+`inst_stream.v`: the window's head and the burst address 18 bits wide; a
+switch is a mismatch on the next fetch into the upper half, no flush.
+`data_cache8.v`: the bank in each line's tag (4 flops a line, 0 unless the
+32K map, `cache_map_sel` 3), the line index bit "bank != 0" so that bank 0
+through the window shares the lower half's lines, the fill and write-back
+address from the tag - a dirty line goes back to its own bank.  A switch
+flushes nothing.  Also `test/psram.v` holds 256 KB now.
+
+**Test.** `test/progs/bank.c` (`make BANK=1`, the cache on: the banks are
+PSRAM; the image bank_test.hex puts `ldi #bank; ret` at word 0x4000 of
+banks 1, 2, 3 = flash bytes 0x8000, 0x10000, 0x18000): the reset values and
+width, calls into the three code banks, one address in three data banks
+through the cache, bank 0 as the lower half, evictions between banks 2 and
+3, the stack in bank 2 (pushed there, read back through the data bank, bank
+1 untouched), and the write right before the access it applies to.  The
+default suite and the core testbench unchanged.  To follow: `lisa_sim
+--rev2` (the registers, the 18-bit spaces), `sdcc -mlisa` (`__banked`
+functions through per-bank trampolines, 3-byte banked function pointers,
+the linker's `.bank`), the FPGA build, the debugger tools.
 
 ## Verification (test/, see test/README.md)
 

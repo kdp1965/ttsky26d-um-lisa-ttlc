@@ -241,14 +241,14 @@ module tt_um_lisa
    wire [1:0]           lisa1_ce_ctrl;
    wire                 lisa1_stream;        // The instruction burst stays open
    wire                 lisa1_yield;         // ... another client wants the QSPI
-   wire [14:0]          lisa1_word_addr;     // The word the burst starts at
+   wire [17:0]          lisa1_word_addr;     // The word the burst starts at: {bank, PC[13:0]}
    wire [15:0]          lisa1_base_addr;
                         
    // ==========================================================================
    // QSPI Arbiter Lisa data bus signals
    // ==========================================================================
    wire [23:0]          lisa2_addr;          // 8Mx32
-   wire [15:0]          cache_addr;          // 8Mx32
+   wire [17:0]          cache_addr;          // {bank, addr[13:0]}
    wire [15:0]          lisa2_rdata;         // Read data
    wire [15:0]          lisa2_wdata;         // Data to write
    wire [1:0]           lisa2_wstrb;         // Which bytes in the 32-bits to write
@@ -404,6 +404,22 @@ module tt_um_lisa
    wire        d_rd_c;
    wire        d_periph_c;
    wire        d_addr_good;
+   wire        d_sp_c;
+   wire [3:0]  d_bank_c;
+   reg  [3:0]  d_bank_r;
+   wire [3:0]  code_bank;
+   wire [3:0]  data_bank;
+   wire [3:0]  stack_bank;
+   wire [17:0] core_i_paddr;
+
+   // The banks (RESPIN 22; lisa_periph.v registers 0x15-0x17): the upper 16K
+   // of each space is a window on one of 16 banks.  A fetch above word
+   // 0x4000 goes to code_bank, an SP-relative data access above 0x4000 to
+   // stack_bank, every other data access there (IX-relative, the debugger)
+   // to data_bank; below 0x4000 is bank 0, common to all.  Reset 1 = the
+   // TT07 layout: 512 KB of code and 256 KB of data at most
+   assign core_i_paddr = {core_i_addr[14] ? code_bank : 4'h0, core_i_addr[13:0]};
+   assign d_bank_c     = !d_addr_c[14] ? 4'h0 : d_sp_c ? stack_bank : data_bank;
 
    // ==========================================================================
    // Instantiate the Lisa Processor Core
@@ -432,6 +448,7 @@ module tt_um_lisa
       .d_o                       ( d_o_c                     ),
       .d_addr                    ( d_addr_c                  ),
       .d_periph                  ( d_periph_c                ),
+      .d_sp                      ( d_sp_c                    ),
       .d_we                      ( d_we_c                    ),
       .d_rd                      ( d_rd_c                    ),
       .d_valid                   ( d_valid_c                 ),
@@ -460,7 +477,7 @@ module tt_um_lisa
    reg        d_rd_r;
    reg        d_periph_r;
 
-   assign d_addr_good = d_addr_c == d_addr_r;
+   assign d_addr_good = d_addr_c == d_addr_r && d_bank_c == d_bank_r;
 
    always @(posedge clk)
    begin
@@ -468,6 +485,7 @@ module tt_um_lisa
       begin
          d_o_r       <= 8'h0;
          d_addr_r    <= 15'h0;
+         d_bank_r    <= 4'h0;
          d_valid_r   <= 1'b0;
          d_we_r      <= 1'b0;
          d_rd_r      <= 1'b0;
@@ -477,6 +495,7 @@ module tt_um_lisa
       begin
          d_o_r       <= d_o_c;
          d_addr_r    <= d_addr_c;
+         d_bank_r    <= d_bank_c;
          d_valid_r   <= d_valid_c;
          d_we_r      <= d_we_c;
          d_rd_r      <= d_rd_c;
@@ -500,7 +519,7 @@ module tt_um_lisa
       .rst_n                     ( rst_n_r[2]                ),
                                                              
       // Instruction bus                                     
-      .core_i_addr               ( core_i_addr               ),
+      .core_i_addr               ( core_i_paddr              ),
       .core_inst                 ( core_inst                 ),
       .core_inst_i               ( core_inst_o               ),
       .core_inst_we              ( core_inst_we              ),
@@ -535,6 +554,7 @@ module tt_um_lisa
                                                              
       // The data bus connection to LISA core                
       .d_addr                    ( d_addr                    ),
+      .d_bank                    ( d_bank_r                  ),
       .d_i                       ( d_o                       ),
       .d_o                       ( d_i_cache                 ),
       .d_valid                   ( d_valid                   ),
@@ -567,7 +587,7 @@ module tt_um_lisa
       .qspi_valid                ( lisa2_valid               ),
       .qspi_xfer_len             ( lisa2_xfer_len            )
    );
-   assign lisa2_addr = { lisa2_base_addr, 8'h0 } | {8'h0, cache_addr};
+   assign lisa2_addr = { lisa2_base_addr, 8'h0 } | {6'h0, cache_addr};
 
    // ==========================================================================
    // Instantiate the DATA RAM
@@ -605,6 +625,9 @@ module tt_um_lisa
       .d_periph                  ( d_periph                  ),
       .d_we                      ( d_we                      ),
       .d_rd                      ( d_rd                      ),
+      .code_bank                 ( code_bank                 ),
+      .data_bank                 ( data_bank                 ),
+      .stack_bank                ( stack_bank                ),
                                                              
       // GPIO signals                                        
       .porta_in                  ( porta_in                  ),
@@ -891,7 +914,7 @@ module tt_um_lisa
 
    assign dbg_do         = dbg_do_lisa | dbg_do_regs;
    assign dbg_ready      = dbg_ready_lisa | dbg_ready_regs;
-   assign lisa1_addr     = {lisa1_base_addr, 8'h0} | {8'h0, lisa1_word_addr, 1'b0};
+   assign lisa1_addr     = {lisa1_base_addr, 8'h0} | {5'h0, lisa1_word_addr, 1'b0};
    assign ttlc_addr      = {ttlc_base_addr, 8'h0} | {9'h0, ttlc_fetch_word, 1'b0};
    assign baud_div       = ui_in[6:0];
    assign baud_set       = ui_in[7];

@@ -75,10 +75,15 @@ COCOTB_TEST_MODULES = test
 MODULE = test
 
 # make TTLC=1: the TTLC loopback through the testbench's I/O chains
+# make BANK=1: the bank registers (progs/bank.c)
 # A program from the SDCC test suite (or any Intel HEX / @addr / opcode-per-line
 # image): make IHX=<file> [CACHE=1] [SPI=1] [TIMEOUT=<clocks of silence>] [STATS=1] [DUMP=1]
 ifeq ($(IHX),)
-ifneq ($(TTLC),)
+ifneq ($(BANK),)
+# make BANK=1: the bank registers (RESPIN 22) - progs/bank.c with a routine in
+# code banks 1, 2, 3 (progs/bank_test.hex), the data cache on
+PLUSARGS += +FIRMWARE=$(PWD)/progs/bank_test.hex +PROGRAM=bank_test.hex +BANK
+else ifneq ($(TTLC),)
 # TTLC_IMAGE=<hex>: another flash image (the TTLC program at byte 0x10000);
 # TTLCTRACE=<clocks> logs the TTLC's fetch (SIM=icarus)
 TTLC_IMAGE ?= $(PWD)/progs/ttlc_test.hex
