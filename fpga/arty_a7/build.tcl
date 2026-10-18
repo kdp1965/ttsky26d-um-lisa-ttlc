@@ -22,7 +22,7 @@ set sources {
    data_cache8.v inst_stream.v
    i2c_master_byte_ctrl.v i2c_master_bit_ctrl.v lisa_uart.v
    fops.v lampFPU_utils.v
-   mc14500b.v ttlc_io.v ttlc_inst_cache.v shift_reg_io.v
+   mc14500b.v ttlc_io.v ttlc_fetch.v shift_reg_io.v
 }
 # Everything is read as SystemVerilog: lisa_core.v and lisa_rx8n.v use size casts.
 set generated {debug_regs.v lisa_dbg.v}

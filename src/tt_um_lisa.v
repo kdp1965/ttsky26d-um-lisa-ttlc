@@ -323,15 +323,11 @@ module tt_um_lisa
    (* keep = "true" *)
    wire                 mc14500_run;
    (* keep = "true" *)
-   reg  [11:0]          mc14500_pc;
+   wire [13:0]          mc14500_pc;          // {group, slot} (ttlc_fetch.v)
    (* keep = "true" *)
-   reg  [12:0]          mc14500_stack[3:0];
    (* keep = "true" *)
    wire                 ttlc_halt;
    wire                 ttlc_exec;
-   reg                  mc14500_run_r;
-   reg                  mc14500_run_rr;
-   wire                 mc14500_pcen;
    wire                 ttlc_reset;
    wire                 ttlc_shiftclk;
    wire                 DATA;
@@ -374,10 +370,9 @@ module tt_um_lisa
    // ==========================================================================
    // Processor Instruction RAM bus
    // ==========================================================================
-   wire   [11:0]        ttlc_i_addr;
-   wire   [15:0]        ttlc_inst;
+   wire   [13:0]        ttlc_fetch_word;     // the group being fetched, in words
+   wire   [11:0]        ttlc_inst;           // the slot at the PC: {address[7:0], opcode[3:0]}
    wire                 ttlc_i_ready;
-   wire                 ttlc_i_fetch;
 
    // ==========================================================================
    // CACHE control signals
@@ -897,7 +892,7 @@ module tt_um_lisa
    assign dbg_do         = dbg_do_lisa | dbg_do_regs;
    assign dbg_ready      = dbg_ready_lisa | dbg_ready_regs;
    assign lisa1_addr     = {lisa1_base_addr, 8'h0} | {8'h0, lisa1_word_addr, 1'b0};
-   assign ttlc_addr      = {ttlc_base_addr, 8'h0} | {11'h0, mc14500_pc, 1'b0};
+   assign ttlc_addr      = {ttlc_base_addr, 8'h0} | {9'h0, ttlc_fetch_word, 1'b0};
    assign baud_div       = ui_in[6:0];
    assign baud_set       = ui_in[7];
    assign debug_ready_ack= 1'b1;
@@ -1019,65 +1014,15 @@ module tt_um_lisa
    );
 
    // ==========================================================================
-   // Implement the MC14500 PC
+   // The TTLC's PC and stack are in ttlc_fetch; io_busy_r holds the core a
+   // clock after a scan
    // ==========================================================================
    always @(posedge clk)
    begin
       if (~rst_n)
-      begin
-         mc14500_pc <= 12'h0;
-         mc14500_stack[0] <= 13'h0;
-         mc14500_stack[1] <= 13'h0;
-         mc14500_stack[2] <= 13'h0;
-         mc14500_stack[3] <= 13'h0;
-         io_busy_r        <= 1'b0;
-         mc14500_run_r    <= 1'b0;
-         mc14500_run_rr   <= 1'b0;
-      end
+         io_busy_r <= 1'b0;
       else
-      begin
-         io_busy_r        <= io_busy;
-
-         mc14500_run_r    <= mc14500_run;
-         mc14500_run_rr   <= mc14500_run_r;
-         // A jump, return or nopf changes the PC in the clock(s) after its
-         // fetch: let it land although the fetch has just been halted (the
-         // debugger's step, a breakpoint), as a free run would.  TT07 gated
-         // it on the fetch's run and lost it when a halt fell between.
-         begin
-            // The FLAG_F signal resets the PC
-            if (mc14500_pcen && FLAG_F)
-               mc14500_pc <= 12'h0;
-            else if (mc14500_pcen && JMP)
-            begin
-               // Save the PC from the instruction
-               mc14500_pc <= address;
-
-               // Push the current mc14500_pc somewhere
-               mc14500_stack[0] <= {1'b1, mc14500_pc};
-               mc14500_stack[1] <= mc14500_stack[0];
-               mc14500_stack[2] <= mc14500_stack[1];
-               mc14500_stack[3] <= mc14500_stack[2];
-
-               // TODO: Test if stack[3] 'valid' bit is 1.  If it is,
-               //       then we need to implement a "deep" stack by
-               //       pushing to QSPI and restoring later.
-            end
-            else if (mc14500_pcen && RTN)
-            begin
-               // Pop mc14500_pc from the "stack"
-               mc14500_pc       <= mc14500_stack[0][11:0];
-               mc14500_stack[0] <= mc14500_stack[1];
-               mc14500_stack[1] <= mc14500_stack[2];
-               mc14500_stack[2] <= mc14500_stack[3];
-
-               // TODO: Test if QSPI contains stack items. If it does
-               //       then we need to restore from QSPI.
-            end
-            else if (mc14500_run && ttlc_i_ready)
-               mc14500_pc <= mc14500_pc + 1;
-         end
-      end
+         io_busy_r <= io_busy;
    end
 
    // ==========================================================================
@@ -1105,20 +1050,20 @@ module tt_um_lisa
    // ==========================================================================
    // Instantiate the INST CACHE controller
    // ==========================================================================
-   ttlc_inst_cache i_ttlc_inst_cache
+   ttlc_fetch i_ttlc_fetch
    (
       .clk                       ( clk                       ),
       .rst_n                     ( rst_n_r[2]                ),
-                                                             
-      // Instruction bus                                     
-      .ttlc_i_addr               ( ttlc_i_addr               ),
-      .ttlc_inst                 ( ttlc_inst                 ),
-      .ttlc_inst_i               ( 16'h0                     ),
-      .ttlc_inst_we              ( 1'b0                      ),
-      .ttlc_i_fetch              ( ttlc_i_fetch              ),
-      .ttlc_i_ready              ( ttlc_i_ready              ),
-                                                             
-      // Interface to the QSPI controller 
+      .fetch_en                  ( !ttlc_halt                ),
+      .run                       ( mc14500_run               ),
+      .jmp                       ( JMP                       ),
+      .rtn                       ( RTN                       ),
+      .flag_f                    ( FLAG_F                    ),
+      .inst                      ( ttlc_inst                 ),
+      .ready                     ( ttlc_i_ready              ),
+      .exec                      ( ttlc_exec                 ),
+      .pc                        ( mc14500_pc                ),
+      .fetch_word                ( ttlc_fetch_word           ),
       .qspi_rdata                ( ttlc_rdata                ),
       .qspi_wdata                ( ttlc_wdata                ),
       .qspi_wstrb                ( ttlc_wstrb                ),
@@ -1127,18 +1072,13 @@ module tt_um_lisa
       .qspi_xfer_done            ( ttlc_xfer_done            ),
       .qspi_valid                ( ttlc_valid                ),
       .qspi_xfer_len             ( ttlc_xfer_len             ),
-
-      .inst_cache_invalidate     ( ttlc_cache_invalidate     ),
-      .inst_cache_invalidate_ack ( ttlc_cache_invalidate_ack )
+      .invalidate                ( ttlc_cache_invalidate     ),
+      .invalidate_ack            ( ttlc_cache_invalidate_ack )
    );
 
-   assign ttlc_i_fetch = !ttlc_halt;
-   assign ttlc_i_addr  = mc14500_pc;
+   // The core takes the presented slot when nothing holds it: an I/O scan
+   // (and the clock after), the debugger, or the scan a nopo just started
    assign mc14500_run  = ttlc_i_ready && !io_busy && !io_busy_r && !ttlc_halt && !FLAG_O;
-   // the fetch of an instruction (the debugger's step ends after one); its
-   // PC change may land in the two clocks after
-   assign ttlc_exec    = mc14500_run && ttlc_i_ready;
-   assign mc14500_pcen = mc14500_run | mc14500_run_r | mc14500_run_rr;
 
    // ==========================================================================
    // I/O for the MC14500B
@@ -1164,7 +1104,7 @@ module tt_um_lisa
    assign mem_write = WRITE;
    assign data_in   = DATA_OUT;
    assign DATA      = data_out;
-   assign address   = ttlc_inst[15:4];
+   assign address   = {4'h0, ttlc_inst[11:4]};   // the slot's 8-bit I/O address
 
    // ==========================================================================
    // Instantiate the I/O shift register management module

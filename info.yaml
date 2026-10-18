@@ -43,7 +43,7 @@ project:
     - "lampFPU_utils.v"
     - "mc14500b.v"
     - "ttlc_io.v"
-    - "ttlc_inst_cache.v"
+    - "ttlc_fetch.v"
     - "shift_reg_io.v"
 
 # The pinout of your project. Leave unused pins blank. DO NOT delete or add any pins.

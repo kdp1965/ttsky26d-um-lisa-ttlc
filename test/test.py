@@ -5,7 +5,7 @@
 #                                        test_program: run it, expect ALL PASSED
 import os
 import cocotb
-from cocotb.triggers import ClockCycles
+from cocotb.triggers import ClockCycles, RisingEdge
 
 from lisa import Lisa, Timeout, REG_STATUS, REG_LISA1_BASE, REG_PC, CHAR_CYCLES
 
@@ -67,12 +67,9 @@ async def test_uart_burst(dut):
     assert got == burst, 'echoed %r' % got
 
 
-@cocotb.test(skip=plusarg('TTLC') is None)
-async def test_ttlc(dut):
-    """the TTLC runs the loopback program from the flash at 0x10000 with the
-    I/O chains of the testbench: the 48 outputs follow the 48 inputs (TT07
-    took 17 samples per scan, every input came back one position high)"""
-    lisa = await start(dut)
+async def ttlc_loopback(dut, lisa):
+    """the TTLC program in the flash at 0x10000 copies the 48 inputs to the
+    48 outputs through the testbench's I/O chains; check seven patterns"""
     await lisa.setup(cache=False, quad=True)
     for a, v in ((0x1f, 0x0100), (0x1b, 0x3cff), (0x1c, 0x00a3)):   # TTLC base, uo_out to the TTLC, shift clock clk/4
         await lisa.write_reg(a, v)
@@ -94,16 +91,42 @@ async def test_ttlc(dut):
 
 
 @cocotb.test(skip=plusarg('TTLC') is None)
+async def test_ttlc(dut):
+    """the TTLC runs the loopback program (progs/ttlc/ttlc_loopback.asm, the
+    slot format): the 48 outputs follow the 48 inputs (TT07 took 17 samples
+    per scan, every input came back one position high)"""
+    lisa = await start(dut)
+    await ttlc_loopback(dut, lisa)
+
+
+@cocotb.test(skip=plusarg('TTLC') is None)
+async def test_ttlc_jump(dut):
+    """the loopback through two subroutines, a skz over a jmp and nopf
+    (progs/ttlc/ttlc_jump.asm, the image TTLC_IMAGE=progs/ttlc_jump_test.hex):
+    jmp / rtn / skz / nopf in the slot format land right, or the copy breaks.
+    The old RTL's jmp reloaded the PC on three clocks and pushed the stack
+    three times (nothing had run one: the elevator and the loopback have none)"""
+    if 'ttlc_jump' not in (plusarg('PROGRAM') or ''):
+        dut._log.info('skipped: not the ttlc_jump image')
+        return
+    lisa = await start(dut)
+    await ttlc_loopback(dut, lisa)
+
+
+@cocotb.test(skip=plusarg('TTLC') is None)
 async def test_ttlc_debug(dut):
     """the TTLC's breakpoints halt before their instruction and the step bit
     runs exactly one (TT07: a clock late, and the step bit did nothing)"""
+    if 'ttlc_jump' in (plusarg('PROGRAM') or ''):
+        dut._log.info('skipped: the breakpoint at 5 is for the loopback image')
+        return
     lisa = await start(dut)
     await lisa.setup(cache=False, quad=True)
     for a, v in ((0x1f, 0x0100), (0x1b, 0x3cff), (0x1c, 0x00a3)):
         await lisa.write_reg(a, v)
     dut.ttlc_mode.value = 1
     dut.ttlc_in.value = 0x0f0f0f0f0f0f
-    await lisa.write_reg(0x48, 0x1000 | 5)                          # a breakpoint at 5
+    await lisa.write_reg(0x48, 0x4000 | 5)                          # a breakpoint at 5 (group 1 slot 1; bit 14 = valid)
     await lisa.write_reg(0x40, 1)
     await ClockCycles(dut.clk, 20000)
     st, pc = await lisa.read_reg(0x40), await lisa.read_reg(0x41)
@@ -162,3 +185,33 @@ async def test_program(dut):
                           % (clocks, insts, clocks / max(1, insts), wait, 100.0 * wait / max(1, clocks),
                              xfers, words, words / max(1, xfers)))
     assert 'ALL PASSED' in text, 'the program did not pass: %r' % text[-200:]
+
+
+@cocotb.test(skip=plusarg('TTLCTRACE') is None)
+async def test_ttlc_trace(dut):
+    """+TTLCTRACE[=clocks]: run the TTLC program in +FIRMWARE (at flash byte
+    0x10000) and log every clock the TTLC's PC, its instruction word and the
+    core's JMP / RTN change - for working out the fetch pipeline (icarus:
+    Verilator does not expose the internal signals)"""
+    lisa = await start(dut)
+    await lisa.setup(cache=False, quad=True)
+    for a, v in ((0x1f, 0x0100), (0x1b, 0x3cff), (0x1c, 0x00a3)):
+        await lisa.write_reg(a, v)
+    dut.ttlc_mode.value = 1
+    dut.ttlc_in.value = int(plusarg('TTLCIN', '0'), 0)
+    await lisa.write_reg(0x40, 1)
+    t = dut.lisa
+    last = None
+    for clk in range(int(plusarg('TTLCTRACE', '3000') or 3000)):
+        await RisingEdge(dut.clk)
+        try:
+            cur = (int(t.mc14500_pc.value), int(t.ttlc_inst.value), int(t.ttlc_i_ready.value),
+                   int(t.i_mc14500b.r_inst.value), int(t.JMP.value), int(t.RTN.value), int(t.FLAG_F.value),
+                   int(t.mc14500_run.value), int(t.mc14500_stack[0].value))
+        except ValueError:
+            continue
+        if cur != last:
+            dut._log.info('clk %5d pc %04x inst %04x rdy %d r_inst %x jmp %d rtn %d F %d run %d stk0 %04x' % ((clk,) + cur))
+            last = cur
+    out = int(dut.ttlc_out.value)
+    dut._log.info('outputs %012x' % out)

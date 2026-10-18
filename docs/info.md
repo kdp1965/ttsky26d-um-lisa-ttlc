@@ -38,6 +38,23 @@ suite, the LISA Commander and lisa_ide; this revision fixes what was found
   high), its breakpoints halt before their instruction, its step bit runs
   one instruction, and a stepped `jmp`/`rtn`/`nopf` keeps its PC change.
 
+## The TTLC program format (revision 2)
+
+A TTLC instruction is 12 bits, {address[7:0], opcode[3:0]} (the I/O space
+has 139 bits: 8 address bits), four to a group of three 16-bit words: slot
+k of group g is bits [12k+11:12k] of the 48-bit group whose word 3g is at
+the low end.  `jmp` takes two slots, its own and the next, which holds the
+12-bit target group; jump targets are groups (slot 0).  The PC (register
+0x41) is {group[11:0], slot[1:0]} - an instruction index for code without
+jumps; a breakpoint (0x48-0x4a) is {valid, pc[13:0]}, and halts before its
+instruction.  TT07 spent a 16-bit word on every instruction, 12 of its bits
+a jump address almost never used; the 6x2 elevator controller is a quarter
+smaller this way and fetches a quarter fewer bursts.  `test/progs/ttlc/
+mc14500_as.py` assembles it (`--format words` gives TT07's); every label
+starts a group and a `jmp` pair never straddles one, padded with `nop`
+(`or 137`, the constant-0 bit), and a `skz` is kept next to the instruction
+it skips.
+
 ## What is LISA with TTLC?
 
 LISA is a Microcontroller built around a custom 8-Bit Little ISA (LISA)
@@ -163,8 +180,8 @@ commands.  The individual register details will be described in the sections to 
  | 0x10 | Debug QSPI Address (LSB16)   | 0x33 | Floating point reg f3        | 
  | 0x11 | Debug QSPI Address (MSB8)    | 0x34 | Floating point reg facc      | 
  | 0x12 | LISA1 QSPI base address      | 0x40 | MC14500B Run Control         | 
- | 0x13 | LISA2 QSPI base address      | 0x41 | MC14500B Program Counter     | 
- | 0x14 | LISA1 QSPI CE select         | 0x48 | MC14500B Breakpoint 1        | 
+ | 0x13 | LISA2 QSPI base address      | 0x41 | MC14500B Program Counter {group[11:0], slot[1:0]} | 
+ | 0x14 | LISA1 QSPI CE select         | 0x48 | MC14500B Breakpoint 1 {valid, pc[13:0]} | 
  | 0x15 | LISA2 QSPI CE select         | 0x49 | MC14500B Breakpoint 2        | 
  | 0x16 | Debug QSPI CE select         | 0x4a | MC14500B Breakpoint 3        | 
                                          

@@ -96,7 +96,7 @@ module debug_regs
    output wire [1:0]          clk_div,
    output wire                psram_mod,        // 0x1c bit 10: uio[7:4] for the TT QSPI Pmod
 
-   input  wire [11:0]         ttlc_pc,
+   input  wire [13:0]         ttlc_pc,          // {group, slot} (ttlc_fetch.v)
    input  wire                ttlc_exec,        // the TTLC retires an instruction (its PC moves)
    output wire                ttlc_halt,
    output reg                 ttlc_reset,
@@ -110,9 +110,9 @@ module debug_regs
    wire        debug_qspi_write;
    wire        debug_qspi_read;
    reg  [7:0]  cmd_quad_write_r;
-   wire [12:0] ttlc_brk_addr0;
-   wire [12:0] ttlc_brk_addr1;
-   wire [12:0] ttlc_brk_addr2;
+   wire [14:0] ttlc_brk_addr0;   // {valid, pc}
+   wire [14:0] ttlc_brk_addr1;
+   wire [14:0] ttlc_brk_addr2;
    reg         ttlc_step;
    reg         ttlc_run;
    reg         ttlc_skip;        // run / step written: the breakpoint at this PC is passed
@@ -325,8 +325,10 @@ module debug_regs
             .Q          ( ttlc_base_addr[b]  )
          );
       end
-      for (b = 0; b < 13; b = b + 1)
+      for (b = 0; b < 15; b = b + 1)
       begin : BREAK_BITS
+         if (b < 13)
+         begin : ADDR_1E
          sky130_fd_sc_hd__dlrtp_1   addr_1e_latch
          (
          `ifdef USE_POWER_PINS
@@ -340,6 +342,7 @@ module debug_regs
             .D          ( dbg_di[b]          ),
             .Q          ( addr_1e_bits[b]    )
          );
+         end
          sky130_fd_sc_hd__dlrtp_1   ttlc_brk0_latch
          (
          `ifdef USE_POWER_PINS
@@ -542,10 +545,10 @@ module debug_regs
       begin
          case (dbg_a[3:0])
          4'h0: dbg_do = {9'h0, ttlc_data_out, ttlc_data_in, ttlc_result_reg, ttlc_shiftclk, ttlc_reset, ttlc_step, ttlc_run};
-         4'h1: dbg_do = {4'h0, ttlc_pc};
-         4'h8: dbg_do = {3'h0, ttlc_brk_addr0};
-         4'h9: dbg_do = {3'h0, ttlc_brk_addr1};
-         4'hA: dbg_do = {3'h0, ttlc_brk_addr2};
+         4'h1: dbg_do = {2'h0, ttlc_pc};
+         4'h8: dbg_do = {1'h0, ttlc_brk_addr0};
+         4'h9: dbg_do = {1'h0, ttlc_brk_addr1};
+         4'hA: dbg_do = {1'h0, ttlc_brk_addr2};
          default dbg_do = 16'h0;
          endcase
       end

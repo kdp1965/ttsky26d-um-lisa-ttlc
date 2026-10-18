@@ -27,6 +27,10 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 13 | TTLC: latch pulse cannot load a 74HC166; step bit cannot work; breakpoints one late from the instruction cache | `shift_reg_io.v`, `mc14500b.v`, `ttlc_inst_cache.v` | step and breakpoints fixed: test_ttlc_debug; the 166 latch kept as is |
 | 14 | Console UART holds one received byte: characters lost at flash fetch speed | `lisa_uart.v` / `lisa_rx8n.v` | done: test_uart_burst |
 | 15 | Reading debug register 0xf advances PC | `lisa_dbg.v` | kept |
+| 16 | Stack convention: SP at the top byte, `0(sp)` | `lisa_core.v` sp_adder | done: test/progs --rev2 builds, run_suite REV2=1 |
+| 17 | Debugger version: the second chip answers `lisav2.0` | `debug_ctrl.v` | done: test_debugger |
+| 18 | The Tiny Tapeout QSPI Pmod's pin order (psram_mod) | `lisa_io_mux.v`, `debug_regs.v` 0x1c bit 10 | done: the FPGA, cache on |
+| 19 | TTLC program format: 12-bit slots, four to three words; the old `jmp` never worked | `ttlc_fetch.v`, `tt_um_lisa.v`, `debug_regs.v` | done: test_ttlc, test_ttlc_jump, test_ttlc_debug |
 
 Status: open / fixed (the test that shows it, in test/: a program of test/progs, a cocotb test of test/core or the fops bench).
 
@@ -351,6 +355,43 @@ test_core, test_printf, test_irq and the 32K tests test_bigframe and
 test_ptroff (all pass); with psram_mod off test_bigframe prints nothing.
 The chip testbench's PSRAM model is on the chip's own layout, so it does
 not cover psram_mod.
+
+## 19. The TTLC program format: 12-bit slots
+
+**Symptom.** A TTLC instruction needs its 4-bit opcode and an 8-bit I/O
+address (the I/O space is 139 bits); TT07 spent a 16-bit word on each, the
+upper 12 bits a jump address that only `jmp` uses - the 6x2 elevator (847
+lines) has no `jmp` at all - behind a four-line instruction cache.
+
+**RTL** (2026-10-17, Ken's design): `src/ttlc_fetch.v` replaces
+`ttlc_inst_cache.v` and the PC / stack logic of `tt_um_lisa.v`.
+Instructions are 12-bit slots, four to a group of three words; `jmp` takes
+two slots, the second its 12-bit target group; the PC is {group, slot} (14
+bits, as are the stack's entries, with a valid bit); two groups are
+buffered, the executing one and the next (prefetched, or the jump's
+target), each one QSPI burst of three words - about the old cache's flops,
+a quarter less flash and a quarter fewer bursts per instruction.  The
+sequencer takes two clocks an instruction and moves the PC once, at the
+clock the core executes: the target, the return, the nopf's 0, or on by
+one slot (two over a skipped `jmp`).  The debugger's TTLC PC (0x41) is 14
+bits, its breakpoints (0x48-0x4a) {valid, pc[13:0]} at bit 14, per
+instruction.  `test/progs/ttlc/mc14500_as.py` assembles the format (labels
+on group boundaries, pairs inside a group, nop = `or 137`, a `skz` kept
+beside what it skips; `--format words` is TT07's).
+
+**Found on the way.** The old RTL's `jmp` never worked: the core's JMP
+level stays up until it latches the next instruction, and item 13's
+`mc14500_pcen` let it reload the PC and push the stack on each of three
+clocks, the third from an instruction word the cache had zeroed on the
+target's miss (a trace of a jmp/rtn program under icarus, test_ttlc_trace).
+Nothing had run one: the elevator and the loopback have no `jmp`.
+
+**Test.** test_ttlc (the loopback, 98 instructions in 25 groups),
+test_ttlc_debug (the breakpoint at 5 = group 1 slot 1, the step, the wrap
+on nopf) and test_ttlc_jump (the loopback through two subroutines, a `skz`
+over a `jmp`, `nopf`; its `done` label on group 8 so that a skip advancing
+one slot would execute the target slot as `sto 0`): all pass on the chip
+testbench; the LISA default tests unchanged.
 
 ## Verification (test/, see test/README.md)
 

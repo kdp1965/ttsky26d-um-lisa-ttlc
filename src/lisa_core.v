@@ -518,6 +518,9 @@ module lisa_core
    wire                       stop;
    wire                       cont_q;
    wire                       cflag_load;
+   wire                       signed_inv_val;
+   reg                        zflag_val;
+   reg                        zflag_load;      // (declared here: the ISR shadows read them before the flag logic below; icarus elaborates in order)
    wire                       irq_pending;            // an enabled interrupt the instruction in exec can give way to
    wire                       irq_take;               // ... and it does, this clock
    wire                       stg2_next;              // the instruction in exec goes on to its second stage
@@ -1695,7 +1698,6 @@ module lisa_core
    // =================================================
    // Logic for signed_inversion for signed compare
    // =================================================
-   wire signed_inv_val;
    assign signed_inv_val = (decode_state & ret_isr_r) ? signed_inv_live_isr :
                            op_restc ?  signed_inv_save :  
                            signed_valid ? (acc[7] ^ (inst[`PWORD_SIZE-1 -: 6] == 6'b101001 ?
@@ -1704,8 +1706,6 @@ module lisa_core
    // =================================================
    // Implement the zflag logic
    // =================================================
-   reg zflag_val;
-   reg zflag_load;
    always @*
    begin
       zflag_load = 1'b0;

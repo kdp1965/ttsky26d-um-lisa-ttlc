@@ -25,7 +25,7 @@ CHIP = tt_um_lisa.v RAM32.v lisa_core.v lisa_div.v lisa_periph.v lisa_io_mux.v \
 	   debug_ctrl.v debug_autobaud.v debug_brg.v data_cache8.v inst_stream.v \
 	   i2c_master_byte_ctrl.v i2c_master_bit_ctrl.v lisa_uart.v \
 	   fops.v lampFPU_div_top.sv lampFPU_div.sv lampFPU_fractDiv.sv lampFPU_utils.v \
-	   mc14500b.v ttlc_io.v ttlc_inst_cache.v shift_reg_io.v
+	   mc14500b.v ttlc_io.v ttlc_fetch.v shift_reg_io.v
 LINT_FLAGS ?= -Wno-fatal -Wno-DECLFILENAME -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM \
 	          -Wno-PINCONNECTEMPTY -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC
 

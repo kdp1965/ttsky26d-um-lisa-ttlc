@@ -32,7 +32,7 @@ PROJECT_SOURCES += debug_ctrl.v debug_autobaud.v debug_brg.v debug_regs.v
 PROJECT_SOURCES += data_cache8.v inst_stream.v
 PROJECT_SOURCES += i2c_master_byte_ctrl.v i2c_master_bit_ctrl.v lisa_uart.v
 PROJECT_SOURCES += fops.v lampFPU_div_top.sv lampFPU_div.sv lampFPU_fractDiv.sv lampFPU_utils.v
-PROJECT_SOURCES += mc14500b.v ttlc_io.v ttlc_inst_cache.v shift_reg_io.v
+PROJECT_SOURCES += mc14500b.v ttlc_io.v ttlc_fetch.v shift_reg_io.v
 
 ifneq ($(GATES),yes)
 
@@ -79,7 +79,16 @@ MODULE = test
 # image): make IHX=<file> [CACHE=1] [SPI=1] [TIMEOUT=<clocks of silence>] [STATS=1] [DUMP=1]
 ifeq ($(IHX),)
 ifneq ($(TTLC),)
-PLUSARGS += +FIRMWARE=$(PWD)/progs/ttlc_test.hex +PROGRAM=ttlc_test.hex +TTLC
+# TTLC_IMAGE=<hex>: another flash image (the TTLC program at byte 0x10000);
+# TTLCTRACE=<clocks> logs the TTLC's fetch (SIM=icarus)
+TTLC_IMAGE ?= $(PWD)/progs/ttlc_test.hex
+PLUSARGS += +FIRMWARE=$(TTLC_IMAGE) +PROGRAM=$(notdir $(TTLC_IMAGE)) +TTLC
+ifneq ($(TTLCTRACE),)
+PLUSARGS += +TTLCTRACE=$(TTLCTRACE)
+endif
+ifneq ($(TTLCIN),)
+PLUSARGS += +TTLCIN=$(TTLCIN)
+endif
 else
 PLUSARGS += +FIRMWARE=$(PWD)/progs/hello.hex +PROGRAM=hello.hex +DEFAULT
 endif
