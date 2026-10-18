@@ -205,7 +205,7 @@ module tt_um_lisa
    wire    [6:0]        baud_div;
    wire                 baud_set;
    wire                 brg_wr;
-   wire    [7:0]        brg_div;
+   wire    [13:0]       brg_div;
    wire    [1:0]        rx_sel;
 
    // ==========================================================================

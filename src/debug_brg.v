@@ -1,6 +1,6 @@
 /*
 ================================================================================
-debug_brg:   Debug Baud Rate Generator
+debug_brg:   Debug Baud Rate Generator (the bit period in clocks, since the second chip)
 
 Copyright 2024 by Ken Pettit <pettitkd@gmail.com>
 
@@ -33,43 +33,43 @@ module debug_brg
    // Timing and reset inputs
    input  wire                clk,              // System clock 
    input  wire                rst_n,            // Active low reset
-
-   input  wire                wr,               // Data write strobe
-   input  wire [7:0]          d,                // Data input
-
-   input  wire                baud_set,
-   input  wire [6:0]          baud_div,
-   output wire                baud_ref
+   input  wire                wr,               // Write strobe for d (the autobaud's)
+   input  wire [13:0]         d,                // The bit period in clocks
+   input  wire                baud_set,         // Set the period from the external divider:
+   input  wire [6:0]          baud_div,         //   a bit is 32 x (baud_div + 1) clocks
+   output wire                baud_ref          // 16 rising edges a bit
    );
 
    // ================================================
    // Internal signals
    // ================================================
-   reg   [7:0]       s_baud_cnt;                // Baud rate counter
-   reg   [7:0]       s_baud_preload;            // Baud counter preload val
+   reg   [13:0]      s_period;                  // The bit period in clocks
+   reg   [14:0]      s_acc;                     // 32 x the clocks into this 32nd of a bit
    reg               s_baud_ref;                // Baud ref signal
    reg               s_wr_edge;                 // Write signal edge detect
+
+   wire  [14:0]      s_acc_next = s_acc + 15'd32;
 
    assign baud_ref = s_baud_ref;
 
    // ================================================
-   // Clocked block to capture write data from CPU
+   // Clocked block to capture the period: the autobaud's measurement
+   // (any number of clocks, 32 or more), or the external divider
    // ================================================
    always @(posedge clk)
    begin
       if (~rst_n)
       begin
-         // Default to all input
-         s_baud_preload <= 8'h0C;
+         s_period  <= 14'd416;                   // 32 x 13, the TT07 default
          s_wr_edge <= 1'b0;
       end
       else
       begin
-         // Latch data on faling wr edge
+         // Latch data on rising wr edge
          if (wr & ~s_wr_edge)
-            s_baud_preload <= d;
+            s_period <= d;
          else if (baud_set)
-            s_baud_preload <= {1'b0, baud_div};
+            s_period <= {baud_div, 5'h0} + 14'd32;
 
          // Create edge detector
          s_wr_edge <= wr;
@@ -77,28 +77,28 @@ module debug_brg
    end
 
    // ================================================
-   // Generate 16x baud counter
+   // Generate the 16x baud reference: 32 toggles a bit, each when
+   // another 32nd of the period has accumulated (the period need not be
+   // a multiple of 32: a toggle is at most a clock early or late, and 32
+   // of them come to exactly one period on average)
    // ================================================
    always @(posedge clk)
    begin
       if (~rst_n)
       begin
-         // Default to all input
-         s_baud_cnt <= 8'h0;
+         s_acc      <= 15'h0;
          s_baud_ref <= 1'b0;
       end
       else
       begin
-         // Latch data on faling wr edge
-         if (s_baud_cnt == 8'h0)
+         if (s_acc_next >= {1'b0, s_period})
          begin
-            s_baud_cnt <= s_baud_preload;
+            s_acc      <= s_acc_next - {1'b0, s_period};
             s_baud_ref <= ~s_baud_ref;
          end
          else
-            s_baud_cnt <= s_baud_cnt -1;
+            s_acc <= s_acc_next;
       end
    end
 
 endmodule
-

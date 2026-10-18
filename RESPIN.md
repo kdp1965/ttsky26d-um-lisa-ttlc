@@ -31,6 +31,7 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 17 | Debugger version: the second chip answers `lisav2.0` | `debug_ctrl.v` | done: test_debugger |
 | 18 | The Tiny Tapeout QSPI Pmod's pin order (psram_mod) | `lisa_io_mux.v`, `debug_regs.v` 0x1c bit 10 | done: the FPGA, cache on |
 | 19 | TTLC program format: 12-bit slots, four to three words; the old `jmp` never worked | `ttlc_fetch.v`, `tt_um_lisa.v`, `debug_regs.v` | done: test_ttlc, test_ttlc_jump, test_ttlc_debug |
+| 20 | The autobaud and BRG count in 32-clock steps: only rates with a bit a multiple of 32 clocks | `debug_autobaud.v`, `debug_brg.v` | done: test_autobaud; the FPGA at 115200 .. 921600 |
 
 Status: open / fixed (the test that shows it, in test/: a program of test/progs, a cocotb test of test/core or the fops bench).
 
@@ -392,6 +393,32 @@ on nopf) and test_ttlc_jump (the loopback through two subroutines, a `skz`
 over a `jmp`, `nopf`; its `done` label on group 8 so that a skip advancing
 one slot would execute the target slot as `sto 0`): all pass on the chip
 testbench; the LISA default tests unchanged.
+
+## 20. The autobaud's 32-clock steps
+
+**Symptom.** The debug UART's rate must have a bit that is a multiple of
+32 clocks: `debug_autobaud.v` kept the measured pulse width over 32 and
+`debug_brg.v` counted the 16x reference in units of 32 clocks (a bit is 32
+x (divider + 1)).  At 50 MHz neither 115200 (434 clocks) nor 460800 (108.5)
+locks; the FPGA build needed 156250 (320) and 40 MHz 125000.  Found on the
+Arty, 2026-10-17; Ken: "improve the autobaud so it doesn't count in
+multiples of 32 clocks".
+
+**RTL.** `debug_autobaud.v` hands the BRG the pulse width in clocks (14
+bits; the three latest pulses must agree within two clocks and be 32 or
+more).  `debug_brg.v` keeps the period in clocks and toggles the reference
+32 times a period from an accumulator (32 per clock, a toggle when it
+reaches the period, the remainder kept), so the 16 rising edges a bit the
+receiver and transmitter count land within a clock of where they belong,
+whatever the period.  The divider pins keep their meaning (32 x (b_div +
+1)); the reset default is 416 clocks as before.  `brg_div` is 14 bits
+through `debug_ctrl.v` and `tt_um_lisa.v`.
+
+**Test.** test_autobaud (test/test.py): the testbench UART's bit set to
+288, 300, 434, 109, 57 and 32 clocks in turn (tb.v's `bitclks`), the chip
+with ui_in[7] low trains on the LF and answers `v` and a register write
+at each.  On the Arty at 50 MHz: hello with the cache on at 115200,
+156250, 460800 and 921600, the TTLC loopback at 460800.
 
 ## Verification (test/, see test/README.md)
 

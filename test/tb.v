@@ -19,6 +19,7 @@ module tb
    output wire          rx_avail,
    input  wire  [1:0]   uart_port_sel,
    input  wire  [7:0]   porta_in,
+   input  wire  [13:0]  bitclks,            // the testbench UART's bit period in clocks
    output wire  [7:0]   porta_out,
    input  wire          ttlc_mode,          // ui_in[6:4] from the input chains
    input  wire  [47:0]  ttlc_in,            // the 48 inputs on the 74HC165 chains
@@ -46,8 +47,6 @@ module tb
    wire           baud_ref;
    wire           txd;
    wire           rxd;
-   wire           baud_set;
-   wire [6:0]     baud_div;
 
    // The fetch counts test.py reads with +STATS: the core's clocks, the
    // instructions it took and the clocks it waited for one; the QSPI
@@ -161,19 +160,21 @@ module tb
        .overrun    (              )
    );
 
+   // the period is taken on the clock after reset (bitclks is set before)
+   reg            bit_wr;
+   always @(posedge clk)
+      bit_wr <= rst_n;
    debug_brg i_brg
    (
       // Timing and reset inputs
       .clk        ( clk          ),       // System clock
       .rst_n      ( rst_n        ),       // Active low reset
-      .wr         ( 1'b0         ),       // Data write strobe
-      .d          ( 8'h0         ),       // Data input
-      .baud_set   ( baud_set     ),
-      .baud_div   ( baud_div     ),
+      .wr         ( bit_wr       ),       // Data write strobe
+      .d          ( bitclks      ),       // the bit period in clocks
+      .baud_set   ( 1'b0         ),
+      .baud_div   ( 7'd0         ),
       .baud_ref   ( baud_ref     )
    );
-   assign baud_set = 1'b1;
-   assign baud_div = 7'd8;      // = ui_in[6:0] with bit 3 (the RX pin, idle high) set
 
    // ==========================================================================
    // Assign the port I/O; with ttlc_mode the input chains drive ui_in[6:4]

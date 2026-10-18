@@ -8,9 +8,13 @@ at the simulator's own speed between events.
 import cocotb
 from cocotb.triggers import RisingEdge, First, ClockCycles
 
-# a character on the testbench UART: 10 bits x 8 x (baud_div + 1) clocks
+# a character on the testbench UART: 10 bits x 32 x (baud_div + 1) clocks
+# when the chip's divider pins set the rate (reset(), the default); with the
+# autobaud (reset(autobaud=True, bitclks=n)) the testbench UART's bit is any
+# number of clocks (tb.v's bitclks) and the chip measures it
 BAUD_DIV = 8          # bit 3 must be set: ui_in[3] is the RX pin (idle 1) in this testbench
-CHAR_CYCLES = 10 * 32 * (BAUD_DIV + 1)   # debug_brg: a bit is 32 x (div + 1) clocks
+BIT_CYCLES = 32 * (BAUD_DIV + 1)         # debug_brg: a bit is 32 x (div + 1) clocks
+CHAR_CYCLES = 10 * BIT_CYCLES
 
 # debug registers (debug_regs.v)
 REG_STATUS, REG_ACC, REG_PC, REG_SP, REG_RA, REG_IX, REG_DATA, REG_DADDR = range(8)
@@ -83,10 +87,11 @@ class Lisa:
             out.append(v)
 
     # --------------------------------------------------------- the debugger
-    async def reset(self):
+    async def reset(self, autobaud=False, bitclks=BIT_CYCLES):
         d = self.dut
         d.ena.value = 1
-        d.porta_in.value = 0x80 | BAUD_DIV          # ui_in[7]: fixed baud divider
+        d.bitclks.value = bitclks                   # the testbench UART's bit
+        d.porta_in.value = 0 if autobaud else 0x80 | BAUD_DIV   # ui_in[7]: fixed baud divider
         d.uart_port_sel.value = 0                   # ui_in[3] / uo_out[4]
         d.tx_wr.value = 0
         d.rx_rd.value = 0
@@ -95,9 +100,14 @@ class Lisa:
         await ClockCycles(self.clk, 10)
         d.rst_n.value = 1
         await ClockCycles(self.clk, 40)
-        # the first edge on an RX input selects the debug port
+        # the first edge on an RX input selects the debug port; with the
+        # autobaud the character also sets the baud rate, and the port is
+        # connected once the line has idled 16383 clocks after it (the
+        # host tools sleep 150 to 200 ms there)
         await self.tx(0x0a)
         await self.drain()
+        if autobaud:
+            await ClockCycles(self.clk, 17000)
 
     # v, t and l are single-character commands: a newline after them is
     # parsed as another command and answered with LF CR

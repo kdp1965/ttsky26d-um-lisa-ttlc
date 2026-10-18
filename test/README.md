@@ -14,7 +14,7 @@ the `rXX` / `wXXYYYY` / `v` / `t` / `l` protocol, the Commander's register
 setup (`setup()`), `run()` of a program with its console text.
 
 ```sh
-make                          # test_debugger, test_bringup (progs/hello.hex), test_uart_burst
+make                          # test_autobaud (the debug UART trained at six bit periods), test_debugger, test_bringup (progs/hello.hex), test_uart_burst
 make TTLC=1                   # the TTLC loopback through the chains, its breakpoints and step
 make TTLC=1 TTLC_IMAGE=$PWD/progs/ttlc_jump_test.hex   # the loopback through jmp / rtn / skz / nopf
 make SIM=icarus TTLC=1 TTLCTRACE=6000 TESTCASE=test_ttlc_trace [TTLCIN=0x3]   # log the TTLC's fetch per clock

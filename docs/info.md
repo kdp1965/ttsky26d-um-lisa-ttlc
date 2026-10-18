@@ -126,13 +126,17 @@ I/O pins are auto-detected by the debug_autobaud module from the following choic
 The RX/TX pair port is auto-detected after reset by the autobaud circuit, and the UART baud rate can either be
 configured manually or auto detected by the autobaud module.  After reset, the ui_in[7] pin is sampled to determine
 the baud rate selection mode.  If this input pin is HIGH, then autobaud is disabled and ui_in[6:0] is sampled as
-the UART baud divider and written to the Baud Rate Generator (BRG).  The value of this divider should be: clk_freq / baud_rate / 8 - 1.
-Due to last minute additions of complex floating point operations, and only 2 hours left on the count-down clock, the timing
-was relaxed to 20MHz input clock max.  So for a 20MHz clock and 115200 baud, the b_div[6:0] value would be 42 (for instance).
+the UART baud divider and written to the Baud Rate Generator (BRG): a bit is 32 x (b_div + 1) clocks, so b_div =
+clk_freq / baud_rate / 32 - 1 (for a 50 MHz clock and 156250 baud, 9; the divider pins can only set rates whose bit is a
+multiple of 32 clocks).
 
 If the ui_in[7] pin is sampled LOW, then the autobaud module will monitor all three potential RX input pins for LINEFEED
-(ASCII 0x0A) code to detect baud rate and set the b_div value automatially.  It monitors bit transistions and searches for three
-successive bits with the same bit period.  Since ASCII code 0x0A contains a "0 1 0 1 0" bit sequence, the baud rate can be detected easily.
+(ASCII 0x0A) code to detect baud rate and set the bit period automatically.  It monitors bit transitions and searches for three
+successive pulses of the same width (within two clocks; the width is at least 32 clocks).  Since ASCII code 0x0A contains a
+"0 1 0 1 0" bit sequence, the baud rate can be detected easily (a CR or a "+" serve as well).  Revision 2 measures the
+pulse in clocks and the BRG takes the period as it is: any rate from clk / 32 down works (TT07 kept the width over 32 and
+the BRG counted in 32s, so only rates whose bit is a multiple of 32 clocks locked - at 50 MHz neither 115200 nor 460800).
+The port is connected to the chosen RX pin once the line has idled for 16383 clocks after the training character.
 
 Regardless if the baud rate is set manually or using autobaud, the input port selection will be detect automatically 
 by the autobaud.  In the case of manual buad rate selection, it simply looks for the first transition on any of the

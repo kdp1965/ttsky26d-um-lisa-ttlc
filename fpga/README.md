@@ -72,11 +72,11 @@ reads back the first words, turns the data cache off, runs it, hands it
 the UART and prints what it sends.  hello, test_core, test_printf and
 test_irq (rev-2 builds) give lisa_sim --rev2's output.  What it takes:
 
-- 156250 baud at 50 MHz (125000 at 40): the autobaud's divisor is the
-  measured pulse width over 32, and the generator makes a bit 32 times
-  (divisor + 1) clocks, so a bit must be a multiple of 32 clocks: 320 at
-  both rates (115200 and 460800 are not usable).  pyserial on Linux sets
-  the FTDI to 156250 (it runs 0.26% slow, within the measurement).
+- Any baud rate from 1.5 Mbaud down since RESPIN item 20 (2026-10-17):
+  the scripts default to 460800, the demo board's; 115200, 156250 and
+  921600 work too.  Before it the autobaud counted in 32-clock steps, so
+  a bit had to be a multiple of 32 clocks: 156250 at 50 MHz, 125000 at
+  40 (115200 and 460800 did not lock).
 - One serial session per run: opening the port resets the design (the
   Arty's JP2 jumper ties the FTDI's DTR to the RESET line), which clears
   the debug registers and halts the core.

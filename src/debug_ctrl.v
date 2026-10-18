@@ -71,7 +71,7 @@ module debug_ctrl
    input  wire                debug_ready,
 
    input  wire                brg_wr,
-   input  wire [7:0]          brg_div,
+   input  wire [13:0]         brg_div,          // the autobaud's bit period in clocks
 
    input  wire                baud_set,
    input  wire [6:0]          baud_div,

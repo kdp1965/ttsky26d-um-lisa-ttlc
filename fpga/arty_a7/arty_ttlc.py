@@ -5,12 +5,12 @@ Ethernet: the program (test/progs/ttlc/ttlc_loopback.hex, the chip
 testbench's) copies the 48 inputs to the 48 outputs through the FPGA's
 chains, which ttlc_io.py reaches at 192.168.1.200.  One serial session:
 opening the port resets the design.  SW3 must be down (the inside chains).
-usage: arty_ttlc.py <program.hex> [baud]   (readmemh bytes, as the testbench's flash image; 156250 baud at 50 MHz, 125000 at 40)"""
+usage: arty_ttlc.py <program.hex> [baud]   (readmemh bytes, as the testbench's flash image; any baud rate, 460800 as the demo board)"""
 import os
 import sys
 import time
 img = sys.argv[1]
-baud = int(sys.argv[2]) if len(sys.argv) > 2 else 156250
+baud = int(sys.argv[2]) if len(sys.argv) > 2 else 460800
 sys.argv = ['x']
 here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, here)

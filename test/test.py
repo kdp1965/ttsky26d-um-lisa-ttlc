@@ -23,6 +23,23 @@ async def start(dut):
 
 
 @cocotb.test(skip=plusarg('DEFAULT') is None)
+async def test_autobaud(dut):
+    """with ui_in[7] low the chip measures the debug UART's bit period from
+    the first character's pulses (lisa_pydb sends CR, lisa_ide "+++" LF,
+    the testbench LF: each has three single-bit pulses in a row) - any
+    number of clocks since the second chip (TT07's generator counted in
+    32s: 115200 baud at 50 MHz, 434 clocks, was not usable)"""
+    lisa = await start(dut)
+    for bitclks in (288, 300, 434, 109, 57, 32):
+        await lisa.reset(autobaud=True, bitclks=bitclks)
+        ver = await lisa.version()
+        assert ver == 'lisav2.0', 'at %d clocks a bit: %r' % (bitclks, ver)
+        await lisa.write_reg(REG_LISA1_BASE, 0x5a)
+        assert await lisa.read_reg(REG_LISA1_BASE) == 0x5a, 'at %d clocks a bit' % bitclks
+        dut._log.info('autobaud: %d clocks a bit ok' % bitclks)
+
+
+@cocotb.test(skip=plusarg('DEFAULT') is None)
 async def test_debugger(dut):
     """the debugger answers: version, register write / read back, halted at reset"""
     lisa = await start(dut)

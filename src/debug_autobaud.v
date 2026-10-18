@@ -1,6 +1,6 @@
 /*
 ================================================================================
-debug_autobaud:   Debug Auto Baud Rate Detector
+debug_autobaud:   Debug Auto Baud Rate Detector (the bit period in clocks, since the second chip)
 
 Copyright 2024 by Ken Pettit <pettitkd@gmail.com>
 
@@ -39,15 +39,15 @@ module debug_autobaud
    input  wire                rx2,              // RX input 2
    input  wire                rx3,              // RX input 3
    output reg                 wr,               // Write the baud rate
-   output wire [7:0]          div,              // The divisor
+   output wire [13:0]         div,              // The bit period in clocks
    output reg  [1:0]          rx_sel            // Selected RX input
 );
 
    reg               s_div_found;               // Indicates if division found
    reg [13:0]        s_pulse_width;             // Pulse width in clks
-   reg [7:0]         s_bit_div1;
-   reg [7:0]         s_bit_div2;
-   reg [7:0]         s_bit_div3;
+   reg [13:0]        s_bit_div1;                // The last three pulse widths in clocks
+   reg [13:0]        s_bit_div2;
+   reg [13:0]        s_bit_div3;
    reg               s_last_rx1;                // Last registered value of rx
    reg               s_last_rx2;                // Last registered value of rx
    reg               s_last_rx3;                // Last registered value of rx
@@ -55,7 +55,15 @@ module debug_autobaud
    reg               s_done;
    wire              s_sel_rx;
 
-   assign div = s_bit_div1;                     // Use any of the calculated divs
+   // The three latest pulses agree to within two clocks (an edge lands in
+   // a clock either way after the input synchronizer) and are at least 32
+   // clocks, the generator's floor: a bit period, exactly (TT07 kept the
+   // width over 32, so a bit had to be a multiple of 32 clocks)
+   wire [14:0]       s_diff12 = {1'b0, s_bit_div1} - {1'b0, s_bit_div2} + 15'd2;
+   wire [14:0]       s_diff13 = {1'b0, s_bit_div1} - {1'b0, s_bit_div3} + 15'd2;
+   wire              s_agree  = s_diff12 <= 15'd4 && s_diff13 <= 15'd4 && s_bit_div1 >= 14'd32;
+
+   assign div = s_bit_div1;                     // The latest of the three
    assign s_sel_rx = s_rx_sel == 2'h1 ? rx1 : s_rx_sel == 2'h2 ? rx2 : s_rx_sel == 2'h3 ? rx3 : 1'b0;
 
    always @(posedge clk or negedge rst_n)
@@ -64,9 +72,9 @@ module debug_autobaud
       begin
          s_div_found    <= 1'b0;                // Baud rate not found
          wr             <= 1'b0;
-         s_bit_div1     <= 8'h0;
-         s_bit_div2     <= 8'h0;
-         s_bit_div3     <= 8'h0;
+         s_bit_div1     <= 14'h0;
+         s_bit_div2     <= 14'h0;
+         s_bit_div3     <= 14'h0;
          s_pulse_width  <= 14'h0;
          s_last_rx1     <= 1'b0;
          s_last_rx2     <= 1'b0;
@@ -105,8 +113,9 @@ module debug_autobaud
                // If this is a valid pulse, then save the last 3 pulses
                if (s_pulse_width != 14'h3FFF)
                begin
-                  // Save the new pulse divider and shift the others
-                  s_bit_div1 <= s_pulse_width[12 -: 8];
+                  // Save the new pulse width (the counter ran from the
+                  // clock after the last edge) and shift the others
+                  s_bit_div1 <= s_pulse_width + 1'b1;
                   s_bit_div2 <= s_bit_div1;
                   s_bit_div3 <= s_bit_div2;
                end
@@ -117,11 +126,10 @@ module debug_autobaud
                if (s_pulse_width != 14'h3FFF)
                   s_pulse_width <= s_pulse_width + 1;
 
-               // Test for 3 equivalent divisors
-               if (s_bit_div1 == s_bit_div2 && s_bit_div1 == s_bit_div3 &&
-                   s_bit_div1 != 8'h0)
+               // Test for 3 equivalent bit periods
+               if (s_agree)
                begin
-                  // We found the divisor
+                  // We found the period
                   s_div_found <= 1'b1;
 
                   // Write the divisor to the baud rate generator
