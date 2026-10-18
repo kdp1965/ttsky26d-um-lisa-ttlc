@@ -26,12 +26,24 @@ What differs from the chip:
   and its divider-operand group, which its register walk resolved to the IX
   low byte and the accumulator), and the debugger's step and skip levels are
   in the continue group with cont_q_r, which the SDC's walk of the cont_q
-  net missed.  The default build is 40 MHz (`CLK_DIV=25`): at 50 MHz the
-  longest single-cycle path left, the instruction window's data through
-  the decode and the BF16 adder into the accumulator (30 LUT levels), is
-  about 21 ns, 1.1 ns over, and the chip's SDC does not relax the window
-  data either (only the PC and the window's count and head address) - a
-  3-cycle exception on it, like the PC's, is a decision for the chip too.
+  net missed.  The build is 50 MHz (`CLK_DIV=20`, the demo board's clock)
+  since 2026-10-17 with 0.45 ns of setup slack.  What it took, beyond the
+  SDC's groups: the window data as a 3-cycle source (which the SDC has
+  too, since the same day), and the BF16 adder's cone into the accumulator
+  as a 3-cycle path from everything it takes - 29 LUT levels and 21 ns on
+  this fabric, two thirds of it routing, 1.3 ns over at first.  The
+  accumulator loads only at the end of the execute state (or the stage
+  after), and the adder's inputs are all settled three or more clocks
+  before: the latched instruction and the decoded operation flags at the
+  end of the fetch state (the operand select and gate), the BF16 registers
+  and the accumulator at the end of the previous execute state.  The SDC
+  covers the first of these on the chip as its one-hot fetch flop to the
+  accumulator; here the state register is binary, so that one is applied
+  through the stream's core_i_ready net, the select of the instruction
+  mux, whose other sources (a breakpoint's stop) it covers as well.  The
+  tightest path now is the divider block's registered operand
+  classification through the adder into the accumulator (25 levels).
+  40 MHz (`CLK_DIV=25`) closes with 1.5 ns and 125000 baud.
 
 Pins (`lisa_arty.v`, `lisa_arty.xdc`): the three Tiny Tapeout ports are
 Pmods in the demo board's order (pins 1-4, 7-10 = bits 0-7): JA `ui_in`
@@ -60,9 +72,11 @@ reads back the first words, turns the data cache off, runs it, hands it
 the UART and prints what it sends.  hello, test_core, test_printf and
 test_irq (rev-2 builds) give lisa_sim --rev2's output.  What it takes:
 
-- 125000 baud: the autobaud measures a bit in 32-clock steps, and 40 MHz /
-  125000 is exactly 320 clocks a bit (115200 and 460800 are not usable at
-  40 MHz).
+- 156250 baud at 50 MHz (125000 at 40): the autobaud's divisor is the
+  measured pulse width over 32, and the generator makes a bit 32 times
+  (divisor + 1) clocks, so a bit must be a multiple of 32 clocks: 320 at
+  both rates (115200 and 460800 are not usable).  pyserial on Linux sets
+  the FTDI to 156250 (it runs 0.26% slow, within the measurement).
 - One serial session per run: opening the port resets the design (the
   Arty's JP2 jumper ties the FTDI's DTR to the RESET line), which clears
   the debug registers and halts the core.
@@ -145,5 +159,5 @@ seven patterns from the inputs to the outputs on the board (the first TTLC
 run outside simulation, the 12-bit slot format fetched from the flash),
 `watch` shows an event per change with the board's timestamps, ping
 answers in 0.1 ms from the wired host, a UDP round trip is 2.5 ms from
-the Mac over wifi.  The build with the bridge closes 40 MHz with 0.23 ns
-of setup slack.
+the Mac over wifi.  At 50 MHz (2026-10-17, the exceptions above) the
+same checks pass, hello and test_core with the cache on included.

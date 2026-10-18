@@ -14,7 +14,7 @@
 #   make remote-log tail of the remote build log
 VIVADO     ?= vivado
 PART       ?= xc7a35ticsg324-1L
-CLK_DIV    ?= 25          # 1000 MHz / CLK_DIV: 25 = 40 MHz (closes timing), 20 = 50 MHz (see README), 15 = 66.67
+CLK_DIV    ?= 20          # 1000 MHz / CLK_DIV: 20 = 50 MHz (closes since 2026-10-17, see README), 25 = 40, 15 = 66.67
 HOST       ?= andromeda
 SETTINGS   ?= ~/xilinx/Vivado/2024.1/settings64.sh
 REMOTE_DIR ?= projects/tiny-tapeout/ttsky26d/ttsky26d-um-lisa-ttlc

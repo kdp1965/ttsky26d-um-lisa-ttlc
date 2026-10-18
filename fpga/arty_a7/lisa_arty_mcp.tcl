@@ -15,11 +15,20 @@
 #
 # The window's data words are a 3-cycle source here and in lisa.sdc since
 # 2026-10-17 (they were not in rc2's sign-off).
-# Not ported: lisa.sdc's predec group (the chip's one-hot pre-decode flop;
-# here the state register is binary and also decodes the execute state that
-# loads the accumulator) and its div_rs1 / div_rs2 group (nets of
-# combinational operands, which its register walk resolved to the IX low
-# byte and the accumulator; the IX byte is in the 3-cycle group below).
+# lisa.sdc's fetch-state group (its one-hot fetch flop to the accumulator,
+# three cycles) is ported through the net it passes: the state register is
+# binary here and also decodes the execute state that loads the
+# accumulator, so it cannot be the source by name.  The fetch state (and a
+# breakpoint's stop) make the instruction stream's core_i_ready, the select
+# of the core's instruction mux (the window word or the latched one), and
+# everything behind that mux - the decode, the operand select, the BF16
+# adder - ends at the accumulator: 29 levels, 1.3 ns over at 50 MHz
+# (2026-10-17), and never a real transfer, since the accumulator loads in
+# the execute state, where the select is held at the latched instruction.
+# Not ported: lisa.sdc's predec group (the chip's one-hot pre-decode flop)
+# and its div_rs1 / div_rs2 group (nets of combinational operands, which
+# its register walk resolved to the IX low byte and the accumulator; the IX
+# byte is in the 3-cycle group below).
 
 set C lisa/i_lisa_core
 set D $C/GEN_DIV.i_lisa_div
@@ -72,6 +81,15 @@ set dbg_halted [lisa_regs $G/halted_reg*]
 # walk of the cont_q net found only cont_q_r
 set cont_q     [lisa_regs $G/cont_q_r_reg* $G/step_r_reg* $G/skip_r_reg*]
 set d_we_r     [lisa_regs $C/d_we_r_reg*]
+# the latched instruction: written in the fetch state only (inst_ready is
+# hit & fetch_state), read by the operand selects through the pre-decode,
+# decode and execute states
+set inst_r     [lisa_regs $C/inst_r_reg*]
+# the decoded operation flags: re-registered every clock from the decode
+# of inst, so settled at the end of the fetch state like inst_r
+set ops        [lisa_regs $C/op_*_r_reg*]
+# the BF16 registers: written at the end of an execute state only
+set fx         [lisa_regs $C/f0_reg* $C/f1_reg* $C/f2_reg* $C/f3_reg*]
 # destinations
 set facc       [lisa_regs $C/facc_reg*]
 set ix         [lisa_bits $D/b_reg* 0 14]
@@ -88,7 +106,7 @@ set div_cond   [lisa_regs $D/cond_reg*]
 set div_ixc    [lisa_bits $D/b_reg* 15 15]
 set div_sinv   [lisa_bits $D/result_reg* 15 15]
 
-set groups {pc win_count win_head win_data brk dbg_a dbg_di dbg_we dbg_halted cont_q d_we_r
+set groups {pc win_count win_head win_data brk dbg_a dbg_di dbg_we dbg_halted cont_q d_we_r inst_r ops fx
             facc ix ra ia sp cond ie isr_jump isr_sh div_zflag div_cond div_ixc div_sinv}
 set report "lisa_arty_mcp:"
 foreach g $groups { append report " $g [llength [set $g]]" }
@@ -114,3 +132,21 @@ foreach src [list $brk $dbg_we $dbg_halted $dbg_di $cont_q] {
 }
 # the BF16 accumulator is loaded only in the decode state
 lisa_mcp 2 $d_we_r $facc
+# the fetch state's select of the instruction mux (see the top): three
+# cycles to the accumulator through the stream's core_i_ready net, whatever
+# the source (the state register, a breakpoint's stop, the window's hit)
+set i_ready [get_nets -hierarchical -quiet -filter "NAME =~ *core_i_ready"]
+puts "lisa_arty_mcp: core_i_ready nets [llength $i_ready]"
+if {[llength $i_ready] == 0} { error "lisa_arty_mcp: the core_i_ready net was not found" }
+set_multicycle_path 3 -setup -through $i_ready -to $facc
+set_multicycle_path 2 -hold  -through $i_ready -to $facc
+# the BF16 adder's cone into the accumulator (29 levels, 20.5 ns here):
+# the accumulator loads only at the end of the execute state or the stage
+# after, and everything the adder takes was written three or more clocks
+# before - the latched instruction and the operation flags at the end of
+# the fetch state (the operand select fx[inst[1:0]] and the operand gate),
+# the BF16 registers and the accumulator itself at the end of the previous
+# instruction's execute state, which is at least three states back.  Each
+# of these was the worst path in turn once the select above was relaxed
+# (0.5, 0.24 ns over).
+lisa_mcp 3 [concat $inst_r $ops $fx $facc] $facc

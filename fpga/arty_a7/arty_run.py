@@ -9,11 +9,11 @@ SIO2/3 on uio[4:5], CE1 on uio[6], uio[7] high), CS1 quad (0x17 = 6, the
 flash on CS0 single SPI), 6 dummy clocks after its EB read (0x18 = 0x6a),
 the cache on CS1 (0x15 = 6), invalidated and on with the 32K map (0x1d =
 0x13).
-usage: [CACHE=1] arty_run.py <file.ihx> [seconds] [baud]"""
+usage: [CACHE=1] arty_run.py <file.ihx> [seconds] [baud]   (156250 baud for the 50 MHz build, 125000 for 40 MHz)"""
 import os, sys, time
 img = sys.argv[1]
 secs = float(sys.argv[2]) if len(sys.argv) > 2 else 5
-baud = int(sys.argv[3]) if len(sys.argv) > 3 else 125000
+baud = int(sys.argv[3]) if len(sys.argv) > 3 else 156250
 sys.argv = ["x"]
 sys.path.insert(0, os.environ.get("LISA_PYDB", os.path.expanduser("~/projects/tiny-tapeout/ttsky26d/lisa_pydb")))
 import lisa_pydb as m
