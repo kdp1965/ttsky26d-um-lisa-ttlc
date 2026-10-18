@@ -1073,6 +1073,13 @@ default suite.  lisa_sim had no such pop (its write path never read).
   Promoted 2026-10-18 (Ken): gds/, lef/, pnl/ are rc7's, macro.json's
   anchor table its placement (placements/macro-rc7_final_cells.json);
   rc6's table stays as the overlay trial_anchor_rc6.json.  Tag rc7.
+* rc8 (2026-10-18, runs/macro-rc8 on 3d1d952: the 6-bit code bank of item
+  22 on rc7's RTL, a free draw with the art): synthesized 153457 um2 (+0.16%
+  over rc7: the two bank bits, the 20-bit window and burst addresses),
+  63239 instances, placed at 66.9%, 797K um of wire, Magic DRC / LVS /
+  antenna 0, hold +0.077, setup +5.6 nominal and -4.6 at ss.  The local
+  precheck passes; its placement table is placements/macro-rc8_final_cells.json.
+  Not promoted yet.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
