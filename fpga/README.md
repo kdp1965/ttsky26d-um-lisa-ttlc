@@ -69,6 +69,11 @@ test_irq (rev-2 builds) give lisa_sim --rev2's output.  What it takes:
 - `l` after the resume gives the program the debug UART.
 - The QSPI Pmod's uio[7:4] (WP#, HOLD#, the PSRAM selects) are pulled up
   in the XDC; uio[7:4] are undriven until a program sets the mux, and a
-  floating HOLD# held the flash.  `psram_mod` (0x1c bit 10, from
-  ttgf-um-lisa) maps the data cache's quad SPI onto the Pmod's pins (not
-  tried yet).
+  floating HOLD# held the flash.
+- `CACHE=1 arty_run.py ...` runs with the data cache on the Pmod's PSRAM A
+  (CS1): `psram_mod` (0x1c bit 10, from ttgf-um-lisa) with the uio mux at
+  2 (0x1c = 0x4aa), CS1 quad and the flash single SPI (0x17 = 6), 6 dummy
+  clocks for the PSRAM (0x18 = 0x6a), the cache on CS1 (0x15 = 6), on with
+  the 32K map (0x1d = 0x13).  hello, test_core, test_printf, test_irq and
+  the two 32K tests (test_bigframe, test_ptroff) pass that way; with
+  psram_mod off test_bigframe prints nothing.

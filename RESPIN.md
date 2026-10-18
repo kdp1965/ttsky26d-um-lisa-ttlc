@@ -327,8 +327,14 @@ use the Pmod's PSRAM without an interposer.
 (a latch beside io_mux and the TTLC shift divider; it reads back there).
 With the uio mux at 2 it puts SIO2 / SIO3 on uio[4:5], CE1 on uio[6] and
 uio[7] high (`src/lisa_io_mux.v`); ttgf's other mux changes are not taken.
-2026-10-17; the chip testbench passes (default 3 of 3, TTLC 2 of 2), the
-PSRAM path itself is not tested yet (the FPGA has the Pmod).
+2026-10-17; the chip testbench passes (default 3 of 3, TTLC 2 of 2).
+
+**Test.** On the FPGA (`fpga/`, Arty A7 with the Pmod on JC, `CACHE=1
+arty_run.py`): the data cache through PSRAM A on CS1, quad, runs hello,
+test_core, test_printf, test_irq and the 32K tests test_bigframe and
+test_ptroff (all pass); with psram_mod off test_bigframe prints nothing.
+The chip testbench's PSRAM model is on the chip's own layout, so it does
+not cover psram_mod.
 
 ## Verification (test/, see test/README.md)
 
