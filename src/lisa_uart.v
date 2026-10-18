@@ -53,9 +53,9 @@ module lisa_uart
    reg   [1:0] s_rx_pipe;
    wire        s_baud_ref;
    wire        s_brg_wr;
-   wire  [7:0] s_brg_d;
+   wire [13:0] s_brg_d;                      // the bit period in clocks
    wire        s_auto_brg_wr;
-   wire  [7:0] s_auto_brg_d;
+   wire [13:0] s_auto_brg_d;
 //   wire  [1:0] rx_sel;
 
    always @(posedge clk)
@@ -130,8 +130,11 @@ module lisa_uart
     /* verilator lint_on PINCONNECTEMPTY */  
    );
 
+   // the generator takes the bit period in clocks (since the second
+   // chip): the autobaud's measurement when it fires, else the CPU's
+   // divisor, whose meaning stays a bit of 32 x (brg_d + 1) clocks
    assign s_brg_wr = brg_wr | s_auto_brg_wr;
-   assign s_brg_d  = brg_d  | s_auto_brg_d;
+   assign s_brg_d  = s_auto_brg_wr ? s_auto_brg_d : {1'b0, brg_d, 5'h0} + 14'd32;
 
 
 endmodule
