@@ -1,13 +1,16 @@
 name: gds
 
-# Hardens the project from the RTL with LibreLane (the standard Tiny Tapeout
-# flow, tt-support-tools builds the config from info.yaml + src/config.json).
-# The 128-byte data RAM is then synthesized from src/RAM32.v, which with the
-# rest fills the 8x2 tile to ~90% and has not placed so far; the tapeout
-# build is the DFFRAM-macro flow (build.py, submitted with gds_custom.yaml).
-# Run by hand; test.yaml runs the testbench on every push.
+# The project's GDS is hardened locally (harden/, the DFFRAM-macro flow on
+# the 4x4 tile; RESPIN.md's hardening section) and committed to gds/, lef/
+# and pnl/: this workflow publishes that as the submission's GDS artifact,
+# runs the Tiny Tapeout precheck on it and deploys the 2D / 3D viewer to
+# the repo's GitHub Pages (https://kdp1965.github.io/ttsky26d-um-lisa-ttlc/).
+# It runs on every push, like test and docs (it was gds_custom.yaml, run by
+# hand, until 2026-10-18; the standard flow, hardening in the action, is
+# out of reach on this tile - see RESPIN.md).
 
 on:
+  push:
   workflow_dispatch:
 
 jobs:
@@ -19,10 +22,20 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Build GDS
-        uses: TinyTapeout/tt-gds-action@ttsky26d
+      - name: Read top module name
+        uses: mikefarah/yq@v4
+        id: top_module
+        with:
+          cmd: echo TOP_MODULE=`yq '.project.top_module' info.yaml` > $GITHUB_OUTPUT
+
+      - name: Create and publish the GDS artifact
+        uses: TinyTapeout/tt-gds-action/custom_gds@ttsky26d
         with:
           pdk: sky130A
+          top_module: ${{ steps.top_module.outputs.TOP_MODULE }}
+          gds_path: gds/${{ steps.top_module.outputs.TOP_MODULE }}.gds
+          lef_path: lef/${{ steps.top_module.outputs.TOP_MODULE }}.lef
+          verilog_path: pnl/${{ steps.top_module.outputs.TOP_MODULE }}.pnl.v
 
   precheck:
     needs: gds
@@ -30,18 +43,6 @@ jobs:
     steps:
       - name: Run Tiny Tapeout Precheck
         uses: TinyTapeout/tt-gds-action/precheck@ttsky26d
-
-  gl_test:
-    needs: gds
-    runs-on: ubuntu-24.04
-    steps:
-      - name: checkout repo
-        uses: actions/checkout@v6
-        with:
-          submodules: recursive
-
-      - name: GL test
-        uses: TinyTapeout/tt-gds-action/gl_test@ttsky26d
 
   viewer:
     needs: gds

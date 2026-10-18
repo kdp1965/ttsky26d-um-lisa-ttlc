@@ -76,9 +76,10 @@ template from `info.yaml`, over `src/config.json`); results land in
 (macro.json: the AND-OR RAM32 in `macros/` on the core's bottom row at x
 349.83, halos 2 x 1 um, `FP_PRUNE_THRESHOLD` 11, and the release
 candidate's placement replayed through `ANCHOR_CELLS_TABLE`, see below);
-copy its GDS, LEF and netlist to `gds/`, `lef/` and `pnl/` and run
-`gds_custom.yaml`. `gds/`, `lef/` and `pnl/` hold runs/macro-ao5, the
-release candidate (RESPIN.md, the halo trial).
+copy its GDS, LEF and netlist to `gds/`, `lef/` and `pnl/` and push:
+the `gds` workflow publishes them, runs the precheck and deploys the
+viewer. `gds/`, `lef/` and `pnl/` hold runs/macro-rc4-art, the release
+candidate (RESPIN.md's hardening section: rc4, with the chip art).
 The macro flow places with `GPL_CELL_PADDING` 2: the slew/fanout repair, CTS
 and the hold buffers add 30% to the placed cells and without the padding the
 legalizer packs them into 30 um bins over 90% full, where the detailed router
@@ -147,8 +148,11 @@ scan and latch cells stay excluded. `make -C harden synth` runs synthesis alone 
 area (`runs/synth-<tag>/*-yosys-synthesis/reports/stat.json`).
 
 On GitHub, `test.yaml` runs the chip-level testbench under icarus on every
-push; `gds.yaml` (run by hand) is the standard flow on the runners and
-`gds_custom.yaml` the submission's. (A `synth.yaml`, Yosys and its check
+push, and `gds.yaml` publishes the committed GDS as the submission's
+artifact with the precheck and the viewer, also on every push (until
+2026-10-18 that was `gds_custom.yaml`, run by hand, and `gds.yaml` the
+standard flow on the runners, which is out of reach on this tile - the
+detailed router ran into the 6-hour limit). (A `synth.yaml`, Yosys and its check
 pass on every push, was removed on 2026-10-17: it failed every time and the
 submission does not need it; `make -C harden synth` is the local check.)
 

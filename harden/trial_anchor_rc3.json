@@ -1,0 +1,4 @@
+{
+  "//": "Trial: rc3's placement (runs/macro-rc3, an anchored replay of rc2's) as the anchor table instead of rc4's - make macro OVERLAY=trial_anchor_rc3.json",
+  "ANCHOR_CELLS_TABLE": "dir::placements/macro-rc3_final_cells.json"
+}

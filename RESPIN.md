@@ -825,7 +825,7 @@ at each.  On the Arty at 50 MHz: hello with the cache on at 115200,
   anchor table its placement (placements/macro-rc3_final_cells.json);
   rc2's placement stays an option (`make macro OVERLAY=trial_anchor_rc2.json`,
   and `trial_anchor_free.json` is a free draw).  Tag rc3; the
-  gds_custom.yaml precheck is next.
+  gds workflow's precheck is next.
 * Chip art and a free draw (2026-10-18): Ken's calvin, the met4-only
   picture of ihp-um-janestreet-prism, on this tile.  `harden/chip_art.py`
   (prism's tool for sky130A: met4 71/20, the rules of sky130A_mr.drc met
@@ -886,7 +886,10 @@ at each.  On the Arty at 50 MHz: hello with the cache on at 115200,
   state, which already carried the art, so a resume from Project.ChipArt
   had stacked a second art cell on the first (merge_art prunes an old
   art cell now).  The precheck passes on the slot-free GDS as well.
-  Not promoted: gds/ is rc3's until Ken says so.
+  Promoted 2026-10-18 (Ken): gds/, lef/, pnl/ are rc4's, macro.json's
+  anchor table its placement (placements/macro-rc4-art_final_cells.json);
+  rc3's and rc2's tables stay as overlays (trial_anchor_rc3.json,
+  trial_anchor_rc2.json).  Tag rc4.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
