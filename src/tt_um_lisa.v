@@ -180,6 +180,7 @@ module tt_um_lisa
    wire                 lisa_rx_rd;
    wire                 lisa_rx_data_avail;
    wire                 lisa_tx_buf_empty;
+   wire                 lisa_rx_overrun;
    reg                  rx1_r1, rx1_r2;
    reg                  rx2_r1, rx2_r2;
    reg                  rx3_r1, rx3_r2;
@@ -649,6 +650,7 @@ module tt_um_lisa
       .uart_rx_d                 ( lisa_rx_d                 ),
       .uart_rx_data_avail        ( lisa_rx_data_avail        ),
       .uart_tx_buf_empty         ( lisa_tx_buf_empty         ),
+      .uart_rx_overrun           ( lisa_rx_overrun           ),
 
 `ifdef WANT_UART2
       .uart2_rx                  ( uart2_rx                  ),
@@ -822,7 +824,8 @@ module tt_um_lisa
       .lisa_rx_rd                ( lisa_rx_rd                ),
       .lisa_rx_d                 ( lisa_rx_d                 ),
       .lisa_rx_data_avail        ( lisa_rx_data_avail        ),
-      .lisa_tx_buf_empty         ( lisa_tx_buf_empty         )
+      .lisa_tx_buf_empty         ( lisa_tx_buf_empty         ),
+      .lisa_rx_overrun           ( lisa_rx_overrun           )
    );
 
    // ==========================================================================

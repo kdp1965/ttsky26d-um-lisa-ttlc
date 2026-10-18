@@ -25,7 +25,7 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 11 | Debugger RAM reads return RAM[IX] with the cache off | `data_cache8.v` 223, core `dbg_ready` | fixed: test_debug_port |
 | 12 | TTLC input scan shifts 17 times (every input one position high, bit 15/31/47 lost) | `shift_reg_io.v` 126-160 | fixed: test_ttlc |
 | 13 | TTLC: latch pulse cannot load a 74HC166; step bit cannot work; breakpoints one late from the instruction cache | `shift_reg_io.v`, `mc14500b.v`, `ttlc_inst_cache.v` | step and breakpoints fixed: test_ttlc_debug; the 166 latch kept as is |
-| 14 | Console UART holds one received byte: characters lost at flash fetch speed | `lisa_uart.v` / `lisa_rx8n.v` | done: test_uart_burst |
+| 14 | Console UART holds one received byte: characters lost at flash fetch speed | `lisa_uart.v` / `lisa_rx8n.v` | done: test_uart_burst; the overrun flag in the status (bit 2 / UART2 bit 3): test_uart_overrun |
 | 15 | Reading debug register 0xf advances PC | `lisa_dbg.v` | kept |
 | 16 | Stack convention: SP at the top byte, `0(sp)` | `lisa_core.v` sp_adder | done: test/progs --rev2 builds, run_suite REV2=1 |
 | 17 | Debugger version: the second chip answers `lisav2.0` | `debug_ctrl.v` | done: test_debugger |
@@ -33,6 +33,7 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 19 | TTLC program format: 12-bit slots, four to three words; the old `jmp` never worked | `ttlc_fetch.v`, `tt_um_lisa.v`, `debug_regs.v` | done: test_ttlc, test_ttlc_jump, test_ttlc_debug |
 | 20 | The autobaud and BRG count in 32-clock steps: only rates with a bit a multiple of 32 clocks | `debug_autobaud.v`, `debug_brg.v` | done: test_autobaud; the FPGA at 115200 .. 921600 |
 | 21 | Quad flash reads float the mode bits: continuous-read mode by accident | `lisa_qqspi.v` S12_MODE | done: the FPGA quad on both selects |
+| 23 | A store to the UART data register pops the receive FIFO (the core's `d_rd` pulsed on a store's exec clock); any access to 0x14 wrote UART2's baud divisor | `lisa_core.v` d_rd, `lisa_periph.v` 0x1E | fixed: test_uart_overrun |
 | 22 | Bank registers (an extension): the upper 16K of the code and of the data space a window on 16 banks, 512 KB / 256 KB | `lisa_periph.v` 0x15-0x17, `tt_um_lisa.v`, `inst_stream.v`, `data_cache8.v`, `lisa_core.v` d_sp | done: test/progs/bank.c (make BANK=1), lisa_sim --rev2, sdcc __banked (sdcc_test/test_bank on the testbench and the Arty) |
 
 Status: open / fixed (the test that shows it, in test/: a program of test/progs, a cocotb test of test/core or the fops bench).
@@ -279,6 +280,19 @@ lose every other character (the monitor). A small receive FIFO (4-8 bytes)
 in `lisa_uart.v`, or at least a double buffer, with an overrun flag, makes
 interactive programs usable without pacing. Improvement, not a bug.
 
+**Done.** An 8-byte FIFO in `lisa_rx8n.v` (both UARTs).  Its overrun flag
+(a byte arrived with the FIFO full; it stays set until the FIFO has been
+read empty) was left unconnected until 2026-10-18 (Ken, with the
+interrupt-driven receiver in mind: a lost byte was invisible): it is bit 2
+of the UART status 0x11 (the console UART's receiver sits in
+`debug_ctrl.v`, shared with the debugger) and bit 3 of UART2's 0x13
+(`lisa_uart.v`, `lisa_periph.v`).  The UART interrupt is an edge of
+"data available" (and of "TX empty" when enabled), so a receive handler
+acknowledges first and then drains while bit 0 is set.  Test:
+`make OVERRUN=1` (test/progs/uartov.c: twelve bytes into the FIFO while
+the program looks away, the flag set, eight bytes out, the flag gone,
+the echo after).  Hardened in rc7.
+
 ## 15. Register 0xf
 
 Any access to the "current opcode" register increments PC (`dbg_inc`, meant
@@ -510,6 +524,40 @@ closes at 50 MHz, setup +0.25 ns).  Not done: far data pointers in the
 compiler, a linker check that the common code stays below word 0x4000, the
 debugger tools' view of banked code, a TTLC program convention above the
 code banks (arty_ttlc.py puts it at byte 0x10000 = code bank 2).
+
+## 23. A transmit pops the receive FIFO
+
+**Symptom.** Found 2026-10-18 by the overrun test (item 14): the program
+let twelve bytes queue, printed its first result line and then drained the
+receiver - and got one byte, the ninth.  The core's `d_rd` is a
+peripheral-access strobe, high in the exec state of every `lda`, `sta` and
+`swapi` to the peripheral space (`lisa_core.v`: `d_periph & cond[0] &
+exec_state`), and `lisa_periph.v` popped the receive FIFO on `d_rd` at
+address 0x10: each character written to the UART took a queued received
+byte with it - eight characters of "ok 0001", eight bytes gone.  TT07 has
+the same decode; its one-byte receiver hid it, since an echo loop has read
+the byte before it writes.  With the 8-byte FIFO it is a data-loss bug
+whenever a program transmits while input is queued (a monitor echoing a
+pasted line).  The same strobe cleared a timer's rollover on a write to its
+control register, and `uart2_brg_wr` fired on ANY access to 0x14, the UART
+interrupt enables, so reading or writing them rewrote UART2's baud divisor
+with whatever was on the data bus.
+
+**RTL.** `lisa_core.v`: `d_rd` is the read strobe, `lda` and `swapi` only
+(`& ~op_sta_r`); a store's exec clock no longer pulses it.  Masking with
+`d_we` in the peripheral block cannot work - the core's `d_we` is a
+registered signal, a clock behind the exec clock that pulsed `d_rd`, so
+the pop had already happened.  The peripheral decode is unchanged (the
+receive FIFO pops and the timers' rollover clears on `d_rd`).  UART2's
+baud divisor has its own register, 0x1E (write; a bit is 32 x (d + 1)
+clocks, as the debug BRG), and 0x14 is only the interrupt enables.  The
+console UART's receive path holds one byte more than the FIFO (the debug
+controller's hand-over register): nine bytes queue before the overrun
+flag.
+
+**Test.** `make OVERRUN=1` (test/progs/uartov.c; the report lines are
+printed before the drain, so the test fails on the old decode); the
+default suite.  lisa_sim had no such pop (its write path never read).
 
 ## Verification (test/, see test/README.md)
 

@@ -45,6 +45,7 @@ module lisa_uart
    output wire [7:0]    rx_d,
    output wire          rx_data_avail,
    output wire          tx_buf_empty,
+   output wire          rx_overrun,          // a byte arrived with the receive FIFO full (sticky until it is read empty)
    input  wire          brg_wr,
    input  wire [7:0]    brg_d,
    input  wire          autobaud_disable
@@ -80,7 +81,7 @@ module lisa_uart
        .d          ( rx_d            ),   // Connect the data
        .rx_strobe  (                 ),
        .rx_byte    (                 ),
-       .overrun    (                 )
+       .overrun    ( rx_overrun      )
    );
 
    // ===================================================================

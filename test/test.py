@@ -178,7 +178,7 @@ async def test_ttlc_debug(dut):
     assert int(dut.ttlc_out.value) == 0x0f0f0f0f0f0f, 'the loopback did not resume'
 
 
-@cocotb.test(skip=plusarg('DEFAULT') is not None or plusarg('TTLC') is not None or plusarg('BANK') is not None)
+@cocotb.test(skip=plusarg('DEFAULT') is not None or plusarg('TTLC') is not None or plusarg('BANK') is not None or plusarg('OVERRUN') is not None)
 async def test_program(dut):
     """+FIRMWARE=<hex>: run it (the data cache on with +CACHE) and expect ALL PASSED;
     +STATS counts the fetch clocks"""
@@ -202,6 +202,34 @@ async def test_program(dut):
                           % (clocks, insts, clocks / max(1, insts), wait, 100.0 * wait / max(1, clocks),
                              xfers, words, words / max(1, xfers)))
     assert 'ALL PASSED' in text, 'the program did not pass: %r' % text[-200:]
+
+
+@cocotb.test(skip=plusarg('OVERRUN') is None)
+async def test_uart_overrun(dut):
+    """+OVERRUN (make OVERRUN=1): progs/uartov.hex - twelve characters into
+    the 8-byte receive FIFO while the program is not reading: status bit 2
+    (RESPIN 14) is set, eight bytes come out, the flag clears once the FIFO
+    has been read empty, and the echo works after"""
+    lisa = await start(dut)
+    await lisa.setup(cache=False, quad=True)
+    await lisa.run(timeout=400 * CHAR_CYCLES, stop_at=('ready\n',))
+    for c in '0123456789AB':
+        await lisa.tx(ord(c))
+    # collect the report without resetting the core (run() would)
+    text = ''
+    while 'ALL PASSED' not in text and 'SOME FAILED' not in text:
+        v = await lisa.rx(4000 * CHAR_CYCLES)
+        assert v is not None, 'no report: %r' % text
+        text += chr(v) if 32 <= v < 127 or v in (10, 13) else '?'
+    for line in text.split('\n'):
+        if line.strip():
+            dut._log.info('[LISA] %s' % line.strip())
+    assert 'ALL PASSED' in text, text
+    await lisa.tx(ord('Z'))
+    v = await lisa.rx(200 * CHAR_CYCLES)
+    while v in (10, 13):                    # the end of the report's last line
+        v = await lisa.rx(200 * CHAR_CYCLES)
+    assert v == ord('Z'), 'echo after the overrun: %r' % v
 
 
 @cocotb.test(skip=plusarg('BANK') is None)

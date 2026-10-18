@@ -6,7 +6,7 @@ SDCC      ?= ../../../lisa-tools/sdcc-lisa/build/bin/sdcc
 SDCC_TEST ?= ../../../lisa-tools/sdcc_test
 CFLAGS    ?= -mlisa --rev2 --debug -I$(SDCC_TEST)
 
-PROGS = hello alu2 reti div16 cache14 dbg swap bank
+PROGS = hello alu2 reti div16 cache14 dbg swap bank uartov
 
 all: $(PROGS:%=%.hex) ttlc_test.hex ttlc_jump_test.hex bank_test.hex
 

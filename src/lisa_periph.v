@@ -65,9 +65,11 @@ Address Map:
    UART
    ====
    0x10:       TX/RX register
-   0x11:       Status register
+   0x11:       Status register: bit 0 RX data available, 1 TX buffer empty,
+               2 RX overrun (a byte arrived with the 8-byte FIFO full; sticky until it is read empty)
    0x12:       UART2 TX/RX register
-   0x13:       UART2 status
+   0x13:       UART2 status: bits 0-1 as 0x11, 2 autobaud disable (r/w), 3 RX overrun
+   0x1E:       UART2 baud divisor (write): a bit is 32 x (d + 1) clocks
    0x14:       UART interrupt enables
 
    BANKS (revision 2, RESPIN 22)
@@ -138,6 +140,7 @@ module lisa_periph
    input  wire [7:0]    uart_rx_d,
    input  wire          uart_rx_data_avail,
    input  wire          uart_tx_buf_empty,
+   input  wire          uart_rx_overrun,
 
 `ifdef WANT_UART2
    // UART 2
@@ -199,6 +202,7 @@ module lisa_periph
    wire [7:0]    uart2_rx_d;
    wire          uart2_rx_data_avail;
    wire          uart2_tx_buf_empty;
+   wire          uart2_rx_overrun;
    wire          uart2_brg_wr;
    wire [7:0]    uart2_brg_d;
    reg           uart2_autobaud_disable;
@@ -546,12 +550,14 @@ module lisa_periph
 
       // UART read
       7'h10:   d_o_r = uart_rx_d;
-      7'h11:   d_o_r = {6'h0, uart_tx_buf_empty, uart_rx_data_avail};
+      // bit 2 (RESPIN 14): a byte arrived with the 8-byte receive FIFO full;
+      // clears when the FIFO has been read empty
+      7'h11:   d_o_r = {5'h0, uart_rx_overrun, uart_tx_buf_empty, uart_rx_data_avail};
 
 `ifdef WANT_UART2
       // UART2 read
       7'h12:   d_o_r = uart2_rx_d;
-      7'h13:   d_o_r = {5'h0, uart2_autobaud_disable, uart2_tx_buf_empty, uart2_rx_data_avail};
+      7'h13:   d_o_r = {4'h0, uart2_rx_overrun, uart2_autobaud_disable, uart2_tx_buf_empty, uart2_rx_data_avail};
       7'h14:   d_o_r = {4'h0, uart2_tx_ie, uart2_rx_ie, uart_tx_ie, uart_rx_ie};
 `else
       7'h14:   d_o_r = {6'h0, uart_tx_ie, uart_rx_ie};
@@ -579,6 +585,8 @@ module lisa_periph
    // ==============================================
    // UART read / write controls
    // ==============================================
+   // d_rd is the core's read strobe (lda, swapi: RESPIN 23 - on TT07 a store's
+   // exec clock pulsed it too, and a putc to 0x10 popped a received byte)
    assign uart_tx_wr = d_periph && d_we && d_addr == 7'h10;
    assign uart_rx_rd = d_periph && d_rd && d_addr == 7'h10;
    assign uart_tx_d  = d_i;
@@ -587,7 +595,9 @@ module lisa_periph
    assign uart2_tx_wr = d_periph && d_we && d_addr == 7'h12;
    assign uart2_rx_rd = d_periph && d_rd && d_addr == 7'h12;
    assign uart2_tx_d  = d_i;
-   assign uart2_brg_wr= d_periph && d_rd && d_addr == 7'h14;
+   // UART2's baud divisor: a bit is 32 x (d + 1) clocks (as the debug BRG);
+   // it was written by any access to 0x14, the interrupt enables (RESPIN 23)
+   assign uart2_brg_wr= d_periph && d_we && d_addr == 7'h1E;
    assign uart2_brg_d = d_i;
 `endif
 
@@ -631,6 +641,7 @@ module lisa_periph
       .rx_d             ( uart2_rx_d             ),
       .rx_data_avail    ( uart2_rx_data_avail    ),
       .tx_buf_empty     ( uart2_tx_buf_empty     ),
+      .rx_overrun       ( uart2_rx_overrun       ),
       .brg_wr           ( uart2_brg_wr           ),
       .brg_d            ( uart2_brg_d            ),
       .autobaud_disable ( uart2_autobaud_disable )

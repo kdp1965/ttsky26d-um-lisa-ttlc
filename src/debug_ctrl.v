@@ -84,7 +84,8 @@ module debug_ctrl
    input  wire                lisa_rx_rd,
    output wire [7:0]          lisa_rx_d,
    output wire                lisa_rx_data_avail,
-   output wire                lisa_tx_buf_empty
+   output wire                lisa_tx_buf_empty,
+   output wire                lisa_rx_overrun      // a byte arrived with the receive FIFO full (sticky until it is read empty)
 );
 
 //   parameter ASCII_BEL     = 8'b00000111;
@@ -666,7 +667,7 @@ module debug_ctrl
        .d          ( s_rx_d          ),   // Connect the data
        .rx_strobe  ( s_rx_strobe     ),   // a byte received
        .rx_byte    ( s_rx_byte       ),
-       .overrun    (                 )
+       .overrun    ( lisa_rx_overrun )    // RESPIN 14: visible in the UART status
    );
 
    // ===================================================================

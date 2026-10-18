@@ -33,7 +33,12 @@ suite, the LISA Commander and lisa_ide; this revision fixes what was found
   bit executes exactly one instruction; a resume runs the instruction at its
   breakpoint; `brk` halts the core; RAM reads with the cache off return the
   addressed byte; register 1 shows `amode` in bits 14:12.
-* The console UART has an 8-byte receive FIFO (TT07 held one byte).
+* The console UART has an 8-byte receive FIFO (TT07 held one byte) and an
+  overrun flag, status bit 2 (UART2: bit 3 of 0x13): a byte arrived with
+  the FIFO full; it clears once the FIFO has been read empty.  A write to
+  the UART no longer pops the receive side (TT07's decode did, hidden by
+  its one-byte receiver), and UART2's baud divisor is its own register,
+  0x1E (TT07 wrote it on any access to the interrupt enables, 0x14).
 * The TTLC's input scan takes 16 samples (TT07: 17, every input one position
   high), its breakpoints halt before their instruction, its step bit runs
   one instruction, and a stepped `jmp`/`rtn`/`nopf` keeps its PC change.

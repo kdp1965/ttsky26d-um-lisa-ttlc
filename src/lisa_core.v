@@ -744,7 +744,10 @@ module lisa_core
    // block's own delay has passed: with the cache off d_ready is always 1,
    // and TT07 answered in the first clock with RAM[IX] still on the bus
    assign dbg_ready  = (dbg_d_access & !d_periph) ? (d_ready_r & dbg_ready_c) : dbg_ready_c;
-   assign d_rd       = dbg_d_access ? dbg_d_rd : d_periph & cond[0] & exec_state;
+   // the peripheral read strobe: lda and swapi, not sta - a store's exec clock
+   // pulsed it too (d_we follows a clock later), so a putc to the UART popped
+   // a queued received byte (RESPIN 23; TT07's one-byte receiver hid it)
+   assign d_rd       = dbg_d_access ? dbg_d_rd : d_periph & cond[0] & exec_state & ~op_sta_r;
    assign dbg_inc    = (dbg_we | dbg_rd) && dbg_a == 8'hf;
    // swap n(sp) takes the sp_addr path like every other n(sp) operand (TT07
    // sent it through the ads adder, which sign-extended the select bit: -512)
