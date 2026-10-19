@@ -78,7 +78,9 @@ Uses a 14 (or 16) bit program word.  Shown is the 14-bit version.  For 16-bit, e
     10 1000 010000ux   tax                  Transfer A to IX[7:0]/IX[14:8] based on u
     10 1000 01001000   ldirq                A <= {irq_z, irq_c}
     10 1000 01001001   stirq                {irq_z, irq_c} <= A
-    10 1000 010100mm   amode                Set arithemetc mode ([signed:shift])
+    10 1000 01010000mm amode                Set arithemetc mode ([signed:shift])
+    10 1000 01010010xx ldamode              A <= amode
+    10 1000 01010011xx ldamode              lda (ix++)
     10 1000 01011000   sra                  Save Return Address: M[sp-1] <= ra[7:0], M[sp-2] <= {cond, ra[14:8]}, sp -= 2
     10 1000 01011001   lra                  Load Return Address: {cond, ra[14:8]} <= M[sp], ra[7:0] <= M[sp+1], sp += 2
     10 1000 01011010   push ix              Push ix to stack (as sra: ix[7:0] at sp-1, {ix_cond, ix[14:8]} at sp-2)
