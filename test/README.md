@@ -45,7 +45,10 @@ instructions and `TRACE_FINISH=1` ends the run there (the C and X lines are
 written from reset).  NuttX's non-boot (RESPIN 24) was found by tracing both
 from reset and diffing: they agreed to the first timer interrupt.
 `SEND='text'` types to the program (escapes as in Python), after
-`SEND_DELAY=<clocks>` if given, so a shell gets its prompt up first; the
+`SEND_DELAY=<clocks>` if given, so a shell gets its prompt up first;
+`SEND_PROMPT='nsh> '` types it a line at a time, each line once the prompt
+has shown (the chip's FIFO holds 8 bytes and the driver 63: typed at once,
+a shell loses the rest and waits for a line that never ends); the
 trace's `Q` lines log the writes of INT_ENABLE, INT_STATUS and UART_INT_EN
 (RESPIN 25 showed in them: the enable written once and read back 0).
 

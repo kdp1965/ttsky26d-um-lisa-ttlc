@@ -126,6 +126,9 @@ PLUSARGS += +SEND='$(SEND)'            # typed to the program (escapes as in Pyt
 ifneq ($(SEND_DELAY),)
 PLUSARGS += +SEND_DELAY=$(SEND_DELAY)  # ... this many clocks after the start
 endif
+ifneq ($(SEND_PROMPT),)
+PLUSARGS += +SEND_PROMPT='$(SEND_PROMPT)'  # ... a line at a time, each after this prompt shows
+endif
 endif
 ifneq ($(TRACE),)
 PLUSARGS += +TRACE=$(abspath $(TRACE))   # tb.v: an instruction trace (I/D/P/C/X lines)

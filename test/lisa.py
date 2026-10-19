@@ -188,40 +188,54 @@ class Lisa:
         self.cache = cache
 
     # ------------------------------------------------------------ programs
-    async def run(self, timeout, stop_at=('ALL PASSED', 'SOME FAILED'), send=None, send_delay=0):
+    async def run(self, timeout, stop_at=('ALL PASSED', 'SOME FAILED'), send=None, send_delay=0,
+            send_prompt=None):
         """resume the core at PC 0 with the UART granted to the program;
         collect its output until one of stop_at appears, or timeout clocks
         of silence.  Returns the text.  send is typed to the program after
-        send_delay clocks (a shell wants its prompt up first)."""
+        send_delay clocks (a shell wants its prompt up first).  With send_prompt
+        (a shell's prompt) send is typed a line at a time (the lines end in
+        '\\r'), each once the prompt has shown since the one before: the chip
+        holds 8 bytes and the driver 63, a slow program loses the rest."""
         await self.core_reset()
         await self.write_reg(REG_PC, 0)
         await self.resume()
         await self.grant_uart()
-        if send and not send_delay:
+        if send and not send_delay and not send_prompt:
             await self.tx_str(send)
-        pending = send if send_delay else None       # typed from this loop, at send_delay clocks
+            send = None
+        # typed from this loop: at send_delay clocks, and with send_prompt a
+        # line at a time, each after the prompt has shown (the first one too)
+        chunks = ([l + '\r' for l in send.split('\r') if l] if send_prompt else [send]) if send else []
+        ready = not send_prompt                      # the next chunk may go
+        mark = 0                                     # the prompt is looked for in text[mark:]
         text = ''
         line = ''
         while True:
             wait = timeout
-            if pending:
+            if chunks:
                 left = send_delay - int(self.dut.tr_cycle.value)
-                if left <= 0:
-                    self.log.info('[LISA] typing %r' % pending)
-                    for c in pending:
+                if left <= 0 and ready:
+                    self.log.info('[LISA] typing %r' % chunks[0])
+                    for c in chunks.pop(0):
                         await self.tx_str(c)
                         await ClockCycles(self.clk, 4 * CHAR_CYCLES)   # the program's turn to read it
-                    pending = None
+                    if send_prompt:
+                        ready = False
+                        mark = len(text)
                     continue
-                wait = min(timeout, left)
+                if left > 0:
+                    wait = min(timeout, left)
             v = await self.rx(wait)
-            if v is None and pending and wait < timeout:
+            if v is None and chunks and wait < timeout:
                 continue                             # time to type, not silence
             if v is None:
                 self.log.info('[LISA] %s' % line) if line else None
                 raise Timeout('no output for %d clocks; so far: %r' % (timeout, text))
             c = chr(v) if 32 <= v < 127 or v in (9, 10, 13) else '\\x%02x' % v
             text += c
+            if not ready and send_prompt in text[mark:]:
+                ready = True
             if v == 10:
                 self.log.info('[LISA] %s' % line)
                 line = ''
