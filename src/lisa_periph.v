@@ -166,10 +166,11 @@ module lisa_periph
    reg                  ms_rollover;
    reg                  uart_tx_ie;
    reg                  uart_rx_ie;
-   reg                  uart_rx_data_avail_p1;
-   reg                  uart_tx_buf_empty_p1;
+   wire                 uart_req;            // the UART1 request: a level (RESPIN 25)
+   wire                 uart2_req;
    
-   reg   [5:0]          int_o_r;
+   reg   [5:0]          int_o_r;             // the latched requests (bits 2 / 3 unused: the UARTs are levels)
+   wire  [5:0]          int_req;
    reg   [7:0]          porta_last;
    reg   [7:0]          porta_int0;
    reg   [7:0]          porta_int1;
@@ -208,8 +209,6 @@ module lisa_periph
    reg           uart2_autobaud_disable;
    reg           uart2_tx_ie;
    reg           uart2_rx_ie;
-   reg           uart2_rx_data_avail_p1;
-   reg           uart2_tx_buf_empty_p1;
 `endif
 
    always @(posedge clk)
@@ -237,8 +236,6 @@ module lisa_periph
          int_en       <= 8'h0;
          uart_tx_ie   <= 1'b0;
          uart_rx_ie   <= 1'b0;
-         uart_rx_data_avail_p1 <= 1'b0;
-         uart_tx_buf_empty_p1 <= 1'b0;
 
 `ifdef TIMER2
          ms2_prediv   <= 16'd29494;
@@ -253,20 +250,12 @@ module lisa_periph
          uart2_autobaud_disable <= 1'b0;
          uart2_tx_ie  <= 1'b0;
          uart2_rx_ie  <= 1'b0;
-         uart2_rx_data_avail_p1 <= 1'b0;
-         uart2_tx_buf_empty_p1 <= 1'b0;
 `endif
       end
       else
       begin
          porta_last <= porta_in;
          ttlc_int_last <= ttlc_int;
-         uart_rx_data_avail_p1 <= uart_rx_data_avail;
-         uart_tx_buf_empty_p1 <= uart_tx_buf_empty;
-`ifdef WANT_UART2
-         uart2_rx_data_avail_p1 <= uart2_rx_data_avail;
-         uart2_tx_buf_empty_p1 <= uart2_tx_buf_empty;
-`endif
 
          // ==============================================
          // GPIO signals
@@ -408,16 +397,8 @@ module lisa_periph
             ms_count <= 16'h0; 
          end
 
-         // ==============================================
-         // The UART interrupt bits
-         // ==============================================
-         if ((uart_rx_data_avail & !uart_rx_data_avail_p1 & uart_rx_ie) ||
-             (uart_tx_buf_empty & !uart_tx_buf_empty_p1 & uart_tx_ie))
-         begin
-            int_o_r[2] <= 1'b1;
-         end
-         else if (d_periph && d_we && d_addr == 7'h0F && d_i[2])
-            int_o_r[2] <= 1'b0;
+         // The UART1 request is a level (uart_req below): no latch, nothing
+         // to acknowledge in INT_STATUS
 
 `ifdef TIMER2
          // ==============================================
@@ -496,16 +477,6 @@ module lisa_periph
          if (d_periph && d_we && d_addr == 7'h13)
             uart2_autobaud_disable <= d_i[2];
 
-         // ==============================================
-         // The UART2 interrupt bits
-         // ==============================================
-         if ((uart2_rx_data_avail & !uart2_rx_data_avail_p1 & uart2_rx_ie) ||
-             (uart2_tx_buf_empty & !uart2_tx_buf_empty_p1 & uart2_tx_ie))
-         begin
-            int_o_r[3] <= 1'b1;
-         end
-         else if (d_periph && d_we && d_addr == 7'h0F && d_i[3])
-            int_o_r[3] <= 1'b0;
 `endif
       end
    end
@@ -559,7 +530,7 @@ module lisa_periph
 
       // Int EN readback
       7'h0E:   d_o_r = int_en;
-      7'h0F:   d_o_r = {1'h0, i2c_irq, int_o_r};
+      7'h0F:   d_o_r = {1'h0, i2c_irq, int_req};
 
       // UART read
       7'h10:   d_o_r = uart_rx_d;
@@ -638,7 +609,24 @@ module lisa_periph
    assign sda_padoen_o  = ~sda_oen_n;
 
    assign d_o = d_o_r | i2c_d_o;
-   assign int_o = {1'h0, i2c_irq, int_o_r};
+   // The requests to the core and INT_STATUS.  The timers' rollovers, the
+   // port's edges and the TTLC's toggle are instants: latched (int_o_r) until
+   // a 1 is written to their bit of INT_STATUS.  The UARTs' are states - a
+   // byte waits, the transmitter is empty - and the request is that state
+   // while its enable (0x14) is set: a byte already waiting when the enable
+   // is set interrupts at once, a second byte queued behind an unread one
+   // keeps the request up, the handler ends it by draining the FIFO, writing
+   // the next byte or dropping the enable; a write to bits 2 / 3 of
+   // INT_STATUS does nothing (RESPIN 25, Ken's decision of 2026-10-18;
+   // until then an edge was latched - and the enables had no write decode).
+   assign uart_req  = (uart_rx_data_avail & uart_rx_ie) | (uart_tx_buf_empty & uart_tx_ie);
+`ifdef WANT_UART2
+   assign uart2_req = (uart2_rx_data_avail & uart2_rx_ie) | (uart2_tx_buf_empty & uart2_tx_ie);
+`else
+   assign uart2_req = 1'b0;
+`endif
+   assign int_req = {int_o_r[5:4], uart2_req, uart_req, int_o_r[1:0]};
+   assign int_o   = {1'h0, i2c_irq, int_req};
 
 `ifdef WANT_UART2
    lisa_uart i_lisa_uart_2

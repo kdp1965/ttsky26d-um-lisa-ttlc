@@ -35,7 +35,7 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 21 | Quad flash reads float the mode bits: continuous-read mode by accident | `lisa_qqspi.v` S12_MODE | done: the FPGA quad on both selects |
 | 23 | A store to the UART data register pops the receive FIFO (the core's `d_rd` pulsed on a store's exec clock); any access to 0x14 wrote UART2's baud divisor | `lisa_core.v` d_rd, `lisa_periph.v` 0x1E | fixed: test_uart_overrun |
 | 24 | `ldirq` loads nothing: a misc load (101000..) decoded by `op_ld_misc_r` first, its own case item never reached; `stirq` then wrote A back as the shadows and `rets` restored amode 0 | `lisa_core.v` acc_misc | fixed: sdcc_test/test_ldirq (lisa_sim --rev2, the testbench, the Arty) |
-| 25 | The UART interrupt enables (0x14) have no write decode - TT07 too: `uart_rx_ie` / `uart_tx_ie` read 0 and no UART interrupt ever fires | `lisa_periph.v` 0x14 | fixed: sdcc_test/test_uartirq (lisa_sim --rev2 --send, the testbench with SEND=, the Arty) |
+| 25 | The UART interrupt enables (0x14) have no write decode - TT07 too: `uart_rx_ie` / `uart_tx_ie` read 0 and no UART interrupt ever fires; the request was an edge, latched | `lisa_periph.v` 0x14, int_req | fixed: the enables written, the UART requests levels (Ken, 2026-10-18); sdcc_test/test_uartirq (lisa_sim --rev2 --send, the testbench with SEND=, the Arty) |
 | 22 | Bank registers (an extension): the upper 16K of the code and of the data space a window on 64 code / 16 data banks, 2 MB / 256 KB | `lisa_periph.v` 0x15-0x17, `tt_um_lisa.v`, `inst_stream.v`, `data_cache8.v`, `lisa_core.v` d_sp | done: test/progs/bank.c (make BANK=1), lisa_sim --rev2, sdcc __banked (sdcc_test/test_bank on the testbench and the Arty) |
 
 Status: open / fixed (the test that shows it, in test/: a program of test/progs, a cocotb test of test/core or the fops bench).
@@ -615,20 +615,31 @@ the TTLC tools), and item 23 found only the side effect an access to 0x14
 had on UART2's baud divisor.
 
 **RTL.** `lisa_periph.v`: a write to 0x14 loads the four enables (bit 0
-UART1 receive, 1 UART1 transmit, 2 / 3 UART2).  The request itself stays
-as it was: the rising edge of "receive data available" or "transmit buffer
-empty" while the enable is set, latched in INT_STATUS bit 2 until it is
-written.  Whether that should be a level instead (a byte already waiting
-when the enable is set raises nothing; nor does a second byte queued behind
-an unread one) is open - Ken's question of 2026-10-18; NuttX's driver
-drains on enable and so works with either.
+UART1 receive, 1 UART1 transmit, 2 / 3 UART2).  And the UART requests are
+levels (Ken's decision, 2026-10-18): INT_STATUS bit 2 (3 for UART2) is "a
+byte waits and the receive interrupt is enabled, or the transmitter is
+empty and its interrupt is enabled", for as long as that holds - a byte
+already waiting when the enable is set interrupts at once, a second byte
+queued behind an unread one keeps the request up, the handler ends it by
+draining the FIFO, writing the next byte or dropping the enable, and a 1
+written to the bit in INT_STATUS does nothing.  Until then the rising edge
+of the condition was latched and acknowledged like an event, so both of
+those cases lost the interrupt for good.  The other sources are instants
+and stay latched until acknowledged: the timers' rollovers, the port's
+edges, the TTLC's toggle (the port's mode 1 is a level of the pin itself,
+the I2C request the I2C core's own).  `lisa_sim --rev2` models the same
+(and TT07's unwritable enables: no UART interrupt there).
 
 **Test.** `sdcc_test/test_uartirq.c` (`--rev2`): the enables written and
-read back, a transmit-empty interrupt after a byte goes out, and two typed
-bytes through the receive interrupt (`lisa_sim --send Hi --send-at
-<cycles>`; the testbench `SEND=Hi SEND_DELAY=<clocks>`, in run_suite's
-list; the Arty with arty_run's SEND).  `lisa_sim` transmits a byte in
-`char_cycles` (100 by default) so the empty edge exists there too.
+read back; the transmit request up as soon as its enable is set with the
+transmitter empty, unchanged by an acknowledge, gone when the handler drops
+the enable, and raised again when a byte on its way out has left; two typed
+bytes (`lisa_sim --send Hi --send-at <cycles>`; the testbench `SEND=Hi
+SEND_DELAY=<clocks>`, in run_suite's list; the Arty with arty_run's SEND)
+waited for with the interrupt off, then the enable set: the request up at
+once, the handler takes both, the request gone.  `lisa_sim` transmits a
+byte in `char_cycles` (100 by default) so the transmitter is busy for a
+while, as the chip's is.
 
 ## Verification (test/, see test/README.md)
 

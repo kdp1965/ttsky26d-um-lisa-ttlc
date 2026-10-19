@@ -39,6 +39,14 @@ suite, the LISA Commander and lisa_ide; this revision fixes what was found
   the UART no longer pops the receive side (TT07's decode did, hidden by
   its one-byte receiver), and UART2's baud divisor is its own register,
   0x1E (TT07 wrote it on any access to the interrupt enables, 0x14).
+* The UART interrupts work: the enables at 0x14 can be written (TT07's
+  flops were never loaded, so no UART interrupt ever fired there), and the
+  request is a level - INT_STATUS bit 2 (bit 3 for UART2) is "a byte waits
+  and the receive interrupt is enabled, or the transmitter is empty and its
+  interrupt is enabled" for as long as that holds; the handler ends it by
+  reading the FIFO, writing the next byte or dropping the enable, and a 1
+  written to the bit changes nothing.  The timers, the port's edges and the
+  TTLC stay latched until their bit is written.
 * The TTLC's input scan takes 16 samples (TT07: 17, every input one position
   high), its breakpoints halt before their instruction, its step bit runs
   one instruction, and a stepped `jmp`/`rtn`/`nopf` keeps its PC change.
