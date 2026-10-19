@@ -142,21 +142,16 @@ class TtlcIo:
             log('flash id %s' % ident.hex())
             if ident in (b'\x00\x00\x00', b'\xff\xff\xff'):
                 raise RuntimeError('no flash answers (id %s)' % ident.hex())
-            # the runs of the image: a gap of 512 or more zero bytes is the
-            # loader's fill between code banks (bank n at byte n * 0x8000),
-            # not program - it is skipped and left erased
-            runs, i, n = [], 0, len(data)
-            while i < n:
-                j = i
-                while j < n and not (data[j] == 0 and data[j:j + 512] == bytes(min(512, n - j))):
-                    j += 1
-                if j > i:
-                    runs.append((i, j))
-                while j < n and data[j] == 0:
-                    j += 1
-                if j - (runs[-1][1] if runs else 0) < 512 and runs and j < n:
-                    runs[-1] = (runs[-1][0], j)          # a short zero run is program after all
-                i = j
+            # the runs of the image: what the file holds (load_image's
+            # Image.runs, from the hex records), the gaps between them (the
+            # unused rest of a code bank) skipped and left erased.  A flat
+            # byte string has no gaps: every byte is programmed - a zero
+            # byte at the start of a run after a gap is program (the first
+            # word of a bank that begins with a ret, 0x8A00, lost its 00
+            # here until 2026-10-18, and NuttX fell through its first bank
+            # 4 function)
+            n = len(data)
+            runs = [(r0, r1) for r0, r1 in getattr(data, 'runs', [(0, n)]) if r1 > r0]
             if erase:
                 blocks = sorted({b for r0, r1 in runs for b in range((addr + r0) >> 16, ((addr + r1 - 1) >> 16) + 1)})
                 for b in blocks:
@@ -203,10 +198,17 @@ class TtlcIo:
                 pass
 
 
+class Image(bytes):
+    """a program image as flash bytes, with the runs of addresses the file
+    holds (start, end) in .runs; the bytes between runs are zero"""
+    runs = ()
+
+
 def load_image(path):
-    """a program image as flash bytes: Intel HEX (sdcc -mlisa's .ihx; byte
-    addresses, gaps zero as the debug loader writes them), readmemh bytes
-    ('@addr' then hex bytes, the testbench's flash images), or raw binary"""
+    """a program image as flash bytes (an Image: .runs are the extents the
+    file holds): Intel HEX (sdcc -mlisa's .ihx; byte addresses, gaps zero as
+    the debug loader writes them), readmemh bytes ('@addr' then hex bytes,
+    the testbench's flash images), or raw binary (one run)"""
     data = {}
     text = open(path, 'rb').read()
     if text.startswith(b':'):
@@ -228,10 +230,22 @@ def load_image(path):
             else:
                 data[a] = int(tok, 16); a += 1
     else:
-        return bytes(text)
+        img = Image(text)
+        img.runs = [(0, len(text))]
+        return img
     if not data:
-        return b''
-    return bytes(data.get(i, 0) for i in range(max(data) + 1))
+        return Image()
+    img = Image(data.get(i, 0) for i in range(max(data) + 1))
+    runs, start, prev = [], None, None
+    for a in sorted(data):
+        if prev is None or a != prev + 1:
+            if start is not None:
+                runs.append((start, prev + 1))
+            start = a
+        prev = a
+    runs.append((start, prev + 1))
+    img.runs = runs
+    return img
 
 
 def main(argv):
