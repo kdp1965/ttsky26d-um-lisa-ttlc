@@ -34,7 +34,16 @@ make SIM=icarus               # what CI runs
 without printing needs more). `STATS=1` counts the fetch: the clocks per
 instruction, the clocks the core waited for one, the streaming fetch's
 bursts and words (`fetch: ...` in the log). `DUMP=1` writes `tb.vcd` (FST
-under Verilator, built for tracing; `fst2vcd` converts it).
+under Verilator, built for tracing; `fst2vcd` converts it). `TRACE=<file>`
+writes an instruction trace to compare with lisa_sim's (`-t`, or `trace on`):
+an `I` line per instruction (clock, bank:PC, word, A, IX, SP, RA, cond, Z/C,
+amode, the amode shadow, ie, IA, the data cache's valid/dirty lines), `D`/`P`
+lines per data and peripheral access, `C` per code-bank write and `X` per
+interrupt entry; `TRACE_PC=<hex> [TRACE_CB=<bank>]` starts it at the first
+fetch of that window address, `TRACE_COUNT=<n>` stops it after n
+instructions and `TRACE_FINISH=1` ends the run there (the C and X lines are
+written from reset).  NuttX's non-boot (RESPIN 24) was found by tracing both
+from reset and diffing: they agreed to the first timer interrupt.
 
 ## `test/core/` - the core
 

@@ -121,6 +121,21 @@ endif
 ifneq ($(STATS),)
 PLUSARGS += +STATS           # the fetch counts (clocks per instruction, the wait for the flash)
 endif
+ifneq ($(TRACE),)
+PLUSARGS += +TRACE=$(abspath $(TRACE))   # tb.v: an instruction trace (I/D/P/C/X lines)
+ifneq ($(TRACE_PC),)
+PLUSARGS += +TRACE_PC=$(TRACE_PC)        # start at this window address (hex) ...
+endif
+ifneq ($(TRACE_CB),)
+PLUSARGS += +TRACE_CB=$(TRACE_CB)        # ... in this code bank
+endif
+ifneq ($(TRACE_COUNT),)
+PLUSARGS += +TRACE_COUNT=$(TRACE_COUNT)  # stop after n instructions
+endif
+ifneq ($(TRACE_FINISH),)
+PLUSARGS += +TRACE_FINISH                # and end the simulation there
+endif
+endif
 ifneq ($(DUMP),)
 PLUSARGS += +DUMP
 # Verilator traces only when built for it: cocotb's VERILATOR_TRACE adds

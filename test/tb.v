@@ -66,6 +66,82 @@ module tb
       if (st_state_r == 4'd0 && lisa.i_lisa_qqspi.state == 4'd1) st_xfers <= st_xfers + 1;
    end
 
+   // ==========================================================================
+   // +TRACE=<file>: an instruction trace to compare with lisa_sim's ("trace
+   // on").  An I line per instruction fetched: the clock, the code bank and
+   // the PC, the word, and the registers as the instructions before it left
+   // them (v/d: the data cache's valid and dirty lines); a D line per data
+   // access (W/R, bank:address, the byte, whether the cache hit); a P line
+   // per peripheral access.  +TRACE_PC=<hex window address> [+TRACE_CB=<bank>]
+   // starts the I/D/P lines at the first fetch of that address and
+   // +TRACE_COUNT=<n> stops them after n instructions (+TRACE_FINISH ends
+   // the simulation there).  C lines (a write of the code bank register) and
+   // X lines (an interrupt entry) are written from reset, so the bank
+   // switches before the trigger can be compared too.
+   // ==========================================================================
+   integer        tr_fd = 0;
+   reg [1023:0]   tr_file;
+   reg [31:0]     tr_pc = 32'hFFFF_FFFF, tr_cb = 32'hFFFF_FFFF, tr_count = 32'hFFFF_FFFF;
+   reg            tr_on = 0, tr_armed = 0, tr_isr_r = 0;
+   reg [31:0]     tr_cycle = 0;
+   // the clock the fetch completes (the core holds a fetch while the store
+   // of the instruction before it is still pending: d_we_r)
+   wire           tr_fetch = lisa.core_i_fetch & lisa.core_i_ready & !lisa.i_lisa_core.d_we_r;
+   wire           tr_hit   = tr_armed && !tr_on && lisa.i_lisa_core.pc == tr_pc[14:0] &&
+                             (tr_cb == 32'hFFFF_FFFF || lisa.i_lisa_periph.code_bank == tr_cb[5:0]);
+   initial begin
+      if ($value$plusargs("TRACE=%s", tr_file))
+      begin
+         tr_fd = $fopen(tr_file, "w");
+         if ($value$plusargs("TRACE_PC=%h", tr_pc)) tr_armed = 1; else tr_on = 1;
+         if ($value$plusargs("TRACE_CB=%d", tr_cb)) ;
+         if ($value$plusargs("TRACE_COUNT=%d", tr_count)) ;
+      end
+   end
+   always @(posedge clk)
+   begin
+      tr_cycle <= tr_cycle + 1;
+      tr_isr_r <= lisa.i_lisa_core.isr_jump;
+      if (tr_fd != 0)
+      begin
+         if (tr_fetch && tr_hit) tr_on <= 1'b1;
+         if (tr_fetch && (tr_on || tr_hit))
+         begin
+            $fwrite(tr_fd, "I %0d %02X:%04X %04X A=%02X IX=%04X%s SP=%04X RA=%04X%s c=%0d %s%s am=%0d ai=%0d ie=%0d IA=%04X v=%02X d=%02X\n",
+                    tr_cycle, lisa.i_lisa_periph.code_bank, lisa.i_lisa_core.pc, lisa.core_inst,
+                    lisa.i_lisa_core.acc, lisa.i_lisa_core.ix, lisa.i_lisa_core.ix_cond ? "c" : " ",
+                    lisa.i_lisa_core.sp, lisa.i_lisa_core.ra, lisa.i_lisa_core.ra_cond ? "c" : " ",
+                    lisa.i_lisa_core.cond, lisa.i_lisa_core.zflag ? "Z" : ".", lisa.i_lisa_core.cflag ? "C" : ".",
+                    lisa.i_lisa_core.amode, lisa.i_lisa_core.amode_isr, lisa.i_lisa_core.ie, lisa.i_lisa_core.ia,
+                    lisa.i_data_cache.cl_valid, lisa.i_data_cache.cl_dirty);
+            if (tr_count != 32'hFFFF_FFFF)
+            begin
+               tr_count <= tr_count - 1;
+               if (tr_count <= 1)
+               begin
+                  tr_on    <= 1'b0;
+                  tr_armed <= 1'b0;
+                  $fwrite(tr_fd, "E %0d trace count reached\n", tr_cycle);
+                  $fflush(tr_fd);
+                  if ($test$plusargs("TRACE_FINISH")) $finish;
+               end
+            end
+         end
+         if (tr_on && lisa.d_valid && lisa.d_ready && lisa.d_addr_good && !lisa.d_periph)
+            $fwrite(tr_fd, "D %0d %s %X:%04X %02X hit=%0d\n", tr_cycle, lisa.d_we ? "W" : "R",
+                    lisa.d_bank_r, lisa.d_addr, lisa.d_we ? lisa.d_o : lisa.d_i, lisa.i_data_cache.cache_hit);
+         if (tr_on && lisa.d_periph && (lisa.d_we || lisa.d_rd))
+            $fwrite(tr_fd, "P %0d %s %04X %02X\n", tr_cycle, lisa.d_we ? "W" : "R", lisa.d_addr,
+                    lisa.d_we ? lisa.d_o : lisa.d_i);
+         if (lisa.d_periph && lisa.d_we && lisa.d_addr[6:0] == 7'h15)
+            $fwrite(tr_fd, "C %0d %02X:%04X cb<=%02X\n", tr_cycle, lisa.i_lisa_periph.code_bank,
+                    lisa.i_lisa_core.pc, lisa.d_o[5:0]);
+         if (lisa.i_lisa_core.isr_jump && !tr_isr_r)
+            $fwrite(tr_fd, "X %0d %02X:%04X int=%02X\n", tr_cycle, lisa.i_lisa_periph.code_bank,
+                    lisa.i_lisa_core.pc, lisa.int_vec);
+      end
+   end
+
    initial begin
      if ($test$plusargs("DUMP"))
      begin

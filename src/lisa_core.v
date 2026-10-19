@@ -789,6 +789,12 @@ module lisa_core
       op_div_r | op_rem_r: {acc_ld_misc, acc_misc} = {div_ready, div_result[7:0]};          // div,etc
       op_ldac_r:           {acc_ld_misc, acc_misc} = {1'b1, 7'h0, cond_load};               // ldac
       op_ldamode_r:        {acc_ld_misc, acc_misc} = {1'b1, 4'h0, ie, amode};                // ldamode
+      // ldirq: the whole set of shadows rets restores (stirq takes the same
+      // byte back).  It has to be here: ldirq is a misc load (101000..), and
+      // a separate case item below op_ld_misc_r is never reached - the
+      // chip's RTL until 2026-10-18 loaded nothing (RESPIN 24)
+      op_ldirq_r:          {acc_ld_misc, acc_misc} = {1'b1, amode_isr, signed_inv_live_isr, cflag_save_isr,
+                                                      signed_inv_isr, zflag_isr, cflag_isr};  // ldirq
 `ifdef WANT_BF16
       op_tfa_r:            if (inst[1] == 1'b0)
                             {acc_ld_misc, acc_misc} = {1'b1, f_half[inst[0]]};             // tfa
@@ -820,7 +826,6 @@ module lisa_core
       op_xor_r:   acc_load_val = {1'b1, acc ^ d_i};
       op_lda_r || op_ldax_r:  acc_load_val = {1'b1, d_i};
       op_ld_misc_r:           if (acc_ld_misc) acc_load_val = {1'b1, acc_misc};  
-      op_ldirq_r: acc_load_val = {1'b1, amode_isr, signed_inv_live_isr, cflag_save_isr, signed_inv_isr, zflag_isr, cflag_isr};
       endcase
    end
 

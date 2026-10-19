@@ -34,6 +34,7 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 20 | The autobaud and BRG count in 32-clock steps: only rates with a bit a multiple of 32 clocks | `debug_autobaud.v`, `debug_brg.v` | done: test_autobaud; the FPGA at 115200 .. 921600 |
 | 21 | Quad flash reads float the mode bits: continuous-read mode by accident | `lisa_qqspi.v` S12_MODE | done: the FPGA quad on both selects |
 | 23 | A store to the UART data register pops the receive FIFO (the core's `d_rd` pulsed on a store's exec clock); any access to 0x14 wrote UART2's baud divisor | `lisa_core.v` d_rd, `lisa_periph.v` 0x1E | fixed: test_uart_overrun |
+| 24 | `ldirq` loads nothing: a misc load (101000..) decoded by `op_ld_misc_r` first, its own case item never reached; `stirq` then wrote A back as the shadows and `rets` restored amode 0 | `lisa_core.v` acc_misc | fixed: sdcc_test/test_ldirq (lisa_sim --rev2, the testbench, the Arty) |
 | 22 | Bank registers (an extension): the upper 16K of the code and of the data space a window on 64 code / 16 data banks, 2 MB / 256 KB | `lisa_periph.v` 0x15-0x17, `tt_um_lisa.v`, `inst_stream.v`, `data_cache8.v`, `lisa_core.v` d_sp | done: test/progs/bank.c (make BANK=1), lisa_sim --rev2, sdcc __banked (sdcc_test/test_bank on the testbench and the Arty) |
 
 Status: open / fixed (the test that shows it, in test/: a program of test/progs, a cocotb test of test/core or the fops bench).
@@ -568,6 +569,36 @@ flag.
 printed before the drain, so the test fails on the old decode); the
 default suite.  lisa_sim had no such pop (its write path never read).
 
+## 24. ldirq loads nothing
+
+**Symptom.** Found 2026-10-18 with NuttX on the Verilator testbench and
+the Arty: the kernel ran to its first timer interrupt exactly as lisa_sim
+(69840 instructions, every register the same), the handler's path was the
+same, and after `rets` it came back with `amode` 0 - from then on every
+`shl`/`shr` of the compiler's code shifted 0 in instead of C, and the
+shell never started.  NuttX's restore does what a context switch has to:
+`ldirq` at the entry saves the byte of shadows, `stirq` at the exit writes
+it back and `rets` takes the live flags and `amode` from the shadows (item
+6).  The byte it saved was 0: `ldirq` had not loaded A.  `op_ld_misc_r`
+(the 101000.. misc loads) covers 0xA120 and comes first in the
+`acc_load_val` case; its `acc_misc` block has no `ldirq` entry, so the
+separate `op_ldirq_r` item below it was never reached.  A plain `ldirq`
+anywhere returned A unchanged; nothing but a `ldirq`/`stirq` round trip
+noticed, and no test made one (sdcc's handlers leave the shadows to the
+hardware).
+
+**RTL.** `lisa_core.v`: the `ldirq` value in the `acc_misc` case,
+`{amode_isr, signed_inv_live_isr, cflag_save_isr, signed_inv_isr,
+zflag_isr, cflag_isr}`, the byte `stirq` takes back.  `lisa_sim --rev2`
+(and `--fixed-irq`) models the byte and `ldamode`; `sdaslisa` assembles
+`ldamode`.
+
+**Test.** `sdcc_test/test_ldirq.c` (`--rev2`): a handler that does the
+round trip with A set to 0x5A first; main checks the byte it saw (amode 1
+in bits 7:5), `ldamode` after the interrupt (ie 1, amode 1) and a shift
+through C.  On lisa_sim --rev2, the testbench (`run_suite.sh chip CACHE=1
+REV2=1`) and the Arty.
+
 ## Verification (test/, see test/README.md)
 
 * `test/core/`: tb_core.v, the core with the chip's registered data bus, the
@@ -590,7 +621,7 @@ default suite.  lisa_sim had no such pop (its write path never read).
 * Still to do on the toolchain side: a `lisa_sim` mode for these semantics,
   `sdcc -mlisa`'s option for the shorter sequences (`ret #imm8` constants,
   the plain `adc`/`sub`/`cmp` forms, the 16-bit divider result without the
-  mask), `ldamode` in the assembler and simulator, and the ISA document.
+  mask), and the ISA document (`ldamode` is in sdaslisa and lisa_sim since item 24).
 
 ## Hardening (harden/, 2026-10-15 ..)
 
