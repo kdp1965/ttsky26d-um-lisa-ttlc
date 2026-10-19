@@ -24,6 +24,7 @@ Protocol: a command byte, I with six little-endian bytes; every datagram
 is answered with the 20-byte status (ttlc_eth_app.v); E is the same for a
 change of the outputs after S.  X takes the flash bus, Y gives it back,
 T <bytes> is one SPI transaction answered with T and the bytes read."""
+import os
 import socket
 import struct
 import sys
@@ -40,6 +41,7 @@ class TtlcIo:
         self.addr = (host, port)
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.settimeout(timeout)
+        self.sock_timeout = timeout
         self.retries = retries
 
     @staticmethod
@@ -47,12 +49,36 @@ class TtlcIo:
         t, flags, us, out, inp, events = struct.unpack('<BBI6s6sH', data[:20])
         return Status(chr(t), flags, us, int.from_bytes(out, 'little'), int.from_bytes(inp, 'little'), events)
 
+    trace = bool(os.environ.get('TTLC_TRACE'))    # the retries, stale replies and busy answers on stderr
+
+    def drain(self):
+        """throw away datagrams already waiting (a late reply to an earlier
+        request, an event): the next reply must be the next request's"""
+        self.sock.setblocking(False)
+        n = 0
+        try:
+            while True:
+                self.sock.recvfrom(2048); n += 1
+        except (BlockingIOError, socket.error):
+            pass
+        finally:
+            self.sock.settimeout(self.sock_timeout)
+        if n and self.trace:
+            print('ttlc_io: %d stale datagram(s) dropped' % n, file=sys.stderr)
+
     def request(self, payload, kind=b'S'):
         """send a command, return its reply: the Status for an S reply, the
         bytes read for a T reply.  A reply lost on the wire (or dropped by
-        the bridge under a burst) is retried; a T answered with a status
-        means the bus is not held"""
-        for _ in range(self.retries):
+        the bridge under a burst) is retried, and the replies are kept in
+        step with the requests: whatever waits in the socket before a request
+        is dropped, a T reply must carry exactly the transaction's bytes (a
+        shorter or longer one is a late reply to an earlier T and is skipped),
+        and a status answering a T while the bridge still holds the bus means
+        the T was refused as busy - sent again after a moment.  A status with
+        the bus not held means it was never taken, or timed out (2 s quiet)."""
+        want = len(payload) - 1 if kind == b'T' else None
+        self.drain()
+        for attempt in range(self.retries):
             self.sock.sendto(payload, self.addr)
             try:
                 while True:
@@ -60,12 +86,24 @@ class TtlcIo:
                     if not data:
                         continue
                     if data[0] == ord('T') and kind == b'T':
-                        return data[1:]
+                        if len(data) - 1 == want:
+                            return data[1:]
+                        if self.trace:
+                            print('ttlc_io: a stale T reply of %d bytes skipped (%d wanted)' % (len(data) - 1, want), file=sys.stderr)
+                        continue
                     if data[0] == ord('S') and len(data) >= 20:
-                        if kind == b'T':
+                        st = self.parse(data)
+                        if kind != b'T':
+                            return st
+                        if not st.flags & 4:
                             raise RuntimeError('the bridge does not hold the flash bus (flash_take first)')
-                        return self.parse(data)
+                        if self.trace:
+                            print('ttlc_io: the bridge was busy, the T is sent again', file=sys.stderr)
+                        time.sleep(0.002)
+                        break                       # resend
             except socket.timeout:
+                if self.trace:
+                    print('ttlc_io: no reply to %s in %.1f s, sent again' % (payload[:1].decode(), self.sock_timeout), file=sys.stderr)
                 continue
         raise TimeoutError('no reply from %s:%d' % self.addr)
 
