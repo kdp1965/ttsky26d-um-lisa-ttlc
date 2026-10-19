@@ -713,7 +713,7 @@ results of div and rem (bit 15 of either, by zero, by one), five signed
 cases, 0x12345678 / 1000 by bytes, single steps with a remainder carried
 in (after a div and after a rem), and nine 64-bit chains against the C
 library's division; 26 checks.  The library's 64-bit routines on the
-step are toolchain work (lisa-tools).
+step are toolchain work (lisa-tools).  Hardened in rc11.
 
 ## Verification (test/, see test/README.md)
 
@@ -1251,6 +1251,19 @@ step are toolchain work (lisa-tools).
   Promoted 2026-10-18 (Ken): gds/, lef/, pnl/ are rc10's, macro.json's
   anchor table its placement (placements/macro-rc10_final_cells.json);
   rc8's table stays as the overlay trial_anchor_rc8.json.  Tag rc10.
+* rc11 (2026-10-19, runs/macro-rc11 on 1f36114: item 27 (the restoring
+  divider with the remainder in IX and the chained step divc) on rc10's
+  RTL, a free draw with the art): synthesized 154265 um2 (-0.08% over
+  rc10: one 17-bit subtractor and two negators in place of four
+  compare-and-subtract pairs, 20 more flops), 63044 instances, placed at
+  67.3%, 821K um of wire in 11 iterations, Magic DRC / LVS / antenna 0,
+  hold +0.079, setup +5.8 nominal (the output-port path, as before), -5.5
+  at nominal ss and -6.4 at the slow max corner (rc10: -6.4 and -7.7).
+  The slow corner's worst path is the IX-to-address-compare cone again,
+  now from ix[1] through d_addr and the register enables into facc[2]
+  (93 nets, 40.0 ns against 33.6); the divider is not on it.  The
+  max-cap / max-slew counts at ss are 78 / 8072 (rc10: 63 / 7639), open
+  as before.  Not promoted: Ken's call.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
