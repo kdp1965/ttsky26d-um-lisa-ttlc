@@ -78,11 +78,12 @@ template from `info.yaml`, over `src/config.json`); results land in
 candidate's placement replayed through `ANCHOR_CELLS_TABLE`, see below);
 copy its GDS, LEF and netlist to `gds/`, `lef/` and `pnl/` and push:
 the `gds` workflow publishes them, runs the precheck and deploys the
-viewer. `gds/`, `lef/` and `pnl/` hold runs/macro-rc10, the release
-candidate (RESPIN.md's hardening section: rc10 - the bank registers with
+viewer. `gds/`, `lef/` and `pnl/` hold runs/macro-rc11, the release
+candidate (RESPIN.md's hardening section: rc11 - the bank registers with
 the 6-bit code bank, the UART overrun flag, the read-strobe fix, `ldirq`,
 the UART interrupt enables and level requests, `lda (ix++)` with the
-constant bank, and the chip art).
+constant bank, the restoring divider with its remainder in IX and the
+chained step `divc`, and the chip art).
 The macro flow places with `GPL_CELL_PADDING` 2: the slew/fanout repair, CTS
 and the hold buffers add 30% to the placed cells and without the padding the
 legalizer packs them into 30 um bins over 90% full, where the detailed router

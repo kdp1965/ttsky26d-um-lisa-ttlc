@@ -1263,7 +1263,10 @@ step are toolchain work (lisa-tools).  Hardened in rc11.
   now from ix[1] through d_addr and the register enables into facc[2]
   (93 nets, 40.0 ns against 33.6); the divider is not on it.  The
   max-cap / max-slew counts at ss are 78 / 8072 (rc10: 63 / 7639), open
-  as before.  Not promoted: Ken's call.
+  as before.  The local precheck passes.  Promoted 2026-10-19 (Ken):
+  gds/, lef/, pnl/ are rc11's, macro.json's anchor table its placement
+  (placements/macro-rc11_final_cells.json); rc10's table stays as the
+  overlay trial_anchor_rc10.json.  Tag rc11.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
