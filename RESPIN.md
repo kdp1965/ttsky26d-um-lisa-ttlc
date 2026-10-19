@@ -35,6 +35,7 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 21 | Quad flash reads float the mode bits: continuous-read mode by accident | `lisa_qqspi.v` S12_MODE | done: the FPGA quad on both selects |
 | 23 | A store to the UART data register pops the receive FIFO (the core's `d_rd` pulsed on a store's exec clock); any access to 0x14 wrote UART2's baud divisor | `lisa_core.v` d_rd, `lisa_periph.v` 0x1E | fixed: test_uart_overrun |
 | 24 | `ldirq` loads nothing: a misc load (101000..) decoded by `op_ld_misc_r` first, its own case item never reached; `stirq` then wrote A back as the shadows and `rets` restored amode 0 | `lisa_core.v` acc_misc | fixed: sdcc_test/test_ldirq (lisa_sim --rev2, the testbench, the Arty) |
+| 25 | The UART interrupt enables (0x14) have no write decode - TT07 too: `uart_rx_ie` / `uart_tx_ie` read 0 and no UART interrupt ever fires | `lisa_periph.v` 0x14 | fixed: sdcc_test/test_uartirq (lisa_sim --rev2 --send, the testbench with SEND=, the Arty) |
 | 22 | Bank registers (an extension): the upper 16K of the code and of the data space a window on 64 code / 16 data banks, 2 MB / 256 KB | `lisa_periph.v` 0x15-0x17, `tt_um_lisa.v`, `inst_stream.v`, `data_cache8.v`, `lisa_core.v` d_sp | done: test/progs/bank.c (make BANK=1), lisa_sim --rev2, sdcc __banked (sdcc_test/test_bank on the testbench and the Arty) |
 
 Status: open / fixed (the test that shows it, in test/: a program of test/progs, a cocotb test of test/core or the fops bench).
@@ -598,6 +599,36 @@ round trip with A set to 0x5A first; main checks the byte it saw (amode 1
 in bits 7:5), `ldamode` after the interrupt (ie 1, amode 1) and a shift
 through C.  On lisa_sim --rev2, the testbench (`run_suite.sh chip CACHE=1
 REV2=1`) and the Arty.
+
+## 25. The UART interrupt enables cannot be written
+
+**Symptom.** Found 2026-10-18 with NuttX on the Arty and the Verilator
+testbench: the shell prints its prompt and never sees a keystroke.  The
+testbench's trace (tb.v's Q lines) shows the driver writing 1 to 0x14
+once at boot and every later read-modify-write of the register starting
+from 0: `lisa_periph.v` declares `uart_rx_ie` and `uart_tx_ie`, resets
+them, uses them in the edge detectors of item 14's interrupt bit and reads
+them back at 0x14 - and never assigns them.  TT07's lisa_periph.v is the
+same, so no UART interrupt has ever fired on either chip; nothing noticed
+because every program so far polled the UART (sdcc's suites, lisa_monitor,
+the TTLC tools), and item 23 found only the side effect an access to 0x14
+had on UART2's baud divisor.
+
+**RTL.** `lisa_periph.v`: a write to 0x14 loads the four enables (bit 0
+UART1 receive, 1 UART1 transmit, 2 / 3 UART2).  The request itself stays
+as it was: the rising edge of "receive data available" or "transmit buffer
+empty" while the enable is set, latched in INT_STATUS bit 2 until it is
+written.  Whether that should be a level instead (a byte already waiting
+when the enable is set raises nothing; nor does a second byte queued behind
+an unread one) is open - Ken's question of 2026-10-18; NuttX's driver
+drains on enable and so works with either.
+
+**Test.** `sdcc_test/test_uartirq.c` (`--rev2`): the enables written and
+read back, a transmit-empty interrupt after a byte goes out, and two typed
+bytes through the receive interrupt (`lisa_sim --send Hi --send-at
+<cycles>`; the testbench `SEND=Hi SEND_DELAY=<clocks>`, in run_suite's
+list; the Arty with arty_run's SEND).  `lisa_sim` transmits a byte in
+`char_cycles` (100 by default) so the empty edge exists there too.
 
 ## Verification (test/, see test/README.md)
 

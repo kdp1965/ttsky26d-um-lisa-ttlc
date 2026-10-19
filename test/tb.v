@@ -133,6 +133,10 @@ module tb
          if (tr_on && lisa.d_periph && (lisa.d_we || lisa.d_rd))
             $fwrite(tr_fd, "P %0d %s %04X %02X\n", tr_cycle, lisa.d_we ? "W" : "R", lisa.d_addr,
                     lisa.d_we ? lisa.d_o : lisa.d_i);
+         // the interrupt enables and acknowledges, from reset (as the C lines)
+         if (lisa.d_periph && lisa.d_we && (lisa.d_addr[6:0] == 7'h0E || lisa.d_addr[6:0] == 7'h0F || lisa.d_addr[6:0] == 7'h14))
+            $fwrite(tr_fd, "Q %0d %02X:%04X W %02X %02X\n", tr_cycle, lisa.i_lisa_periph.code_bank,
+                    lisa.i_lisa_core.pc, lisa.d_addr[7:0], lisa.d_o);
          if (lisa.d_periph && lisa.d_we && lisa.d_addr[6:0] == 7'h15)
             $fwrite(tr_fd, "C %0d %02X:%04X cb<=%02X\n", tr_cycle, lisa.i_lisa_periph.code_bank,
                     lisa.i_lisa_core.pc, lisa.d_o[5:0]);

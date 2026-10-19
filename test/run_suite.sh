@@ -18,13 +18,19 @@ BIGDATA="test_bigframe test_ptroff"
 # rev 2 only: RMW on a miss with evictions 0x80 apart (this cache's 8 lines;
 # test_cachermw's 0x40 never misses here)
 # and the ldirq / stirq round trip through the shadows (RESPIN 24)
-REV2CACHE="test_cachermw8 test_ldirq"
+REV2CACHE="test_cachermw8 test_ldirq test_uartirq"
 CACHE_TESTS="test_cacherm test_cachermw test_cachepush test_cachewb test_cacheseq test_cacheloop test_cacheperiph"
 case "$*" in *CACHE=1*) list="$(test -n "$sfx" && echo $REV2CACHE || echo $CACHE_TESTS) $BIGDATA";; *) list="$SELFCHECK";; esac
 dir=$(dirname "$0"); [ "$where" = core ] && dir="$dir/core"
 pass=0; fail=0
 for t in $list; do
-  out=$(cd "$dir" && make IHX="$SDCC_TEST/$t$sfx.ihx" TIMEOUT=${TIMEOUT:-6000000} "$@" 2>&1)
+  extra=
+  case "$t" in
+    test_uartirq)                      # the bench types "Hi" once the program runs (RESPIN 25)
+      [ "$where" = core ] && { echo "SKIP $t (the core testbench has no UART)"; continue; }
+      extra="SEND=Hi SEND_DELAY=400000";;
+  esac
+  out=$(cd "$dir" && make IHX="$SDCC_TEST/$t$sfx.ihx" TIMEOUT=${TIMEOUT:-6000000} $extra "$@" 2>&1)
   if printf '%s' "$out" | grep -q "test_program *PASS"; then
     echo "PASS $t"; pass=$((pass+1))
   else

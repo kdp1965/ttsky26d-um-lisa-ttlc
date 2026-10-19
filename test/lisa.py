@@ -188,20 +188,35 @@ class Lisa:
         self.cache = cache
 
     # ------------------------------------------------------------ programs
-    async def run(self, timeout, stop_at=('ALL PASSED', 'SOME FAILED'), send=None):
+    async def run(self, timeout, stop_at=('ALL PASSED', 'SOME FAILED'), send=None, send_delay=0):
         """resume the core at PC 0 with the UART granted to the program;
         collect its output until one of stop_at appears, or timeout clocks
-        of silence.  Returns the text."""
+        of silence.  Returns the text.  send is typed to the program after
+        send_delay clocks (a shell wants its prompt up first)."""
         await self.core_reset()
         await self.write_reg(REG_PC, 0)
         await self.resume()
         await self.grant_uart()
-        if send:
+        if send and not send_delay:
             await self.tx_str(send)
+        pending = send if send_delay else None       # typed from this loop, at send_delay clocks
         text = ''
         line = ''
         while True:
-            v = await self.rx(timeout)
+            wait = timeout
+            if pending:
+                left = send_delay - int(self.dut.tr_cycle.value)
+                if left <= 0:
+                    self.log.info('[LISA] typing %r' % pending)
+                    for c in pending:
+                        await self.tx_str(c)
+                        await ClockCycles(self.clk, 4 * CHAR_CYCLES)   # the program's turn to read it
+                    pending = None
+                    continue
+                wait = min(timeout, left)
+            v = await self.rx(wait)
+            if v is None and pending and wait < timeout:
+                continue                             # time to type, not silence
             if v is None:
                 self.log.info('[LISA] %s' % line) if line else None
                 raise Timeout('no output for %d clocks; so far: %r' % (timeout, text))

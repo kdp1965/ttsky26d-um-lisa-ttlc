@@ -121,6 +121,12 @@ endif
 ifneq ($(STATS),)
 PLUSARGS += +STATS           # the fetch counts (clocks per instruction, the wait for the flash)
 endif
+ifneq ($(SEND),)
+PLUSARGS += +SEND='$(SEND)'            # typed to the program (escapes as in Python) ...
+ifneq ($(SEND_DELAY),)
+PLUSARGS += +SEND_DELAY=$(SEND_DELAY)  # ... this many clocks after the start
+endif
+endif
 ifneq ($(TRACE),)
 PLUSARGS += +TRACE=$(abspath $(TRACE))   # tb.v: an instruction trace (I/D/P/C/X lines)
 ifneq ($(TRACE_PC),)

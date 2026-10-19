@@ -191,7 +191,9 @@ async def test_program(dut):
     counters = ('st_clocks', 'st_insts', 'st_wait', 'st_xfers', 'st_words')
     before = [int(getattr(dut, c).value) for c in counters] if stats else None
     try:
-        text = await lisa.run(timeout=timeout)
+        send = plusarg('SEND')
+        text = await lisa.run(timeout=timeout, send=send.encode().decode('unicode_escape') if send else None,
+                              send_delay=int(plusarg('SEND_DELAY', 0)))
     finally:
         if stats:
             # the counters are in tb.v; between the resume and the last line

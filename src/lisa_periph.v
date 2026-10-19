@@ -324,6 +324,19 @@ module lisa_periph
          if (d_periph && d_we && d_addr == 7'h0E)
             int_en <= d_i;
 
+         // The UART interrupt enables, 0x14: bit 0 UART1 receive, 1 UART1
+         // transmit, 2 / 3 UART2 (RESPIN 25: neither chip's RTL wrote these
+         // flops - they read back 0 and no UART interrupt ever fired)
+         if (d_periph && d_we && d_addr == 7'h14)
+         begin
+            uart_rx_ie <= d_i[0];
+            uart_tx_ie <= d_i[1];
+`ifdef WANT_UART2
+            uart2_rx_ie <= d_i[2];
+            uart2_tx_ie <= d_i[3];
+`endif
+         end
+
          // ==============================================
          // Timer signals
          // ==============================================
