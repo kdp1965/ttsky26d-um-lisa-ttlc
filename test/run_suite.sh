@@ -1,5 +1,5 @@
 #!/bin/sh
-# run_suite.sh [core|chip] [CACHE=1] [REV2=1] - the SDCC test suite's
+# run_suite.sh [core|chip] [CACHE=1] [REV2=1|PACK=1] - the SDCC test suite's
 # self-checking programs (lisa-tools/sdcc_test/*.ihx) on the core-level or the
 # chip-level testbench; one line per program, PASS/FAIL.  REV2=1 runs the
 # suite built with sdcc --rev2 (*_rev2.ihx, `make check REV2=1` there): the
@@ -12,6 +12,9 @@ where=${1:-chip}
 shift
 sfx=
 case "$*" in *REV2=1*) sfx=_rev2; set -- $(printf '%s\n' "$@" | grep -v '^REV2=');; esac
+# PACK=1: the suite built with sdcc --pack-const (*_rev2k.ihx, `make check PACK=1`
+# there): constants packed two to a word and read with lda (ix++) (RESPIN 26)
+case "$*" in *PACK=1*) sfx=_rev2k; set -- $(printf '%s\n' "$@" | grep -v '^PACK=');; esac
 SDCC_TEST=${SDCC_TEST:-$(cd "$(dirname "$0")/../../lisa-tools/sdcc_test" && pwd)}
 SELFCHECK="test_core test_negate test_union test_varargs test_digits test_signed test_strs test_regress test_pfu test_loop test_irq test_irq2 test_divsh test_divl test_bf16 test_bf16f test_rot test_index test_vshift"
 BIGDATA="test_bigframe test_ptroff"
