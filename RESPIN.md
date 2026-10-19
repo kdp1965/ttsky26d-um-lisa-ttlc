@@ -36,6 +36,7 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 23 | A store to the UART data register pops the receive FIFO (the core's `d_rd` pulsed on a store's exec clock); any access to 0x14 wrote UART2's baud divisor | `lisa_core.v` d_rd, `lisa_periph.v` 0x1E | fixed: test_uart_overrun |
 | 24 | `ldirq` loads nothing: a misc load (101000..) decoded by `op_ld_misc_r` first, its own case item never reached; `stirq` then wrote A back as the shadows and `rets` restored amode 0 | `lisa_core.v` acc_misc | fixed: sdcc_test/test_ldirq (lisa_sim --rev2, the testbench, the Arty) |
 | 25 | The UART interrupt enables (0x14) have no write decode - TT07 too: `uart_rx_ie` / `uart_tx_ie` read 0 and no UART interrupt ever fires; the request was an edge, latched | `lisa_periph.v` 0x14, int_req | fixed: the enables written, the UART requests levels (Ken, 2026-10-18); sdcc_test/test_uartirq (lisa_sim --rev2 --send, the testbench with SEND=, the Arty) |
+| 26 | An extension: `lda (ix++)` (0xA14C) reads byte IX[0] of the code word at {KB, IX[14:1]} and increments IX, KB the constant bank register 0x1F - constants packed two to a word in any bank (the `ldi; ret` pair per byte took 4 flash bytes and the common area) | `lisa_core.v` op_ldk, `lisa_periph.v` 0x1F, `tt_um_lisa.v` core_i_paddr | done: sdcc_test/test_ldk (lisa_sim --rev2, the testbench) |
 | 22 | Bank registers (an extension): the upper 16K of the code and of the data space a window on 64 code / 16 data banks, 2 MB / 256 KB | `lisa_periph.v` 0x15-0x17, `tt_um_lisa.v`, `inst_stream.v`, `data_cache8.v`, `lisa_core.v` d_sp | done: test/progs/bank.c (make BANK=1), lisa_sim --rev2, sdcc __banked (sdcc_test/test_bank on the testbench and the Arty) |
 
 Status: open / fixed (the test that shows it, in test/: a program of test/progs, a cocotb test of test/core or the fops bench).
@@ -641,6 +642,34 @@ once, the handler takes both, the request gone.  `lisa_sim` transmits a
 byte in `char_cycles` (100 by default) so the transmitter is busy for a
 while, as the chip's is.
 
+## 26. lda (ix++): constants packed, in any bank
+
+**Why.** NuttX's image (2026-10-18) filled the common area - the lower 16K
+words, visible from every bank - to 29.3 of 32 KB, 16.5 KB of it CONST:
+a constant byte was an `ldi #b; ret` pair read by `call ix`, four bytes of
+flash per byte, and it had to be below 0x4000 because the reader did not
+switch banks.  Ken's idea: read the code memory as data.
+
+**RTL.** `lda (ix++)`, 0xA14C (the misc slot after `ldamode`): from its
+exec state the core asks the instruction bus for the word at IX[14:1]
+with `i_kfetch` up, which `tt_um_lisa.v` sends to bank KB (the constant
+bank register, `lisa_periph.v` 0x1F, 6 bits, reset 0 = the lower half);
+the exec state waits for the stream (`k_ok` in `d_ok`), A takes the byte
+IX[0] selects, Z follows it, IX gains one with its condition bit kept.
+KB does not carry when IX wraps: the compiler keeps a constant inside its
+bank (32 KB of byte addresses).  KB is set once per image, so no
+interrupt frame carries it and pointers stay two bytes.  The stream
+treats the read as any fetch: a burst at the constant, then one back at
+the PC - no slower than the call and return it replaces; a second window
+for constants would make a string stream (open).  `lisa_sim --rev2`
+models it; `sdaslisa` assembles the form.
+
+**Test.** `sdcc_test/test_ldk.c` (`--rev2`): KB written and read back,
+the words of a function in the lower half read byte by byte (the low
+byte first, Z on a zero byte, IX + 1 each), then the words of a function
+placed in bank 2 with KB = 2; 22 checks.  The packed CONST area, the
+reader `__gptrget` and NuttX's layout follow in the toolchain (lisa-tools).
+
 ## Verification (test/, see test/README.md)
 
 * `test/core/`: tb_core.v, the core with the chip's registered data bus, the
@@ -664,6 +693,8 @@ while, as the chip's is.
   `sdcc -mlisa`'s option for the shorter sequences (`ret #imm8` constants,
   the plain `adc`/`sub`/`cmp` forms, the 16-bit divider result without the
   mask), and the ISA document (`ldamode` is in sdaslisa and lisa_sim since item 24).
+* Item 26's toolchain side: a packed CONST area (`.db` as bytes, not pairs),
+  `__gptrget` on `lda (ix++)`, KB set by the startup, NuttX's CONST in a bank.
 
 ## Hardening (harden/, 2026-10-15 ..)
 

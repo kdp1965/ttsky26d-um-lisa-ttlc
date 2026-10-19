@@ -409,6 +409,8 @@ module tt_um_lisa
    wire [3:0]  d_bank_c;
    reg  [3:0]  d_bank_r;
    wire [5:0]  code_bank;
+   wire [5:0]  const_bank;          // KB: the bank lda (ix++) reads (RESPIN 26)
+   wire        core_i_kfetch;
    wire [3:0]  data_bank;
    wire [3:0]  stack_bank;
    wire [19:0] core_i_paddr;
@@ -420,7 +422,10 @@ module tt_um_lisa
    // stack_bank, every other data access there (IX-relative, the debugger)
    // to data_bank; below 0x4000 is bank 0, common to all.  Reset 1 = the
    // TT07 layout: 1M words (2 MB) of code and 256 KB of data at most
-   assign core_i_paddr = {core_i_addr[14] ? code_bank : 6'h0, core_i_addr[13:0]};
+   // lda (ix++) (RESPIN 26) fetches the word at IX[14:1] of the constant
+   // bank KB (register 0x1F), wherever the code runs
+   assign core_i_paddr = core_i_kfetch       ? {const_bank, core_i_addr[13:0]} :
+                         {core_i_addr[14] ? code_bank : 6'h0, core_i_addr[13:0]};
    assign d_bank_c     = !d_addr_c[14] ? 4'h0 : d_sp_c ? stack_bank : data_bank;
 
    // ==========================================================================
@@ -442,6 +447,7 @@ module tt_um_lisa
       .inst_ready                ( core_i_ready              ),
       .i_fetch                   ( core_i_fetch              ),
       .i_addr                    ( core_i_addr               ),
+      .i_kfetch                  ( core_i_kfetch             ),
       .inst_o                    ( core_inst_o               ),
       .inst_we                   ( core_inst_we              ),
                                                              
@@ -628,6 +634,7 @@ module tt_um_lisa
       .d_we                      ( d_we                      ),
       .d_rd                      ( d_rd                      ),
       .code_bank                 ( code_bank                 ),
+      .const_bank                ( const_bank                ),
       .data_bank                 ( data_bank                 ),
       .stack_bank                ( stack_bank                ),
                                                              

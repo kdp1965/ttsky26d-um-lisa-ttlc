@@ -47,6 +47,12 @@ suite, the LISA Commander and lisa_ide; this revision fixes what was found
   reading the FIFO, writing the next byte or dropping the enable, and a 1
   written to the bit changes nothing.  The timers, the port's edges and the
   TTLC stay latched until their bit is written.
+* `lda (ix++)` (0xA14C) reads a constant from the code memory: A takes byte
+  IX[0] of the word at {KB, IX[14:1]}, KB being the constant bank register
+  at 0x21F (6 bits, reset 0 = the lower half), Z follows the byte and IX
+  moves on by one.  Constants pack two to a word in any bank instead of an
+  `ldi; ret` pair per byte in the lower half; a constant stays within its
+  bank (KB does not carry when IX wraps).
 * The TTLC's input scan takes 16 samples (TT07: 17, every input one position
   high), its breakpoints halt before their instruction, its step bit runs
   one instruction, and a stepped `jmp`/`rtn`/`nopf` keeps its PC change.

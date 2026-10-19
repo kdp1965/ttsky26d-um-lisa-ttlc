@@ -179,6 +179,7 @@ module lisa_core
    input  wire                   inst_ready,
    output wire                   i_fetch,
    output wire [PC_BITS-1:0]     i_addr,
+   output wire                   i_kfetch,   // this fetch reads a constant: the word at {KB, IX[14:1]} (lda (ix++))
    output wire [`PWORD_SIZE-1:0] inst_o,
    output wire                   inst_we,
 
@@ -291,6 +292,8 @@ module lisa_core
    wire                       predec_state;
    wire                       decode_state;
    wire                       exec_state;
+   wire                       kfetch;                 // lda (ix++)'s fetch of its constant
+   wire                       k_ok;
    wire                       c_load;
    reg                        c_val;
    wire                       c_cpi;
@@ -373,6 +376,7 @@ module lisa_core
    wire                       op_notz;
    wire                       op_amode;
    wire                       op_ldamode;
+   wire                       op_ldk;                 // lda (ix++): A <= byte IX[0] of code word {KB, IX[14:1]}, IX++ (RESPIN 26)
    (* keep="true" *)
    wire                       op_div_start;
    reg                        op_div_start_r;
@@ -448,6 +452,7 @@ module lisa_core
    reg                        op_notz_r;
    reg                        op_amode_r;
    reg                        op_ldamode_r;
+   reg                        op_ldk_r;
    (* keep="true" *)
    reg                        op_add_r;
    reg                        op_sub_r;
@@ -627,7 +632,8 @@ module lisa_core
    assign op_notz     = inst[`PWORD_SIZE-1 -: 14] == 14'b10100000011101;
    assign op_eidi     = inst[`PWORD_SIZE-1 -: 14] == 14'b10100000011110;
    assign op_amode    = inst[`PWORD_SIZE-1 -: 13] == 13'b1010000101000;     // amode #m: 0xa140 | m
-   assign op_ldamode  = inst[`PWORD_SIZE-1 -: 13] == 13'b1010000101001;     // ldamode: A <= {ie, amode}, 0xa148
+   assign op_ldamode  = inst[`PWORD_SIZE-1 -: 14] == 14'b10100001010010;    // ldamode: A <= {ie, amode}, 0xa148 (14 bits: 0xa14c is lda (ix++))
+   assign op_ldk      = inst[`PWORD_SIZE-1 -: 14] == 14'b10100001010011;    // lda (ix++), 0xa14c
 `ifdef WANT_BF16
    assign op_tfa      = inst[`PWORD_SIZE-1 -: 15] == 15'b101000011110000;
    assign op_taf      = inst[`PWORD_SIZE-1 -: 15] == 15'b101000011110001;
@@ -692,8 +698,14 @@ module lisa_core
    assign acc_sum = {1'b0, acc} + {1'b0, acc_adder} + {8'h0, acc_cin};
    assign c_cpi = ~acc_sum[8];
 
-   assign i_addr = pc;
-   assign i_fetch = fetch_state  & !stop;
+   // lda (ix++) fetches its constant from the exec state: the instruction
+   // bus is asked for the word at IX[14:1] (tt_um_lisa.v puts the KB bank
+   // on it, i_kfetch), the exec state waits for it (k_ok in d_ok)
+   assign kfetch  = exec_state & op_ldk_r & cond[0];
+   assign k_ok    = !kfetch | inst_ready;
+   assign i_kfetch = kfetch;
+   assign i_addr  = kfetch ? {1'b0, ix[PC_BITS-1:1]} : pc;
+   assign i_fetch = (fetch_state | kfetch) & !stop;
    assign inst_o = dbg_di[`PWORD_SIZE-1 :0];
    assign inst_we = stop && dbg_a == 8'hf && dbg_we == 1'b1;
    assign d_o_shr_val = (amode[0] & cflag) | (amode[1] & d_i[7]);
@@ -732,7 +744,7 @@ module lisa_core
    // add read conditions to d_valid
    assign d_valid    = (d_we & ~d_periph) | (d_valid_rd & (exec_state | stg2_state) && !ldx_stage_two) |
                        (dbg_d_access && !dbg_d_periph) ;
-   assign d_ok       = d_ready || !d_valid;
+   assign d_ok       = (d_ready || !d_valid) && k_ok;
    assign d_we       = dbg_d_access ? dbg_we : d_we_r;
    assign d_periph   = ((op_sta_r | op_lda_r | op_swapi_r) & inst[9] & !dbg_d_access) | dbg_d_periph;
    assign d_valid_rd = op_mul_r | op_mulu_r | op_pop_ix_r | div_stage_two | rem_stage_two | //(op_any_div & inst[0] == 1'b0) |
@@ -789,6 +801,7 @@ module lisa_core
       op_div_r | op_rem_r: {acc_ld_misc, acc_misc} = {div_ready, div_result[7:0]};          // div,etc
       op_ldac_r:           {acc_ld_misc, acc_misc} = {1'b1, 7'h0, cond_load};               // ldac
       op_ldamode_r:        {acc_ld_misc, acc_misc} = {1'b1, 4'h0, ie, amode};                // ldamode
+      op_ldk_r:            {acc_ld_misc, acc_misc} = {1'b1, ix[0] ? inst_i[15:8] : inst_i[7:0]}; // lda (ix++)
       // ldirq: the whole set of shadows rets restores (stirq takes the same
       // byte back).  It has to be here: ldirq is a misc load (101000..), and
       // a separate case item below op_ld_misc_r is never reached - the
@@ -973,6 +986,7 @@ module lisa_core
          op_notz_r <= 1'b0;
          op_amode_r <= 1'b0;
          op_ldamode_r <= 1'b0;
+         op_ldk_r     <= 1'b0;
          op_add_r <= 1'b0;
          op_sub_r <= 1'b0;
          op_and_r <= 1'b0;
@@ -1064,6 +1078,7 @@ module lisa_core
          op_notz_r <= op_notz;
          op_amode_r <= op_amode;
          op_ldamode_r <= op_ldamode;
+         op_ldk_r     <= op_ldk;
          op_add_r <= op_add;
          op_sub_r <= op_sub;
          op_and_r <= op_and;
@@ -1484,10 +1499,11 @@ module lisa_core
       begin
          // Implement IX
          if ((op_adx_r | op_tax_r | op_taxu_r | op_xchg_sp_r | op_xchg_ra_r | op_spix_r | op_xchg_ia_r |
-             op_addax_r | op_addaxu_r | op_subax_r | op_subaxu_r | op_lddiv_r) & d_ok)
+             op_addax_r | op_addaxu_r | op_subax_r | op_subaxu_r | op_lddiv_r | op_ldk_r) & d_ok)
          begin
             ix_load = 1'b1;
             case (1'b1)
+               op_ldk_r:                 ix_val = ix + {{(PC_BITS-1){1'b0}}, 1'b1};
                op_adx_r:                 {ix_cond_val, ix_val} = {1'b1, ix_sum};
                op_xchg_sp_r | op_spix_r: {ix_cond_val, ix_val} = {1'b1, sp};
                op_xchg_ra_r:             {ix_cond_val, ix_val} = {ra_cond, ra};

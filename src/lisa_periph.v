@@ -126,6 +126,7 @@ module lisa_periph
 
    // The bank registers (RESPIN 22)
    output reg  [5:0]    code_bank,          // 6 bits: 64 code banks of 16K words (1M words)
+   output reg  [5:0]    const_bank,         // KB, 0x1F: the code bank lda (ix++) reads constants from (RESPIN 26)
    output reg  [3:0]    data_bank,
    output reg  [3:0]    stack_bank,
 
@@ -223,6 +224,7 @@ module lisa_periph
          porte        <= 8'h00;
          portc_dir    <= 4'h0;
          code_bank    <= 6'h1;
+         const_bank   <= 6'h0;                 // the lower half: constants read as before
          data_bank    <= 4'h1;
          stack_bank   <= 4'h1;
          ms_prediv    <= 16'd29494;
@@ -286,6 +288,10 @@ module lisa_periph
             data_bank <= d_i[3:0];
          if (d_periph && d_we && d_addr == 7'h17)
             stack_bank <= d_i[3:0];
+         // KB (RESPIN 26): lda (ix++) reads byte IX[0] of the word at IX[14:1]
+         // of this code bank - constants anywhere, packed two to a word
+         if (d_periph && d_we && d_addr == 7'h1F)
+            const_bank <= d_i[5:0];
 
          // Latch porta_int0
          if (d_periph && d_we && d_addr == 7'h06)
@@ -551,6 +557,7 @@ module lisa_periph
       7'h15:   d_o_r = {2'h0, code_bank};
       7'h16:   d_o_r = {4'h0, data_bank};
       7'h17:   d_o_r = {4'h0, stack_bank};
+      7'h1F:   d_o_r = {2'h0, const_bank};
 
       // Timer2 readback
 `ifdef TIMER2
