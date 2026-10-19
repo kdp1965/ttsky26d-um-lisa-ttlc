@@ -86,6 +86,7 @@ Uses a 14 (or 16) bit program word.  Shown is the 14-bit version.  For 16-bit, e
     10 1000 01011010   push ix              Push ix to stack (as sra: ix[7:0] at sp-1, {ix_cond, ix[14:8]} at sp-2)
     10 1000 01011011   pop ix               Pop ix from stack (as lra)
     10 1000 01011100   lddiv                Load dividend from stack: ra[7:0]<=n(sp) (n in the 2nd word) ix[7:0]<=a
+    10 1000 01011101   divc                 Chained divide step: {ix, a} / the last divisor; a <= the quotient byte, ix <= the remainder (RESPIN 27)
     10 1000 01011110   savec                Save cflag
     10 1000 01011111   restc                Restore cflag
     10 1000 01100000   ldx                  Load ix with data in next opcode
@@ -371,6 +372,7 @@ module lisa_core
    wire                       op_shr16;
    wire                       op_div;
    wire                       op_rem;
+   wire                       op_divc;                // divc: {IX, A} / the divisor of the last division (RESPIN 27)
    wire                       op_any_div;
    wire                       op_ldz;
    wire                       op_brk;
@@ -448,6 +450,7 @@ module lisa_core
    reg                        op_shr16_r;
    reg                        op_div_r;
    reg                        op_rem_r;
+   reg                        op_divc_r;
    reg                        op_ldz_r;
    reg                        op_brk_r;
    reg                        op_eidi_r;
@@ -540,7 +543,7 @@ module lisa_core
    // ldx, lddiv or a two-word div/rem (TT07 took it there too, and lost the
    // predicate or ran the literal as an opcode after rets).
    assign stg2_next   = (cond[0] && (op_sra_r | op_lra_r | op_push_ix_r | op_pop_ix_r | op_stxx_r | op_ldxx_r | op_fdiv_r |
-                                     (op_any_div & inst_r[0]))) || div_stage_two || rem_stage_two || op_fops;
+                                     (op_any_div & inst_r[0]) | op_divc_r)) || div_stage_two || rem_stage_two || op_fops;
    // Nor after ei/di, stirq or xchg ia, whose effect the entry would undo.
    assign irq_pending = ie & cond[1] & |(int_i & int_en) &
                         ~(cond[0] & (op_if_r | op_ldx_r | op_lddiv_r | (op_any_div & ~inst[0]) |
@@ -652,10 +655,12 @@ module lisa_core
    assign op_brk      = WANT_DBG ? inst[`PWORD_SIZE-1 -: 14] == 14'b10100000011111 : 1'b0;
    assign op_div      = WANT_DIV ? inst[`PWORD_SIZE-1 -: 12] == 12'b10_1000_110000 : 1'b0;
    assign op_rem      = WANT_DIV ? inst[`PWORD_SIZE-1 -: 12] == 12'b10_1000_110001 : 1'b0;
+   assign op_divc     = WANT_DIV ? inst[`PWORD_SIZE-1 -: 14] == 14'b10_1000_0101_1101 : 1'b0;   // divc, 0xa174 (RESPIN 27)
    assign op_any_div  = op_div_r | op_rem_r;
-   assign op_div_start = ((op_any_div & inst[0] & cond[0]) | div_stage_two | rem_stage_two) & exec_state & d_ok;
+   assign op_div_start = ((op_any_div & inst[0] & cond[0]) | (op_divc_r & cond[0]) | div_stage_two | rem_stage_two) & exec_state & d_ok;
    assign div_divisor  = {div_args[0] ? (amode[1] ? {8{acc[7]}} : 8'h00) : d_i, acc};
-   assign div_dividend = {div_args[1] ? (amode[1] ? {8{ix[7]}}  : 8'h00) : ra[7:0], ix[7:0]};
+   // divc: the dividend's next byte is A, the rest (the remainder) is IX inside the divider
+   assign div_dividend = op_divc_r ? {8'h00, acc} : {div_args[1] ? (amode[1] ? {8{ix[7]}}  : 8'h00) : ra[7:0], ix[7:0]};
 
    assign pc_inc   = pc + {{(PC_BITS-1){1'b0}}, 1'b1};
    assign pc_rel   = pc + {{(PC_BITS-11){inst[10]}}, inst[10:0]};
@@ -800,7 +805,7 @@ module lisa_core
       op_pop_a_r:          {acc_ld_misc, acc_misc} = {1'b1, d_i};                           // pop a
       op_txa_r:            {acc_ld_misc, acc_misc} = {1'b1, ix[7:0]};                       // txa
       op_txau_r:           {acc_ld_misc, acc_misc} = {1'b1, ix_cond, ix[(PC_BITS-1):8]};    // taxu
-      op_div_r | op_rem_r: {acc_ld_misc, acc_misc} = {div_ready, div_result[7:0]};          // div,etc
+      op_div_r | op_rem_r | op_divc_r: {acc_ld_misc, acc_misc} = {div_ready, div_result[7:0]};  // div, rem, divc
       op_ldac_r:           {acc_ld_misc, acc_misc} = {1'b1, 7'h0, cond_load};               // ldac
       op_ldamode_r:        {acc_ld_misc, acc_misc} = {1'b1, 4'h0, ie, amode};                // ldamode
       op_ldk_r:            {acc_ld_misc, acc_misc} = {1'b1, ix[0] ? inst_i[15:8] : inst_i[7:0]}; // lda (ix++)
@@ -982,6 +987,7 @@ module lisa_core
          op_div_r <= 1'b0;
          op_div_start_r <= 1'b0;
          op_rem_r <= 1'b0;
+         op_divc_r <= 1'b0;
          op_ldz_r <= 1'b0;
          op_brk_r <= 1'b0;
          op_eidi_r <= 1'b0;
@@ -1074,6 +1080,7 @@ module lisa_core
          op_div_r <= op_div;
          op_div_start_r <= op_div_start;
          op_rem_r <= op_rem;
+         op_divc_r <= op_divc;
          op_ldz_r <= op_ldz;
          op_brk_r <= op_brk;
          op_eidi_r <= op_eidi;
@@ -1371,7 +1378,7 @@ module lisa_core
                end
                else
                begin
-                  if (!op_any_div & !div_stage_two & !rem_stage_two &
+                  if (!op_any_div & !op_divc_r & !div_stage_two & !rem_stage_two &
                       !op_fops & !op_fdiv_r)
                   begin
                      if (d_ok)
@@ -1819,6 +1826,7 @@ module lisa_core
          .op_div               ( (op_div_r | div_stage_two) & amode[1]    ),
          .op_rem               ( (op_rem_r | rem_stage_two) & amode[1]    ),
          .op_remu              ( (op_rem_r | rem_stage_two) & ~amode[1]   ),
+         .op_chain             ( op_divc_r            ),
          .div_rs1              ( div_dividend         ),
          .div_rs2              ( div_divisor          ),
          .div_rd               ( div_result           ),
@@ -2392,6 +2400,7 @@ module lisa_core
       if ((op_div | div_stage_two) & ~amode[1])    ascii_instr = "divu";
       if ((op_rem | rem_stage_two) & amode[1])     ascii_instr = "rem";
       if ((op_rem | rem_stage_two) & ~amode[1])    ascii_instr = "remu";
+      if (op_divc)                                 ascii_instr = "divc";
 
       if (op_if)
       begin

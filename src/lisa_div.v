@@ -1,6 +1,6 @@
 /*
 ==============================================================================
-lisa_div.v:  Little ISA (LISA) hardware 16bit / 8bit divider.
+lisa_div.v:  Little ISA (LISA) hardware 16-bit divider.
 
 Copyright 2024 by Ken Pettit <pettitkd@gmail.com>
 
@@ -42,13 +42,14 @@ module lisa_div
                         
    (* keep = "true" *)
    input                op_start,
-   input                op_div,
-   input                op_rem,
-   input                op_remu,
+   input                op_div,       // signed quotient
+   input                op_rem,       // signed remainder
+   input                op_remu,      // unsigned remainder (none set: unsigned quotient)
+   input                op_chain,     // divc: {IX, div_rs1[7:0]} / the divisor kept from the last division (RESPIN 27)
    (* keep = "true" *)
-   input       [15:0]   div_rs1,      // Divisor
+   input       [15:0]   div_rs1,      // Dividend
    (* keep = "true" *)
-   input       [15:0]   div_rs2,      // Dividend
+   input       [15:0]   div_rs2,      // Divisor
    output wire [15:0]   div_rd,
    output wire          div_ready,
 
@@ -75,8 +76,32 @@ module lisa_div
    input                ldx_stage_two_val,
    input                ldx_stage_two_load
 );
-   wire op_any_rem = |{op_rem, op_remu};
-   wire op_signed = |{op_div, op_rem};
+   /*
+   A restoring divider (RESPIN 27, 2026-10-19; until then repeated
+   subtraction in steps of the divisor shifted by 10, 7, 4 and 0 bits,
+   10 to 95 clocks).  The dividend's magnitude sits in `result` and shifts
+   out at the top, one bit a clock, into the remainder `b`; when the
+   divisor fits it comes out and a one shifts into the bottom of `result`
+   - which holds the quotient after 16 clocks.  `b` and `result` are the
+   core's IX and RA (flop sharing: the core loads them here while the
+   divider is idle).
+
+   Both results come out of every division: div leaves the quotient in
+   RA (and its low byte in A) and the remainder in IX, rem the other way
+   round (TT07 and rc10 cleared IX).  The divisor's magnitude is kept in
+   `a`, and divc (op_chain) divides {IX, the byte in div_rs1[7:0]} by it
+   in 8 clocks: the quotient byte to RA / A, the remainder to IX - the
+   step of a long division of any width by a 16-bit divisor, the
+   remainder carried in IX.  IX must be below the divisor at a divc (it
+   is after a division by the same divisor); the step is unsigned.
+
+   Signed (amode[1]) as C: the quotient negative when the signs differ,
+   the remainder with the dividend's sign (the earlier RTL gave the
+   remainder the divisor's sign).  By zero: the quotient all ones, the
+   remainder the dividend.  -32768 / -1 = -32768.
+   */
+   wire op_any_rem = op_rem | op_remu;
+   wire op_signed  = op_div | op_rem;
 
    wire div_start = op_start;
 
@@ -87,25 +112,17 @@ module lisa_div
    localparam [1:0] s_done = 3;
 
    reg [md_state_width-1:0]      state;
-   reg                           negate_output;
-   wire [`XPR_LEN-1:0]           a;
-   reg [`XPR_LEN-1:0]            b;
-   reg [`XPR_LEN-1:0]            result;
+   reg [`XPR_LEN-1:0]            a;        // the divisor's magnitude, kept for divc
+   reg [`XPR_LEN-1:0]            b;        // the remainder: IX
+   reg [`XPR_LEN-1:0]            result;   // the dividend out, the quotient in: RA
+   reg [3:0]                     count;
+   reg                           neg_q;
+   reg                           neg_r;
+   reg                           is_rem;
    reg                           cond;
    reg                           ldx_stage_two_r;
    reg                           zflag_r;
    reg                           cflag_r;
-
-   wire [`XPR_LEN-1:0]           abs_in_1;
-   wire                          sign_in_1;
-   wire [`XPR_LEN-1:0]           abs_in_2;
-   wire                          sign_in_2;
-
-   wire                          a_gt;
-   wire [`XPR_LEN-1:0]           result_muxed;
-   wire [`XPR_LEN-1:0]           result_muxed_negated;
-   wire [`XPR_LEN-1:0]           final_result;
-   wire                          div_finish;
 
    function [`XPR_LEN-1:0] abs_input;
       input [`XPR_LEN-1:0]                          data;
@@ -114,6 +131,21 @@ module lisa_div
          abs_input = (data[`XPR_LEN-1] == 1'b1 && is_signed) ? -data : data;
       end
    endfunction 
+
+   wire [`XPR_LEN-1:0]           abs_dd  = abs_input(div_rs1, op_signed);
+   wire [`XPR_LEN-1:0]           abs_dv  = abs_input(div_rs2, op_signed);
+   wire                          sign_dd = op_signed & div_rs1[`XPR_LEN-1];
+   wire                          sign_dv = op_signed & div_rs2[`XPR_LEN-1];
+   wire                          dv_zero = div_rs2 == {`XPR_LEN{1'b0}};
+
+   // one step: the next dividend bit into the remainder, the divisor out if it fits
+   wire [`XPR_LEN:0]             trial   = {b, result[`XPR_LEN-1]} - {1'b0, a};
+   wire                          fits    = ~trial[`XPR_LEN];
+
+   wire [`XPR_LEN-1:0]           q_fin   = neg_q ? -result : result;
+   wire [`XPR_LEN-1:0]           r_fin   = neg_r ? -b : b;
+   wire [`XPR_LEN-1:0]           ra_fin  = is_rem ? r_fin : q_fin;
+   wire [`XPR_LEN-1:0]           ix_fin  = is_rem ? q_fin : r_fin;
 
    assign zflag            = zflag_r;
    assign cflag            = cflag_r;
@@ -124,30 +156,21 @@ module lisa_div
    assign ra_cond          = PC_BITS == 15 ? cond : result[PC_BITS];
    assign ldx_stage_two    = ldx_stage_two_r & (state == s_idle);
 
-   assign div_finish = (state == s_done);
+   assign div_ready = (state == s_done);
    assign div_rd = result[`XPR_LEN-1:0];
-
-   assign abs_in_1  = abs_input(div_rs2,op_signed);
-   assign sign_in_1 = op_signed && div_rs2[`XPR_LEN-1];
-   assign abs_in_2  = abs_input(div_rs1,op_signed);
-   assign sign_in_2 = op_signed && div_rs1[`XPR_LEN-1];
-
-   assign a_gt = a >  b;
-   assign result_muxed = op_any_rem ? b : result;
-   assign result_muxed_negated = (negate_output) ? -result_muxed : result_muxed;
-   assign final_result = result_muxed_negated;
-
-   assign div_ready = div_finish;
-   assign a = abs_in_1;
 
    always @(posedge clk)
    begin
       if (!rst_n || reset)
       begin
          state         <= s_idle;
+         a             <= 'd0;
          result        <= 'd0;
          b             <= 'd0;
-         negate_output <= 'd0;
+         count         <= 'd0;
+         neg_q         <= 1'b0;
+         neg_r         <= 1'b0;
+         is_rem        <= 1'b0;
          cond          <= 1'b0;
          zflag_r       <= 1'b0;
          cflag_r       <= 1'b0;
@@ -158,10 +181,25 @@ module lisa_div
             s_idle : begin
                if (div_start) 
                begin
-                  result <= 0;
                   state  <= s_compute;
-                  b <= abs_in_2;
-                  negate_output <= op_any_rem ? sign_in_1 : sign_in_1 ^ sign_in_2;
+                  is_rem <= op_any_rem;
+                  if (op_chain)
+                  begin
+                     // a and b stay: the last divisor, the remainder in IX
+                     result <= {div_rs1[7:0], 8'h00};
+                     count  <= 4'd7;
+                     neg_q  <= 1'b0;
+                     neg_r  <= 1'b0;
+                  end
+                  else
+                  begin
+                     a      <= abs_dv;
+                     b      <= {`XPR_LEN{1'b0}};
+                     result <= abs_dd;
+                     count  <= 4'd15;
+                     neg_q  <= (sign_dd ^ sign_dv) & ~dv_zero;
+                     neg_r  <= sign_dd;
+                  end
                end
                else 
                begin 
@@ -194,76 +232,31 @@ module lisa_div
             end
            
             s_compute : begin
-               // Test for divide by zero: the quotient all ones, the
-               // remainder the dividend (b holds it)
-               if (div_rs2 == 0)
-               begin
-                  if (!op_any_rem)
-                     result <= { `XPR_LEN{1'b1}};
-
-                  // Force counter to zero
-                  negate_output <= 1'b0;
+               b      <= fits ? trial[`XPR_LEN-1:0] : {b[`XPR_LEN-2:0], result[`XPR_LEN-1]};
+               result <= {result[`XPR_LEN-2:0], fits};
+               count  <= count - 4'd1;
+               if (count == 4'd0)
                   state <= s_setup_output;
-               end
-               else if (abs_in_1 == 1)
-               begin
-                  // by one: the remainder 0, the quotient the dividend - the
-                  // latched one (b): abs_in_2 is built from RA, which the
-                  // start cleared, so TT07 kept only the low byte here
-                  if (op_any_rem)
-                     b <= {`XPR_LEN{1'b0}};
-                  else
-                     result <= b;
-
-                  state <= s_setup_output;
-               end
-               else
-               begin
-                   // Do the divide (repeated subtraction)
-                   if (a_gt) 
-                      state <= s_setup_output;
-                   else if (a[15:6] == 10'b0 && {a[5:0], 10'b0} <= b)
-                   begin
-                      b <= b - {a[5:0], 10'b0};
-                      result <= result + 1024;
-                   end
-                   else if (a[15:9] == 7'b0 && {a[8:0], 7'b0} <= b)
-                   begin
-                      b <= b - {a[8:0], 7'b0};
-                      result <= result + 128;
-                   end
-                   else if (a[15:12] == 4'b0 && {a[11:0], 4'b0} <= b)
-                   begin
-                      b <= b - {a[11:0], 4'b0};
-                      result <= result + 16;
-                   end
-                   else
-                   begin
-                      b <= b - a;
-                      result <= result + 1;
-                   end
-               end
-
             end // case: s_compute
+
             s_setup_output : 
             begin
                // the 16-bit result in RA: bits 14:0 in ra, bit 15 as ra_cond,
-               // so xchg ra / txau read it whole
-               result <= final_result;
-               cond   <= final_result[15];
-               state <= s_done;
+               // so xchg ra / txau read it whole; the other one in IX
+               result <= ra_fin;
+               b      <= ix_fin;
+               cond   <= ra_fin[15];
+               state  <= s_done;
             end
+
             s_done:
             begin
-               // Go to IDLE state
+               // Go to IDLE state; b (IX) keeps the remainder (RESPIN 27:
+               // TT07 and rc10 cleared it here)
                state <= s_idle;
-
-               // Set ldx_stage_two=0 when done
-               b      <= 16'h0000;
             end
          endcase // case (state)
       end
    end // always @ (posedge clk)
 
 endmodule
-

@@ -37,6 +37,7 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 24 | `ldirq` loads nothing: a misc load (101000..) decoded by `op_ld_misc_r` first, its own case item never reached; `stirq` then wrote A back as the shadows and `rets` restored amode 0 | `lisa_core.v` acc_misc | fixed: sdcc_test/test_ldirq (lisa_sim --rev2, the testbench, the Arty) |
 | 25 | The UART interrupt enables (0x14) have no write decode - TT07 too: `uart_rx_ie` / `uart_tx_ie` read 0 and no UART interrupt ever fires; the request was an edge, latched | `lisa_periph.v` 0x14, int_req | fixed: the enables written, the UART requests levels (Ken, 2026-10-18); sdcc_test/test_uartirq (lisa_sim --rev2 --send, the testbench with SEND=, the Arty) |
 | 26 | An extension: `lda (ix++)` (0xA14C) reads byte IX[0] of the code word at {KB, IX[14:1]} and increments IX, KB the constant bank register 0x1F - constants packed two to a word in any bank (the `ldi; ret` pair per byte took 4 flash bytes and the common area) | `lisa_core.v` op_ldk, `lisa_periph.v` 0x1F, `tt_um_lisa.v` core_i_paddr | done: sdcc_test/test_ldk (lisa_sim --rev2, the testbench) |
+| 27 | An extension: the divider's second result and a chained step. `div` leaves the remainder in IX (`rem` the quotient; TT07 and rc10 cleared IX), and `divc` (0xA174) divides {IX, A} by the divisor of the last division, the quotient byte to A / RA and the remainder to IX - a long division of any width by a 16-bit divisor in one `divc` per byte (SDCC's 64-bit division is a 20K-instruction bit-serial loop); the divider is a restoring one now, 16 clocks | `lisa_div.v`, `lisa_core.v` op_divc | done: sdcc_test/test_divc (lisa_sim --rev2, the testbench) |
 | 22 | Bank registers (an extension): the upper 16K of the code and of the data space a window on 64 code / 16 data banks, 2 MB / 256 KB | `lisa_periph.v` 0x15-0x17, `tt_um_lisa.v`, `inst_stream.v`, `data_cache8.v`, `lisa_core.v` d_sp | done: test/progs/bank.c (make BANK=1), lisa_sim --rev2, sdcc __banked (sdcc_test/test_bank on the testbench and the Arty) |
 
 Status: open / fixed (the test that shows it, in test/: a program of test/progs, a cocotb test of test/core or the fops bench).
@@ -670,6 +671,49 @@ byte first, Z on a zero byte, IX + 1 each), then the words of a function
 placed in bank 2 with KB = 2; 22 checks.  The packed CONST area, the
 reader `__gptrget` and NuttX's layout follow in the toolchain (lisa-tools).
 Hardened in rc10.
+
+## 27. The divider's second result, and a chained step
+
+**Why.** NuttX's printf spent 64% of an `xd` in SDCC's 64-bit division:
+a 64-step bit-serial C loop of 20-23K instructions, 3 ms at 50 MHz
+(the 32-bit routines run on the hardware divider, divul.s, in 75-500).
+A 16-bit divider on its own cannot continue a long division: the
+remainder of one step has to come back as the high part of the next
+dividend.  Ken asked (2026-10-19) whether the divider could be extended.
+
+**RTL.** `lisa_div.v` is a restoring divider now: one 17-bit
+subtractor, 16 clocks for a division and 8 for a chained step (it was
+repeated subtraction in steps of the divisor shifted by 10, 7, 4 and 0
+bits - four compare-and-subtract pairs, 10 to 95 clocks).  The
+dividend's magnitude shifts out of `result` (RA) into the remainder `b`
+(IX) while the quotient shifts into `result`.  Both results come out:
+`div` leaves the quotient in RA (its low byte in A) and the remainder in
+IX, `rem` the other way round - TT07 and rc10 cleared IX at the end.
+The divisor's magnitude stays latched in `a`, and `divc` (0xA174, the
+misc slot after `lddiv`; one word, waiting for the divider as `div 1`
+does) divides {IX, A} by it: the quotient byte to A and RA, the
+remainder to IX.  One `divc` per byte, most significant first, after a
+`div` by the divisor (of 0, or of the top byte), is a long division of
+any width by a 16-bit divisor with the remainder carried in IX - a
+64-bit value by 10 in some 40 instructions.  IX must be below the
+divisor at a `divc` (it is after a division by the same one); the step
+is unsigned.  The latched divisor is state an interrupt handler that
+divides would replace: a chain runs with interrupts off, or the
+handlers do not divide.  Signed mode (amode[1]) follows C now: the
+remainder takes the dividend's sign (the earlier divider negated it by
+the divisor's; nothing compiled uses signed mode).  By zero (the
+quotient all ones, the remainder the dividend) and -32768 / -1 as
+before.  Z is untouched by any division, as it always was (lisa_sim had
+set it).  `lisa_sim --rev2` replays the divider's loop bit for bit;
+`sdaslisa` assembles `divc`.
+
+**Test.** `sdcc_test/test_divc.c` (`--rev2`, the stack at 0x7fff for
+the library's 64-bit frames: the testbench's CACHE=1 list): both
+results of div and rem (bit 15 of either, by zero, by one), five signed
+cases, 0x12345678 / 1000 by bytes, single steps with a remainder carried
+in (after a div and after a rem), and nine 64-bit chains against the C
+library's division; 26 checks.  The library's 64-bit routines on the
+step are toolchain work (lisa-tools).
 
 ## Verification (test/, see test/README.md)
 
