@@ -599,7 +599,7 @@ zflag_isr, cflag_isr}`, the byte `stirq` takes back.  `lisa_sim --rev2`
 round trip with A set to 0x5A first; main checks the byte it saw (amode 1
 in bits 7:5), `ldamode` after the interrupt (ie 1, amode 1) and a shift
 through C.  On lisa_sim --rev2, the testbench (`run_suite.sh chip CACHE=1
-REV2=1`) and the Arty.
+REV2=1`) and the Arty.  Hardened in rc10.
 
 ## 25. The UART interrupt enables cannot be written
 
@@ -640,7 +640,7 @@ SEND_DELAY=<clocks>`, in run_suite's list; the Arty with arty_run's SEND)
 waited for with the interrupt off, then the enable set: the request up at
 once, the handler takes both, the request gone.  `lisa_sim` transmits a
 byte in `char_cycles` (100 by default) so the transmitter is busy for a
-while, as the chip's is.
+while, as the chip's is.  Hardened in rc10.
 
 ## 26. lda (ix++): constants packed, in any bank
 
@@ -669,6 +669,7 @@ the words of a function in the lower half read byte by byte (the low
 byte first, Z on a zero byte, IX + 1 each), then the words of a function
 placed in bank 2 with KB = 2; 22 checks.  The packed CONST area, the
 reader `__gptrget` and NuttX's layout follow in the toolchain (lisa-tools).
+Hardened in rc10.
 
 ## Verification (test/, see test/README.md)
 
@@ -1186,6 +1187,26 @@ reader `__gptrget` and NuttX's layout follow in the toolchain (lisa-tools).
   Promoted 2026-10-18 (Ken): gds/, lef/, pnl/ are rc8's, macro.json's
   anchor table its placement (placements/macro-rc8_final_cells.json);
   rc7's table stays as the overlay trial_anchor_rc7.json.  Tag rc8.
+* rc9 (2026-10-18, runs/macro-rc9 on cd4d09d: items 24 (ldirq) and 25 (the
+  UART interrupt enables written, the requests as levels) on rc8's RTL, a
+  free draw with the art): synthesized 154326 um2 (+0.57% over rc8), 63156
+  instances, placed at 67.1%, 828K um of wire in 14 iterations, Magic DRC /
+  LVS / antenna 0, hold +0.077, setup +5.6 nominal and -3.8 at ss.  Not
+  promoted: item 26 came the same evening.
+* rc10 (2026-10-18, runs/macro-rc10 on 4217121: item 26 (lda (ix++) and the
+  constant bank KB) on rc9's RTL, a free draw with the art): synthesized
+  154384 um2 (+0.04% over rc9, +0.60% over rc8), 62660 instances, placed at
+  67.6%, 822K um of wire in 14 iterations, Magic DRC / LVS / antenna 0,
+  hold +0.079, setup +5.6 nominal (an output-port path, as before) and
+  -6.4 at ss (262 endpoints; rc9's 68 at -3.8 sat on the BF16 accumulator
+  cone).  The slow corner's worst path is new and item 26's: IX through
+  the fetch window's address compare into k_ok / d_ok and the registers'
+  enables (ix[12] -> ra[5], 40.0 ns of arrival against 33.6 required);
+  fine at nominal.  A registered k_ok (one more cycle on lda (ix++)) would
+  take it out if the slow corner ever matters.  The local precheck passes.
+  Promoted 2026-10-18 (Ken): gds/, lef/, pnl/ are rc10's, macro.json's
+  anchor table its placement (placements/macro-rc10_final_cells.json);
+  rc8's table stays as the overlay trial_anchor_rc8.json.  Tag rc10.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
