@@ -167,7 +167,7 @@ module lisa_dbg
 
    assign d_o      = dbg_di[7:0];
    assign d_access = (dbg_we | dbg_rd) && dbg_a == 8'h6 && halted;
-   assign d_active = (dbg_we | dbg_rd) && dbg_a[7:4] == 4'h0;
+   assign d_active = (dbg_we | dbg_rd) && (dbg_a[7:4] == 4'h0 || dbg_a[7:4] == 4'h3);   // the 0x3x group is this block's too (REV3.md)
    assign dbg_halted = halted;
    assign dbg_ready = (d_active & !d_active_r) ? 1'b0 : d_access ? ((delay == 2'h0) | d_periph) : d_active;
 

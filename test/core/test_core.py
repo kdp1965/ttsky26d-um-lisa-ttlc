@@ -6,6 +6,7 @@ from cocotb.triggers import RisingEdge, First, ClockCycles
 
 REG_STATUS, REG_ACC, REG_PC, REG_SP, REG_RA, REG_IX, REG_DATA, REG_DADDR = range(8)
 REG_BRK0 = 0x08
+REG_IXH, REG_SPH, REG_RAH, REG_DADDRH = 0x38, 0x39, 0x3a, 0x3c    # the upper bytes (REV3.md)
 
 
 def plusarg(name, default=None):
@@ -48,7 +49,7 @@ class Core:
         d.dbg_di.value = v & 0xffff
         d.dbg_we.value = 1
         await RisingEdge(self.clk)
-        for _ in range(64):
+        for _ in range(4000):          # a debugger RAM access can miss the cache
             if int(d.dbg_ready.value):
                 break
             await RisingEdge(self.clk)
@@ -63,7 +64,7 @@ class Core:
         d.dbg_a.value = a
         d.dbg_rd.value = 1
         await RisingEdge(self.clk)
-        for _ in range(64):
+        for _ in range(4000):          # a debugger RAM access can miss the cache
             if int(d.dbg_ready.value):
                 break
             await RisingEdge(self.clk)
@@ -192,6 +193,44 @@ async def test_debug_port(dut):
     for a, v in ((0x10, 0x5a), (0x11, 0xa5), (0x12, 0x01)):
         got = await core.read_ram(a)
         assert got == v, 'RAM[0x%02x] reads 0x%02x, wrote 0x%02x' % (a, got, v)
+
+
+@cocotb.test(skip=plusarg('FIRMWARE') is not None)
+async def test_debug_port_24(dut):
+    """the 24-bit registers (REV3.md): the upper bytes through 0x38-0x3a, RAM beyond 32K through 0x3c"""
+    core = Core(dut)
+    await core.start(cache=True)
+    await core.write_reg(REG_IX, 0x5678)
+    await core.write_reg(REG_IXH, 0x92)          # the condition bit, bits 22:16 = 0x12
+    assert (await core.read_reg(REG_IX)) == 0x5678
+    assert (await core.read_reg(REG_IXH)) == 0x92
+    await core.write_reg(REG_SP, 0xfff0)
+    await core.write_reg(REG_SPH, 0x7f)
+    assert (await core.read_reg(REG_SP)) == 0xfff0
+    assert (await core.read_reg(REG_SPH)) == 0x7f
+    await core.write_reg(REG_RA, 0x1234)
+    await core.write_reg(REG_RAH, 0x85)
+    assert (await core.read_reg(REG_RA)) == 0x1234
+    assert (await core.read_reg(REG_RAH)) == 0x85
+    assert (await core.read_reg(REG_IX)) == 0x5678, 'IX changed by the RA write'
+    # RAM beyond 32K: 0x3c holds the address bits 22:15, 7 the rest (and the peripheral bit)
+    cells = ((0x100100, 0x5a), (0x000100, 0xa5), (0x7ffffe, 0x3c), (0x7ffffe + 1, 0xc3))
+    for a, v in cells:
+        await core.write_reg(REG_DADDRH, a >> 15)
+        await core.write_reg(REG_DADDR, a & 0x7fff)
+        await core.write_reg(REG_DATA, v)
+    for a, v in cells:
+        await core.write_reg(REG_DADDRH, a >> 15)
+        await core.write_reg(REG_DADDR, a & 0x7fff)
+        got = (await core.read_reg(REG_DATA)) & 0xff
+        assert got == v, 'RAM[0x%06x] reads 0x%02x, wrote 0x%02x' % (a, got, v)
+    # the address steps after each access, through 0x3c
+    await core.write_reg(REG_DADDRH, 0x100100 >> 15)
+    await core.write_reg(REG_DADDR, 0x100100 & 0x7fff)
+    assert (await core.read_reg(REG_DATA)) & 0xff == 0x5a
+    assert (await core.read_reg(REG_DADDRH)) == (0x100101 >> 15), 'the upper byte after the access'
+    assert (await core.read_reg(REG_DADDR)) == (0x100101 & 0x7fff), 'the lower bits after the access'
+    await core.write_reg(REG_DADDRH, 0)
 
 
 # ---------------------------------------------------------------- the debugger
