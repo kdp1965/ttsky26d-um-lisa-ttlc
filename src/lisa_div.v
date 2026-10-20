@@ -181,6 +181,11 @@ module lisa_div
          ra_hi         <= 8'h0;
          zflag_r       <= 1'b0;
          cflag_r       <= 1'b0;
+         ldx_stage_two_r <= 1'b0;    // never reset before: X in icarus (random on
+                                     // silicon) until the first ldx wrote it, and
+                                     // ~ldx_stage_two gates the predicate update -
+                                     // rev 3 starts with ldxf, so its first `if`
+                                     // never took (CI's test_bringup, 2026-10-20)
       end
       else
       begin

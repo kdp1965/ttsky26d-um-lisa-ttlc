@@ -1,10 +1,12 @@
-# Test programs for the revision-2 RTL (sdcc -mlisa --rev2 from lisa-tools:
-# the second chip's stack convention - SP at the top byte - and its adder;
+# Test programs for the revision-3 RTL (sdcc -mlisa --rev3 from lisa-tools:
+# the third chip's 24-bit registers and three-byte pairs, REV3.md; the
+# default stack at 0x7f, inside the 128-byte RAM the cache-off tests use;
 # the .hex images are committed so the testbenches run without the compiler).
+# A --rev2 image does not run on this core (its pairs are two bytes).
 #   make            build *.ihx and the *.hex the flash model / tb_core load
 SDCC      ?= ../../../lisa-tools/sdcc-lisa/build/bin/sdcc
 SDCC_TEST ?= ../../../lisa-tools/sdcc_test
-CFLAGS    ?= -mlisa --rev2 --debug -I$(SDCC_TEST)
+CFLAGS    ?= -mlisa --rev3 --debug -I$(SDCC_TEST)
 
 PROGS = hello alu2 reti div16 cache14 dbg swap bank uartov
 
