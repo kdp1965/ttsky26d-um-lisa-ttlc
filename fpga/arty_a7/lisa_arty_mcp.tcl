@@ -8,7 +8,7 @@
 #
 # Vivado keeps the RTL names (<reg>_reg[n], a generate scope as a prefix),
 # so the groups are found by name.  With the divider present (WANT_DIV),
-# IX and its condition bit are lisa_div's b register (bits 14:0 and 15), RA
+# IX and its condition bit are lisa_div's b and ix_hi registers, RA
 # and the signed-inversion flag its result register, and the live flags its
 # cflag_r / zflag_r / cond; the debugger's address is s_debug_arg[23:16]
 # and its data s_debug_arg[15:0].
@@ -92,8 +92,10 @@ set ops        [lisa_regs $C/op_*_r_reg*]
 set fx         [lisa_regs $C/f0_reg* $C/f1_reg* $C/f2_reg* $C/f3_reg*]
 # destinations
 set facc       [lisa_regs $C/facc_reg*]
-set ix         [lisa_bits $D/b_reg* 0 14]
-set ra         [lisa_bits $D/result_reg* 0 14]
+# the third chip (REV3.md): IX = {ix_hi[6:0], b[15:0]} with its condition bit
+# in ix_hi[7]; RA = {ra_hi[7:0], result[14:0]}, result[15] signed_inversion
+set ix         [concat [lisa_bits $D/b_reg* 0 15] [lisa_bits $D/ix_hi_reg* 0 6]]
+set ra         [concat [lisa_bits $D/result_reg* 0 14] [lisa_regs $D/ra_hi_reg*]]
 set ia         [lisa_regs $C/ia_reg*]
 set sp         [lisa_regs $C/sp_reg*]
 set cond       [lisa_regs $C/cond_reg*]
@@ -103,7 +105,7 @@ set isr_sh     [lisa_regs $C/cflag_isr_reg* $C/zflag_isr_reg* $C/signed_inv_isr_
                           $C/cflag_save_isr_reg* $C/signed_inv_live_isr_reg* $C/amode_isr_reg*]
 set div_zflag  [lisa_regs $D/zflag_r_reg*]
 set div_cond   [lisa_regs $D/cond_reg*]
-set div_ixc    [lisa_bits $D/b_reg* 15 15]
+set div_ixc    [lisa_bits $D/ix_hi_reg* 7 7]
 set div_sinv   [lisa_bits $D/result_reg* 15 15]
 
 set groups {pc win_count win_head win_data brk dbg_a dbg_di dbg_we dbg_halted cont_q d_we_r inst_r ops fx
@@ -136,8 +138,14 @@ lisa_mcp 2 $d_we_r $facc
 # cycles to the accumulator through the stream's core_i_ready net, whatever
 # the source (the state register, a breakpoint's stop, the window's hit)
 set i_ready [get_nets -hierarchical -quiet -filter "NAME =~ *core_i_ready"]
+if {[llength $i_ready] == 0} {
+   # synthesis may keep another of the net's aliases: take the net on the
+   # stream's core_i_ready output pin, whatever it is called
+   set i_ready [get_nets -quiet -of_objects [get_pins -hierarchical -quiet -filter "REF_PIN_NAME == core_i_ready && DIRECTION == OUT"]]
+}
 puts "lisa_arty_mcp: core_i_ready nets [llength $i_ready]"
 if {[llength $i_ready] == 0} { error "lisa_arty_mcp: the core_i_ready net was not found" }
+puts "lisa_arty_mcp: core_i_ready = [get_property NAME $i_ready]"
 set_multicycle_path 3 -setup -through $i_ready -to $facc
 set_multicycle_path 2 -hold  -through $i_ready -to $facc
 # the BF16 adder's cone into the accumulator (29 levels, 20.5 ns here):

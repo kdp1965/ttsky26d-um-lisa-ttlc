@@ -37,7 +37,7 @@ class A: flashbase = 0
 d = m.LisaPyDb(); d.iwidth = 16; d.args = A()
 d.openPort("/dev/ttyUSB1", baud)
 print("debugger", d.getVer(), flush=True)
-d.halt(); d.writePC(0); d.setFlashBase(); d.writeReg(0x17, 4); d.writeReg(0x1e, 0x08d3)
+d.halt(); d.writePC(0); d.setFlashBase(); d.writeReg(0x17, 4); d.writeReg(0x1e, 0x0801)
 cache = os.environ.get("CACHE", "1") != "0"
 quad = os.environ.get("QUAD", "1") != "0"                    # both selects quad, as the demo board
 d.writeReg(0x17, (0x0007 if cache else 0x0005) if quad else (0x0006 if cache else 0x0004))

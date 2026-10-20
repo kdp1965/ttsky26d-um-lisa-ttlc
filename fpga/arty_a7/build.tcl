@@ -40,8 +40,8 @@ read_verilog -sv [list $here/fpga_cells.v $here/lisa_arty_clk.v \
 read_xdc $here/lisa_arty.xdc
 
 synth_design -top lisa_arty -part $part -include_dirs $src -generic CLK_DIVIDE=$div
-source $here/lisa_arty_mcp.tcl
 write_checkpoint -force $out/post_synth.dcp
+source $here/lisa_arty_mcp.tcl
 report_utilization -file $out/util_synth.rpt
 opt_design
 place_design

@@ -104,3 +104,9 @@ set_false_path -to   [get_ports { led[*] led0_* jb[*] jc[*] uart_rxd_out eth_rst
 ## Configuration
 set_property CFGBVS VCCO [current_design];
 set_property CONFIG_VOLTAGE 3.3 [current_design];
+
+# Keep the instruction stream's boundary: lisa_arty_mcp.tcl's exception for
+# the fetch select runs -through its core_i_ready output, which synthesis
+# otherwise folds into the core's instruction mux (it did with the rev-3 RTL,
+# and the net was gone).  A synthesis property, read before synth_design.
+set_property KEEP_HIERARCHY yes [get_cells lisa/i_inst_stream]
