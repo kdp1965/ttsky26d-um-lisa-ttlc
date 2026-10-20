@@ -94,17 +94,21 @@ if bp:
 else:
     time.sleep(secs)
 sync(0.2); d.halt(); sync()
-pc, sp, ra, ix, ia = reg(2) & 0x7fff, reg(3), reg(4), reg(5), reg(6)
-print("after %.1f s: PC %04X SP %04X RA %04X IX %04X IA %04X banks %s" % (secs, pc, sp, ra, ix, ia, d.readBanks()), flush=True)
+# the third chip (REV3.md): SP, RA and IX 24 bits (lisa_pydb reads the upper
+# bytes, 0x38-0x3a), RAM beyond 32K through 0x3c; the registers print 6 digits
+rev3 = d.isRev3()
+W = 6 if rev3 else 4
+pc, sp, ra, ix, ia = reg(2) & 0x7fff, d.readSP(), d.readRA(), d.readIX(), reg(6)
+print("after %.1f s: PC %04X SP %0*X RA %0*X IX %0*X IA %04X banks %s" % (secs, pc, W, sp, W, ra, W, ix, ia, d.readBanks()), flush=True)
 for name, r in (("INT_ENABLE", 0x0e), ("INT_STATUS", 0x0f), ("UART1_STATUS", 0x11), ("UART_INT_EN", 0x14), ("TIM1_CTRL", 0x0c), ("TIM1_TICK", 0x0d)):
-    print("  %-12s %02X" % (name, d.readByte(0x8000 | r)), flush=True)
+    print("  %-12s %02X" % (name, d.readByte(r, periph=True)), flush=True)
 def dump(a, n):
     b = d.readRam(a, n)
     for o in range(0, n, 16):
-        print("  %04X: %s" % (a + o, " ".join("%02X" % x for x in b[o:o + 16])), flush=True)
+        print("  %0*X: %s" % (W, a + o, " ".join("%02X" % x for x in b[o:o + 16])), flush=True)
 print("direct data (g_lisa_ie 0, g_lisa_inirq 1, g_readytorun 2, g_running_tasks 6):"); dump(0x0000, 64)
-print("stack around SP:"); dump(max(0, sp - 48) & 0xfff0, 96)
-print("top of RAM (the idle stack):"); dump(0x7F80, 128)
+print("stack around SP:"); dump(max(0, sp - 48) & 0xfffff0, 96)
+print("top of RAM (the idle stack):"); dump(0x7FFE80 if rev3 else 0x7F80, 128)
 steps = int(os.environ.get("STEPS", "0"))
 if steps:
     tr = []
@@ -113,8 +117,11 @@ if steps:
         d.step(); sync()
         tr.append("%04X" % (reg(2) & 0x7fff))
         if verbose:
-            print("  step %2d: PC %04X A %02X IX %04X SP %04X RA %04X banks %s" % (i + 1, reg(2) & 0x7fff, reg(1) & 0xff, reg(5), reg(3), reg(4), d.readBanks()), flush=True)
+            print("  step %2d: PC %04X A %02X IX %0*X SP %0*X RA %0*X banks %s" % (i + 1, reg(2) & 0x7fff, reg(1) & 0xff, W, d.readIX(), W, d.readSP(), W, d.readRA(), d.readBanks()), flush=True)
     print("steps:", " ".join(tr), "banks", d.readBanks(), flush=True)
-    sp2 = reg(3)
-    print("after the steps: PC %04X SP %04X RA %04X IX %04X A %04X status %04X" % (reg(2) & 0x7fff, sp2, reg(4), reg(5), reg(1), reg(0)), flush=True)
-    print("RAM from SP (an ISR frame: SP_LO SP_HI IE SB DB CB PC_HI PC_LO FLAGS CSAVE IRQ RA_HI RA_LO IX_HI IX_LO A):"); dump(sp2 & 0xfff0, 48)
+    sp2 = d.readSP()
+    print("after the steps: PC %04X SP %0*X RA %0*X IX %0*X A %04X status %04X" % (reg(2) & 0x7fff, W, sp2, W, d.readRA(), W, d.readIX(), reg(1), reg(0)), flush=True)
+    if rev3:
+        print("RAM from SP (an ISR frame: SP_LO SP_MID SP_HI IE PC_HI PC_MID PC_LO FLAGS CSAVE IRQ RA_HI RA_MID RA_LO IX_HI IX_MID IX_LO A):"); dump(sp2 & 0xfffff0, 48)
+    else:
+        print("RAM from SP (an ISR frame: SP_LO SP_HI IE SB DB CB PC_HI PC_LO FLAGS CSAVE IRQ RA_HI RA_LO IX_HI IX_LO A):"); dump(sp2 & 0xfff0, 48)
