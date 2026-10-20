@@ -715,6 +715,65 @@ in (after a div and after a rem), and nine 64-bit chains against the C
 library's division; 26 checks.  The library's 64-bit routines on the
 step are toolchain work (lisa-tools).  Hardened in rc11.
 
+## 28. The data map: a common 8K, a data window of 8K granules, a stack window
+
+**Why.** Not a silicon issue: an extension of item 22.  Ken (2026-10-19),
+after NuttX's task banks on item 22's map: "any task only gets a max 16KB
+of its own data counting heap plus stack", and the proposal that the bank
+be chosen by the address rather than by the form of the access, so that a
+pointer means one thing however it is dereferenced and `DB` and `SB` may
+differ.  Item 22's map chose `SB` for SP-relative accesses and `DB` for
+the rest, so a pointer to a stack object was right only while `DB == SB`:
+each task got one 16K bank for stack and heap together, and the kernel
+reached another task's bank only through a trampoline on a scratch stack
+in that bank.  Ken's first form (two 16K windows, the kernel's data swapped
+in by a "kernel bit") needs a copy-in / copy-out layer that flat NuttX has
+nowhere, so the data space keeps a region the kernel can always see,
+shrunk to what it uses (its statics are 1.6 KB, its heap a few KB): the
+24K mode with an 8K kernel and a 5-bit `DB` choosing an 8K granule.
+
+**ISA** (`lisa_isa.md`, "Bank registers").  Three regions by address
+alone: below 0x2000 the common 8K (physical 0); 0x2000-0x3FFF the data
+window on one of 32 granules of 8K, `DB` `[p:0x16]` now 5 bits (physical
+`{DB, addr[12:0]}`); 0x4000-0x7FFF the stack window on one of 16 banks of
+16K, `SB` `[p:0x17]` (physical `{SB, addr[13:0]}`; bank n is granules 2n
+and 2n+1).  Reset 1 = physical 0-32K flat, the TT07 layout, so every image
+that never writes the registers runs unchanged; granule 0 through the data
+window is the common 8K, bank 0 through the stack window the common 8K and
+granule 1.  The code space is as in item 22.  A task can have a granule
+for its heap and a stack in a bank shared with other stacks, or a bank of
+its own and then 24K less the stack as one contiguous heap; a stack in the
+data window works too (a thread's, from its group's heap).
+
+**RTL.** `tt_um_lisa.v`: `d_page_c[4:0]` = physical bits 17:13 of the
+access (`{SB, addr[13]}`, `DB`, or 0 by address bits 14 and 13); `d_bank_c`
+is its upper four bits and `d_a13_c` bit 13, registered beside `d_addr_r`
+and in `d_addr_good`; the core's `d_sp` is no longer used.
+`lisa_periph.v`: `data_bank` 5 bits (reset 1, read back with the high
+bits zero).  `data_cache8.v`: the new input `d_a13`; the line tag is the
+physical bits 13:6 (`tag_addr`) instead of the window address's, in the
+compares and the tag stores; the bank bits, the index bit "bank != 0" and
+the fill / write-back address are unchanged.  Nothing in `lisa_core.v`.
+
+**Test.** `test/progs/bank.c` rewritten (`make BANK=1`, 35 checks, passes
+on Verilator): the widths (5, 4, 6 bits), the code banks as before, one
+address in three granules through the cache and the write right before
+the access, granule 0 as the common 8K, granule 1 as bank 0's upper half
+through the stack window, granule 2 as bank 1's lower half (one byte at
+0x3000 under `DB` 2 and at 0x5000 under `SB` 1: one cache line), an IX
+access above 0x4000 going to the stack bank whatever `DB`, evictions
+between granules 4 and 5 and the same bytes seen through bank 2, pushes
+with SP in the stack window landing in `SB`, pushes with SP in the data
+window landing in `DB`.  Toolchain: `lisa_sim --rev2` maps the three
+regions (`LisaCore::data_pa`, the 5-bit register); `sdcc -mlisa`'s linker
+places a `DBANKn` area in 0x2000-0x3FFF and wants ordinary data below
+0x2000 (README-lisa.md "Data banks"); `sdcc_test/test_dbank` is linked at
+0x2000; `lisa_pydb` masks the data bank to 5 bits.  NuttX (branch lisa):
+the task banks on this map - each task a granule for its heap, a stack
+in a shared bank or (a stack of 4 KB or more) a bank of its own with the
+heap up to the stack, the kernel's visits on a scratch stack in the
+common 8K, `free` over the 31 granules.
+
 ## Verification (test/, see test/README.md)
 
 * `test/core/`: tb_core.v, the core with the chip's registered data bus, the

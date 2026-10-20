@@ -38,7 +38,9 @@ module data_cache
 
    // The data bus connection to LISA core
    input  wire [14:0]   d_addr,
-   input  wire [3:0]    d_bank,              // The bank of an address above 0x4000 (tt_um_lisa.v), 0 below
+   input  wire [3:0]    d_bank,              // Physical address bits 17:14 (tt_um_lisa.v): the bank of a
+                                             // stack window address, the data bank's upper bits, 0 below 0x2000
+   input  wire          d_a13,               // Physical address bit 13 (RESPIN 28: the data window's granule)
    input  wire [7:0]    d_i,
    output wire [7:0]    d_o,
    input  wire          d_valid,
@@ -104,6 +106,7 @@ module data_cache
    reg   [3:0]          cl_bank7;
    reg   [3:0]          cl_map_bank;         // The mapped line's bank
    wire  [3:0]          bank;                // The access's bank: 0 unless the 32K map (cache_map_sel 3)
+   wire  [7:0]          tag_addr;            // The access's line tag: physical bits 13:6 (bit 13 from d_a13 in the 32K map)
    reg   [7:0]          cl_valid;            // CACHE Line valid bits
    reg   [7:0]          cl_dirty;            // CACHE Line dirty bits
    reg   [7:0]          cl_set_valid;        // Flag to set cache line valid
@@ -142,14 +145,14 @@ module data_cache
    // ==========================================================================
    // Test for data hit
    // ==========================================================================
-   assign cl_addr[0]   = cl_addr0 == d_addr[13:6] && cl_bank0 == bank;
-   assign cl_addr[1]   = cl_addr1 == d_addr[13:6] && cl_bank1 == bank;
-   assign cl_addr[2]   = cl_addr2 == d_addr[13:6] && cl_bank2 == bank;
-   assign cl_addr[3]   = cl_addr3 == d_addr[13:6] && cl_bank3 == bank;
-   assign cl_addr[4]   = cl_addr4 == d_addr[13:6] && cl_bank4 == bank;
-   assign cl_addr[5]   = cl_addr5 == d_addr[13:6] && cl_bank5 == bank;
-   assign cl_addr[6]   = cl_addr6 == d_addr[13:6] && cl_bank6 == bank;
-   assign cl_addr[7]   = cl_addr7 == d_addr[13:6] && cl_bank7 == bank;
+   assign cl_addr[0]   = cl_addr0 == tag_addr && cl_bank0 == bank;
+   assign cl_addr[1]   = cl_addr1 == tag_addr && cl_bank1 == bank;
+   assign cl_addr[2]   = cl_addr2 == tag_addr && cl_bank2 == bank;
+   assign cl_addr[3]   = cl_addr3 == tag_addr && cl_bank3 == bank;
+   assign cl_addr[4]   = cl_addr4 == tag_addr && cl_bank4 == bank;
+   assign cl_addr[5]   = cl_addr5 == tag_addr && cl_bank5 == bank;
+   assign cl_addr[6]   = cl_addr6 == tag_addr && cl_bank6 == bank;
+   assign cl_addr[7]   = cl_addr7 == tag_addr && cl_bank7 == bank;
    assign cl_hit[0]    = cl_addr[0] && cl_valid[0] && cache_sel[0];
    assign cl_hit[1]    = cl_addr[1] && cl_valid[1] && cache_sel[1];
    assign cl_hit[2]    = cl_addr[2] && cl_valid[2] && cache_sel[2];
@@ -160,6 +163,7 @@ module data_cache
    assign cl_hit[7]    = cl_addr[7] && cl_valid[7] && cache_sel[7];
    assign cache_hit    = |cl_hit;
    assign bank         = cache_map_sel == 2'h3 ? d_bank : 4'h0;
+   assign tag_addr     = {cache_map_sel == 2'h3 ? d_a13 : d_addr[13], d_addr[12:6]};
    assign cache_valid  = cache_hit & d_valid;
    assign cache_map    = flush_active ? flush_cache_line : {cache_map_bit, d_addr[5:4]};
    assign cache_sel[0] = cache_map == 3'h0;
@@ -288,42 +292,42 @@ module data_cache
          // Implement the cl_addr updates
          if (cl_update[0])
          begin
-            cl_addr0 <= d_addr[13:6];
+            cl_addr0 <= tag_addr;
             cl_bank0 <= bank;
          end
          if (cl_update[1])
          begin
-            cl_addr1 <= d_addr[13:6];
+            cl_addr1 <= tag_addr;
             cl_bank1 <= bank;
          end
          if (cl_update[2])
          begin
-            cl_addr2 <= d_addr[13:6];
+            cl_addr2 <= tag_addr;
             cl_bank2 <= bank;
          end
          if (cl_update[3])
          begin
-            cl_addr3 <= d_addr[13:6];
+            cl_addr3 <= tag_addr;
             cl_bank3 <= bank;
          end
          if (cl_update[4])
          begin
-            cl_addr4 <= d_addr[13:6];
+            cl_addr4 <= tag_addr;
             cl_bank4 <= bank;
          end
          if (cl_update[5])
          begin
-            cl_addr5 <= d_addr[13:6];
+            cl_addr5 <= tag_addr;
             cl_bank5 <= bank;
          end
          if (cl_update[6])
          begin
-            cl_addr6 <= d_addr[13:6];
+            cl_addr6 <= tag_addr;
             cl_bank6 <= bank;
          end
          if (cl_update[7])
          begin
-            cl_addr7 <= d_addr[13:6];
+            cl_addr7 <= tag_addr;
             cl_bank7 <= bank;
          end
       end

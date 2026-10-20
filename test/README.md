@@ -18,7 +18,7 @@ make                          # test_autobaud (the debug UART trained at six bit
 make TTLC=1                   # the TTLC loopback through the chains, its breakpoints and step
 make TTLC=1 TTLC_IMAGE=$PWD/progs/ttlc_jump_test.hex   # the loopback through jmp / rtn / skz / nopf
 make SIM=icarus TTLC=1 TTLCTRACE=6000 TESTCASE=test_ttlc_trace [TTLCIN=0x3]   # log the TTLC's fetch per clock
-make BANK=1                   # the bank registers (RESPIN 22): progs/bank.c with routines in banks 1-3, the cache on
+make BANK=1                   # the bank registers (RESPIN 22, the data map of 28): progs/bank.c with routines in banks 1-3, the cache on
 make OVERRUN=1                # the UART receive FIFO's overrun flag (RESPIN 14): progs/uartov.c
 make IHX=../../lisa-tools/sdcc_test/test_core.ihx [CACHE=1] [TIMEOUT=clocks]
 ./run_suite.sh chip REV2=1    # the SDCC suite's self-checking programs (the

@@ -194,7 +194,7 @@ module lisa_core
    (* keep = "true" *)
    output wire [D_BITS-1:0]   d_addr,
    output wire                d_periph,
-   output wire                d_sp,       // the address is SP-relative: the stack bank applies above 0x4000 (tt_um_lisa.v)
+   output wire                d_sp,       // the address is SP-relative (unused since RESPIN 28: the banks go by address)
    (* keep = "true" *)
    output wire                d_we,
    (* keep = "true" *)

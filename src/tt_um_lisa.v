@@ -408,25 +408,35 @@ module tt_um_lisa
    wire        d_sp_c;
    wire [3:0]  d_bank_c;
    reg  [3:0]  d_bank_r;
+   wire        d_a13_c;            // physical address bit 13 of the data access (RESPIN 28)
+   reg         d_a13_r;
    wire [5:0]  code_bank;
    wire [5:0]  const_bank;          // KB: the bank lda (ix++) reads (RESPIN 26)
    wire        core_i_kfetch;
-   wire [3:0]  data_bank;
+   wire [4:0]  data_bank;          // 5 bits: 32 granules of 8K in the data window (RESPIN 28)
    wire [3:0]  stack_bank;
    wire [19:0] core_i_paddr;
 
    // The banks (RESPIN 22; lisa_periph.v registers 0x15-0x17): the upper 16K
-   // of each space is a window on one of 64 code banks (6 bits) or 16 data
-   // banks (4 bits: the stack and data banks).  A fetch above word
-   // 0x4000 goes to code_bank, an SP-relative data access above 0x4000 to
-   // stack_bank, every other data access there (IX-relative, the debugger)
-   // to data_bank; below 0x4000 is bank 0, common to all.  Reset 1 = the
-   // TT07 layout: 1M words (2 MB) of code and 256 KB of data at most
+   // of the code space is a window on one of 64 code banks (6 bits): a
+   // fetch above word 0x4000 goes to code_bank, below it to bank 0, common
+   // to all.  The data space has three regions, by address (RESPIN 28):
+   // below 0x2000 the common 8K (physical 0), 0x2000-0x3FFF the data window
+   // on one of 32 granules of 8K (data_bank, 5 bits), 0x4000 up the stack
+   // window on one of 16 banks of 16K (stack_bank, 4 bits) - whatever the
+   // form of the access (the core's d_sp is not used since).  Reset 1 = the
+   // TT07 layout: 1M words (2 MB) of code and 256 KB of data at most.
    // lda (ix++) (RESPIN 26) fetches the word at IX[14:1] of the constant
    // bank KB (register 0x1F), wherever the code runs
    assign core_i_paddr = core_i_kfetch       ? {const_bank, core_i_addr[13:0]} :
                          {core_i_addr[14] ? code_bank : 6'h0, core_i_addr[13:0]};
-   assign d_bank_c     = !d_addr_c[14] ? 4'h0 : d_sp_c ? stack_bank : data_bank;
+   // physical address bits 17:13 of a data access: the stack bank over bit
+   // 13, the data bank, or 0; the cache keeps bits 17:14 as the line's bank
+   // and bit 13 in its address tag
+   wire [4:0]  d_page_c = d_addr_c[14] ? {stack_bank, d_addr_c[13]} :
+                          d_addr_c[13] ? data_bank : 5'h0;
+   assign d_bank_c     = d_page_c[4:1];
+   assign d_a13_c      = d_page_c[0];
 
    // ==========================================================================
    // Instantiate the Lisa Processor Core
@@ -485,7 +495,7 @@ module tt_um_lisa
    reg        d_rd_r;
    reg        d_periph_r;
 
-   assign d_addr_good = d_addr_c == d_addr_r && d_bank_c == d_bank_r;
+   assign d_addr_good = d_addr_c == d_addr_r && d_bank_c == d_bank_r && d_a13_c == d_a13_r;
 
    always @(posedge clk)
    begin
@@ -494,6 +504,7 @@ module tt_um_lisa
          d_o_r       <= 8'h0;
          d_addr_r    <= 15'h0;
          d_bank_r    <= 4'h0;
+         d_a13_r     <= 1'b0;
          d_valid_r   <= 1'b0;
          d_we_r      <= 1'b0;
          d_rd_r      <= 1'b0;
@@ -504,6 +515,7 @@ module tt_um_lisa
          d_o_r       <= d_o_c;
          d_addr_r    <= d_addr_c;
          d_bank_r    <= d_bank_c;
+         d_a13_r     <= d_a13_c;
          d_valid_r   <= d_valid_c;
          d_we_r      <= d_we_c;
          d_rd_r      <= d_rd_c;
@@ -563,6 +575,7 @@ module tt_um_lisa
       // The data bus connection to LISA core                
       .d_addr                    ( d_addr                    ),
       .d_bank                    ( d_bank_r                  ),
+      .d_a13                     ( d_a13_r                   ),
       .d_i                       ( d_o                       ),
       .d_o                       ( d_i_cache                 ),
       .d_valid                   ( d_valid                   ),

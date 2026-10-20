@@ -127,7 +127,7 @@ module lisa_periph
    // The bank registers (RESPIN 22)
    output reg  [5:0]    code_bank,          // 6 bits: 64 code banks of 16K words (1M words)
    output reg  [5:0]    const_bank,         // KB, 0x1F: the code bank lda (ix++) reads constants from (RESPIN 26)
-   output reg  [3:0]    data_bank,
+   output reg  [4:0]    data_bank,          // 5 bits: 32 granules of 8K in the data window 0x2000-0x3FFF (RESPIN 28)
    output reg  [3:0]    stack_bank,
 
    output wire [7:0]    int_o,
@@ -225,7 +225,7 @@ module lisa_periph
          portc_dir    <= 4'h0;
          code_bank    <= 6'h1;
          const_bank   <= 6'h0;                 // the lower half: constants read as before
-         data_bank    <= 4'h1;
+         data_bank    <= 5'h1;
          stack_bank   <= 4'h1;
          ms_prediv    <= 16'd29494;
          ms_count     <= 16'h0;
@@ -285,7 +285,7 @@ module lisa_periph
          if (d_periph && d_we && d_addr == 7'h15)
             code_bank <= d_i[5:0];
          if (d_periph && d_we && d_addr == 7'h16)
-            data_bank <= d_i[3:0];
+            data_bank <= d_i[4:0];
          if (d_periph && d_we && d_addr == 7'h17)
             stack_bank <= d_i[3:0];
          // KB (RESPIN 26): lda (ix++) reads byte IX[0] of the word at IX[14:1]
@@ -555,7 +555,7 @@ module lisa_periph
 
       // Bank registers
       7'h15:   d_o_r = {2'h0, code_bank};
-      7'h16:   d_o_r = {4'h0, data_bank};
+      7'h16:   d_o_r = {3'h0, data_bank};
       7'h17:   d_o_r = {4'h0, stack_bank};
       7'h1F:   d_o_r = {2'h0, const_bank};
 
