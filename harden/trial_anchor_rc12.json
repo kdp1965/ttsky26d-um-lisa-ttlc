@@ -1,0 +1,4 @@
+{
+  "//": "Trial: rc12's placement (runs/macro-rc12, the second chip's release: item 28 on rc11's RTL, the bank registers) as the anchor table instead of rc15's - make macro OVERLAY=trial_anchor_rc12.json",
+  "ANCHOR_CELLS_TABLE": "dir::placements/macro-rc12_final_cells.json"
+}

@@ -1366,6 +1366,32 @@ throughput; clk/2 fails in either mode), the testbench at clk/2.
   gds/, lef/, pnl/ are rc12's, macro.json's anchor table its placement
   (placements/macro-rc12_final_cells.json); rc11's table stays as the
   overlay trial_anchor_rc11.json.  Tag rc12.
+* rc13 (2026-10-20, runs/macro-rc13 on the third chip's RTL at 22f57c8 -
+  REV3.md: IX, SP, RA and IA 24 bits with the condition bit at bit 23,
+  three-byte pairs, ldxf, 128 code banks, the flat 8 MB in place of the
+  bank registers; a free draw with the art): 61899 instances (the bank
+  logic gone), placed at 70.0%, 900K um of wire, Magic DRC / LVS /
+  antenna 0, hold +0.075, setup +5.65 nominal, -8.2 at the slow max
+  corner, where the worst path is IX -> the n(ix)/n(sp) mux -> the 23-bit
+  address adder -> the cache's tag compare -> the execute done -> facc's
+  write enable: the widened address chain.  Not promoted.
+* rc14 (2026-10-20, runs/macro-rc14 on b7d3941 - the BF16 operations take
+  their f-register index from inst_r, which removed a path from the timing
+  graph that was never real: the Arty closes 50 MHz with it): 62002
+  instances, 69.8%, 884K um, clean, hold +0.076, setup +5.64 nominal,
+  -7.1 ss (the worst path op_ldk_r -> sp, the kfetch logic).  Not
+  promoted.
+* rc15 (2026-10-20, runs/macro-rc15 on 8cd0dad - lisa_div's
+  ldx_stage_two_r reset, missing on every revision and exposed by rev 3's
+  ldxf startup: the predicate update is gated by ~ldx_stage_two, so with
+  the flop up at 1 no `if` works until the first ldx): 62210 instances,
+  69.7%, 898K um of wire, Magic DRC / LVS / antenna 0, hold +0.072, setup
+  +5.57 nominal, -6.5 at the slow max corner (the worst path exec_state ->
+  sp).  The chip testbench's suite 28/28, the test action green, the Arty
+  at 50 MHz with NuttX.  Promoted 2026-10-20 (Ken; the precheck left to
+  the gds workflow): gds/, lef/, pnl/ are rc15's, macro.json's anchor
+  table its placement (placements/macro-rc15_final_cells.json); rc12's
+  table stays as the overlay trial_anchor_rc12.json.  Tag rc15.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception

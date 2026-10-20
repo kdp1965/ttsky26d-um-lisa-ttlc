@@ -78,14 +78,15 @@ template from `info.yaml`, over `src/config.json`); results land in
 candidate's placement replayed through `ANCHOR_CELLS_TABLE`, see below);
 copy its GDS, LEF and netlist to `gds/`, `lef/` and `pnl/` and push:
 the `gds` workflow publishes them, runs the precheck and deploys the
-viewer. `gds/`, `lef/` and `pnl/` hold runs/macro-rc12, the release
-candidate (RESPIN.md's hardening section: rc12 - the bank registers with
-the 6-bit code bank, the UART overrun flag, the read-strobe fix, `ldirq`,
-the UART interrupt enables and level requests, `lda (ix++)` with the
-constant bank, the restoring divider with its remainder in IX and the
-chained step `divc`, the three-region data map - a common 8K, a data
-window of 8K granules, a stack window of 16K banks, by address, the data
-cache's lines split at 0x4000 - and the chip art).
+viewer. `gds/`, `lef/` and `pnl/` hold runs/macro-rc15, the release
+candidate (RESPIN.md's hardening section: rc15 - the third chip, REV3.md:
+IX, SP, RA and IA 24 bits with the condition bit at bit 23, three-byte
+pairs, `ldxf` / `txah` / `taxh`, 128 code banks, the flat 8 MB data space
+in place of the second chip's bank registers, on rc12's feature set - the
+UART overrun flag and level requests, `ldirq`, `lda (ix++)` from the
+pointer's bank, the restoring divider with `divc`, the data cache's lines
+split at 0x4000 - with the BF16 operand index read from the registered
+instruction, the `ldx` stage flop reset, and the chip art).
 The macro flow places with `GPL_CELL_PADDING` 2: the slew/fanout repair, CTS
 and the hold buffers add 30% to the placed cells and without the padding the
 legalizer packs them into 30 um bins over 90% full, where the detailed router
