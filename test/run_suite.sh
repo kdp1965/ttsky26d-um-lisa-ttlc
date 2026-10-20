@@ -22,7 +22,7 @@ BIGDATA="test_bigframe test_ptroff"
 # test_cachermw's 0x40 never misses here)
 # and the ldirq / stirq round trip through the shadows (RESPIN 24), the divider's
 # two results and the chained step divc (RESPIN 27)
-REV2CACHE="test_cachermw8 test_ldirq test_uartirq test_ldk test_divc"
+REV2CACHE="test_cachermw8 test_ldirq test_uartirq test_ldk test_divc test_bank test_dbank"
 CACHE_TESTS="test_cacherm test_cachermw test_cachepush test_cachewb test_cacheseq test_cacheloop test_cacheperiph"
 case "$*" in *CACHE=1*) list="$(test -n "$sfx" && echo $REV2CACHE || echo $CACHE_TESTS) $BIGDATA";; *) list="$SELFCHECK";; esac
 dir=$(dirname "$0"); [ "$where" = core ] && dir="$dir/core"
