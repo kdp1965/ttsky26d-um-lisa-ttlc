@@ -63,7 +63,12 @@ set win_head   [lisa_regs {i_inst_stream.head_addr[*]}]
 # the fetch state to the execute state (three cycles: fetch, decode, exec;
 # a slide moves the same word with the offset) - added 2026-10-17, after
 # rc2, when the FPGA build showed the path (window -> fadd operand select
-# -> BF16 adder -> facc, the longest single-cycle one left)
+# -> BF16 adder -> facc, the longest single-cycle one left).  Since
+# 2026-10-20 the BF16 operations take their f-register index from inst_r,
+# so that cone starts at 3-cycle sources only (the index read through inst
+# also made cond -> fetch address -> window lookup -> facc a single-cycle
+# path, 31 levels on the FPGA; it was never a real one: no fetch during a
+# BF16 execute state).
 set win_data   [lisa_regs {i_inst_stream.window[*]}]
 set brk        [lisa_regs "$dbg.brk_r*"]
 set dbg_a      [lisa_regs {dbg_a[*]} {i_lisa_core.dbg_a[*]} {i_debug_ctrl.s_debug_arg[*]}]

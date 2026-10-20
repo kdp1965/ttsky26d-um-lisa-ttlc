@@ -890,11 +890,17 @@ module lisa_core
                    op_fcmp_r ||        // Floating point compare
                    op_fdiv_r;          // FP divide = TRUE if valid
 
-   // Sign wires for facc and fx
+   // Sign wires for facc and fx.  The BF16 operations read their f-register
+   // index from inst_r, the registered word: in their execute state the
+   // core requests no fetch (i_fetch is the fetch state or kfetch), so inst
+   // is inst_r anyway, but read through inst the index would hang off the
+   // fetch address and the stream's window lookup, and the adder cone into
+   // facc became a single-cycle path from cond that way (2026-10-20); from
+   // inst_r every input of the cone is a 3-cycle source (lisa.sdc).
    wire  s_facc;
    wire  s_fx;
    assign s_facc = facc[15];
-   assign s_fx   = fx[inst[1:0]][15];
+   assign s_fx   = fx[inst_r[1:0]][15];
 
    // Create value to load to cflag
    always @*
@@ -926,9 +932,9 @@ module lisa_core
             begin
                if ((~s_facc & s_fx)                   ||          // If facc positive and fx negative
                    (~s_facc && ~s_fx &&                           // Both positive and facc > fx
-                    facc[14:0] > fx[inst[1:0]][14:0]) ||
+                    facc[14:0] > fx[inst_r[1:0]][14:0]) ||
                    (s_facc && s_fx &&                             // Both negative and facc < fx
-                    facc[14:0] < fx[inst[1:0]][14:0]))
+                    facc[14:0] < fx[inst_r[1:0]][14:0]))
                begin
                   c_val = 1'b1;
                end
@@ -1842,7 +1848,7 @@ module lisa_core
                                                                (inst[0] ? cflag : ~zflag) :
                                                                 inst[0]};
                op_notz_r:             {zflag_load, zflag_val} = {1'b1, acc != 8'h00};
-               op_fcmp_r:             {zflag_load, zflag_val} = {1'b1, facc == fx[inst[1:0]]};
+               op_fcmp_r:             {zflag_load, zflag_val} = {1'b1, facc == fx[inst_r[1:0]]};
             endcase
       end
       else if (decode_state && cond[0] && ret_isr_r)
@@ -2215,7 +2221,7 @@ module lisa_core
       op_fmul_r:  facc_val = fmul_result;
       op_fdiv_r:  facc_val = fdiv_result;
       op_fadd_r:  facc_val = fadd_result;
-      op_fswap_r: facc_val = fx[inst[1:0]];
+      op_fswap_r: facc_val = fx[inst_r[1:0]];
       op_itof_r:  facc_val = itof_val;
       op_ftoi_r:  facc_val = ftoi_val;
       op_fclr_r:  facc_val = 16'h0;
@@ -2250,7 +2256,7 @@ module lisa_core
             end
          op_fmul_r: facc <= facc_val;
          op_fadd_r: facc <= facc_val;
-         op_fneg_r: case (inst[1:0])
+         op_fneg_r: case (inst_r[1:0])
                   2'h0:  f0[15] <= ~f0[15];
                   2'h1:  f1[15] <= ~f1[15];
                   2'h2:  f2[15] <= ~f2[15];
@@ -2259,7 +2265,7 @@ module lisa_core
          op_fswap_r:
             begin
                facc <= facc_val;
-               case (inst[1:0])
+               case (inst_r[1:0])
                2'h0: f0 <= facc;
                2'h1: f1 <= facc;
                2'h2: f2 <= facc;
@@ -2285,7 +2291,7 @@ module lisa_core
    wire [15:0] fmul_op2;
    wire [15:0] fdiv_op2;
 
-   assign fadd_op2 = fx[inst[1:0]] & {16{op_fadd_r}};
+   assign fadd_op2 = fx[inst_r[1:0]] & {16{op_fadd_r}};
    fadd i_fadd
    (
       .a_in          ( facc          ),
@@ -2308,7 +2314,7 @@ module lisa_core
       .result        ( fadd_result   )
    );
 
-   assign fmul_op2 = fx[inst[1:0]] & {16{op_fmul_r}};
+   assign fmul_op2 = fx[inst_r[1:0]] & {16{op_fmul_r}};
    fmul i_fmul
    (
       .a_in    ( facc          ),
@@ -2344,7 +2350,7 @@ module lisa_core
       .i_o      ( ftoi_val     )
    );
 
-   assign fdiv_op2 = fx[inst[1:0]];
+   assign fdiv_op2 = fx[inst_r[1:0]];
    lampFPU_div_top i_bf16div
    (
       .clk             ( clk                 ),
