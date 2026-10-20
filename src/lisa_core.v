@@ -561,7 +561,10 @@ module lisa_core
                                      op_eidi_r | op_stirq_r | op_xchg_ia_r));
    assign stage_last  = stage == 2'd2;
    // the code bank (lisa_periph.v) follows a jump through IX or a return (REV3.md)
-   assign cb_we       = decode_state & cond[0] & (ret_taken_r | ret_isr_r | op_call_ix_r | op_jmp_ix_r);
+   // call ix / jmp ix with bank 0 in the pointer keep the current bank: the
+   // lower 16K words are visible from every bank, so a pointer to code there
+   // (a function pointer, a jump table loaded with ldx) runs under the caller's bank
+   assign cb_we       = decode_state & cond[0] & (ret_taken_r | ret_isr_r | ((op_call_ix_r | op_jmp_ix_r) & (ix[22:16] != 7'h0)));
    assign cb_val      = (op_call_ix_r | op_jmp_ix_r) ? ix[22:16] : ret_isr_r ? ia[22:16] : ra[22:16];
    assign irq_take    = exec_state & d_ok & ~stg2_next & irq_pending;
    assign fetch_state  = state == 3'b000;

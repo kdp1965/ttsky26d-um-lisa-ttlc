@@ -15,6 +15,12 @@ case "$*" in *REV2=1*) sfx=_rev2; set -- $(printf '%s\n' "$@" | grep -v '^REV2='
 # PACK=1: the suite built with sdcc --pack-const (*_rev2k.ihx, `make check PACK=1`
 # there): constants packed two to a word and read with lda (ix++) (RESPIN 26)
 case "$*" in *PACK=1*) sfx=_rev2k; set -- $(printf '%s\n' "$@" | grep -v '^PACK=');; esac
+# REV3=1: the suite built with sdcc --rev3 (*_rev3.ihx, `make check REV3=1`
+# there): the third chip's 24-bit pointers and three-byte pairs (REV3.md),
+# the stack at 2 MB - so the cache (the PSRAM) is always on, and every
+# program runs in the one list
+rev3=
+case "$*" in *REV3=1*) sfx=_rev3; rev3=1; set -- CACHE=1 $(printf '%s\n' "$@" | grep -v '^REV3=\|^CACHE=');; esac
 SDCC_TEST=${SDCC_TEST:-$(cd "$(dirname "$0")/../../lisa-tools/sdcc_test" && pwd)}
 SELFCHECK="test_core test_negate test_union test_varargs test_digits test_signed test_strs test_regress test_pfu test_loop test_irq test_irq2 test_divsh test_divl test_bf16 test_bf16f test_rot test_index test_vshift"
 BIGDATA="test_bigframe test_ptroff"
@@ -22,9 +28,13 @@ BIGDATA="test_bigframe test_ptroff"
 # test_cachermw's 0x40 never misses here)
 # and the ldirq / stirq round trip through the shadows (RESPIN 24), the divider's
 # two results and the chained step divc (RESPIN 27)
-REV2CACHE="test_cachermw8 test_ldirq test_uartirq test_ldk test_divc test_bank test_dbank"
+REV2CACHE="test_cachermw8 test_ldirq test_uartirq test_ldk test_divc test_bank test_dbank test_irqcache"
 CACHE_TESTS="test_cacherm test_cachermw test_cachepush test_cachewb test_cacheseq test_cacheloop test_cacheperiph"
+# rev 3: the second chip's list less its bank registers (test_ldk, test_dbank), plus the huge model and its own test
+REV3CACHE="test_cachermw8 test_ldirq test_uartirq test_divc test_bank test_huge test_rev3c"
+if [ -n "$rev3" ]; then list="$SELFCHECK $BIGDATA $REV3CACHE"; else
 case "$*" in *CACHE=1*) list="$(test -n "$sfx" && echo $REV2CACHE || echo $CACHE_TESTS) $BIGDATA";; *) list="$SELFCHECK";; esac
+fi
 dir=$(dirname "$0"); [ "$where" = core ] && dir="$dir/core"
 pass=0; fail=0
 for t in $list; do

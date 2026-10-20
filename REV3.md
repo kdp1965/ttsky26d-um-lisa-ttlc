@@ -62,7 +62,7 @@ bit set as before; a code pointer below 32K words loads the same way
 | `addaxu`, `subaxu` | IX[23:8] <= IX[23:8] +/- A |
 | `spix`, `xchg sp`, `xchg ra`, `xchg ia`, `cpx ra`, `cpx sp` | 24 bits |
 | `ads #simm10` | SP <= SP + sext(imm10), 24 bits |
-| `call ix`, `jmp ix` | PC <= IX[14:0], CB <= IX[22:16]; `call ix` saves RA <= {cond[1], CB, 1'b0, PC+1} and post-increments IX as before |
+| `call ix`, `jmp ix` | PC <= IX[14:0], CB <= IX[22:16] unless that is 0, which keeps the current bank (the lower 16K words are in every bank's view, so a pointer to code there - a function pointer, a jump table loaded with `ldx` - runs under the caller's bank); `call ix` saves RA <= {cond[1], CB, 1'b0, PC+1} and post-increments IX as before |
 | `jal imm15` | RA <= {cond[1], CB, 0, PC+1}, PC <= imm (the same bank) |
 | `ret`, `ret #imm8`, `rc`, `rz` | PC <= RA[14:0], CB <= RA[22:16], the predicate from RA[23] |
 | interrupt entry | IA <= {0, CB, 0, PC+1}; the vector and the handler in the common lower 16K words, under the interrupted CB (as before) |
@@ -84,9 +84,43 @@ and the bank byte on the stack go away: a banked function pointer is a
 24-bit code pointer and `ldxf #fn; call ix` reaches any bank.  `ldxf #sym`
 is a word relocation carrying R_PAG0 and R_MSB together (sdaslisa; the
 offset's third byte follows the word) that the linker's LISA code turns
-into the pointer: a function's {1, bank, window word}, a packed constant's
-{1, bank, 0x8000 | byte offset} (bank 0: the offset itself), a data
-address as it is.
+into the pointer: a function's {1, bank, 0x8000 | window word} (the tag
+bit 15 of the older forms stays, `call ix` ignores it; a function in the
+lower 16K words has bank 0, "the current bank"), a packed constant's
+{1, bank, 0x8000 | byte offset} (bank 0: the window aliases the lower 16K
+words, so the same form reads it), a data address as it is.  A byte of
+such a pointer is `<sym`, `>sym` and `(sym >> 16)` (sdaslisa turns the
+third byte's R_HIB into R_PAG0 on the byte relocation, which the linker's
+LISA code resolves the same way), so `.byte sym, (sym >> 8), (sym >> 16)`
+initializes one and `ldi #((sym) >> 16)` materializes its top byte.
+
+## The compiler (sdcc -mlisa --rev3)
+
+Pointers: `__near` ones are 2 bytes (the first 64K of data - the direct
+data of the small model, and whatever the programmer promises); every
+other pointer - `__far` / `__xdata`, generic, `__code`, functions, the
+address of a stack object in every model (the stack may be anywhere in
+the 8 MB) - is 3 bytes with the marker in bit 23.  A `__near` pointer
+loads into IX with `ldxx` and `ldi #0; taxh`, a far one with `ldxx`
+alone; a generic read is `__gptrget` (`txah; btst 7` picks `ldax 0(ix)`
+or `lda (ix++)`).  Frames: `sra` and `push ix` are three bytes, an
+interrupt handler saves 8.  A two-byte result still comes back in IX
+(stored with `txa` / `txau`: `stxx` would write three bytes), a
+three-byte pointer in IX too (`stxx` / `ldxx` move it whole).  Calls: a
+function of this translation unit (static, or defined above the call) or
+a `__nonbanked` one by `jal`, any other `__banked` / huge-model function
+by `ldxf #f; call ix`; `__sdcc_program_startup` enters `main` that way
+too, so `main` may live in a bank.  The constants are packed
+(`--pack-const` is implied) and read from the pointer's own bank, so
+there is no KB and no constant bank to set.  The 16-bit division
+results come whole from RA, so every unsigned 8- and 16-bit `/` and `%`
+is native.  `jmp_buf` is 8 bytes.  The library is `lib/lisa-rev3`
+(`gptrget3.s`, `memcpy3.s`, `memset3.s`, `strcpy3.s`, `strlen3.s`,
+`strcmp3.s`, `setjmp3.s`; `divu.s`, `divul.s`, `divull.s` and
+`bf16fs.s` carry the three-byte RA as `R` from `lisamodel.inc`).
+`sdcc_test`: `make check REV3=1` (the stack at 2 MB), `test_rev3c.c`;
+the chip bench: `test/run_suite.sh chip REV3=1`; SDCC's regression
+suite: `make test-lisa LISA_REV3=1`.
 
 ## What it costs in the core
 
@@ -125,6 +159,8 @@ estimated 1% to 2% of rc12's 62654 instances.
 5. Harden rc13 and compare with rc12.
 
 Status: branches made 2026-10-19 night; the design above is the contract.
+Step 3 (sdcc --rev3) done 2026-10-20: the suites of sdcc_test pass on
+lisa_sim --rev3 (31 programs) and the rev-2 suites are unchanged.
 Step 1 (the RTL) and step 2's simulator, assembler and linker (lisa_sim
 --rev3, sdaslisa's three opcodes, `ldxf #sym` relocated) done the same night: `sdcc_test/rev3/test_rev3.s` (40 checks - the
 new instructions, the three-byte pairs, far data, calls and an interrupt
