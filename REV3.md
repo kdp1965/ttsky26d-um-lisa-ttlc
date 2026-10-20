@@ -81,7 +81,12 @@ The instruction stream, the code banking of the fetch and the window
 address of a function (`0x4000 | (w & 0x3fff)`) do not change; the linker
 keeps mapping banked code the same way.  The `___sdcc_bcall` trampoline
 and the bank byte on the stack go away: a banked function pointer is a
-24-bit code pointer and `ldxf #fn; call ix` reaches any bank.
+24-bit code pointer and `ldxf #fn; call ix` reaches any bank.  `ldxf #sym`
+is a word relocation carrying R_PAG0 and R_MSB together (sdaslisa; the
+offset's third byte follows the word) that the linker's LISA code turns
+into the pointer: a function's {1, bank, window word}, a packed constant's
+{1, bank, 0x8000 | byte offset} (bank 0: the offset itself), a data
+address as it is.
 
 ## What it costs in the core
 
@@ -120,8 +125,8 @@ estimated 1% to 2% of rc12's 62654 instances.
 5. Harden rc13 and compare with rc12.
 
 Status: branches made 2026-10-19 night; the design above is the contract.
-Step 1 (the RTL) and the first of step 2 (lisa_sim --rev3, sdaslisa's three
-opcodes) done the same night: `sdcc_test/rev3/test_rev3.s` (40 checks - the
+Step 1 (the RTL) and step 2's simulator, assembler and linker (lisa_sim
+--rev3, sdaslisa's three opcodes, `ldxf #sym` relocated) done the same night: `sdcc_test/rev3/test_rev3.s` (40 checks - the
 new instructions, the three-byte pairs, far data, calls and an interrupt
 across code banks, the divider's results, the stack above 64K, the adders,
 the predicate rules) passes on lisa_sim --rev3, the core testbench and the
