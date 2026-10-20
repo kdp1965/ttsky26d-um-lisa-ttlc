@@ -44,9 +44,13 @@ write_checkpoint -force $out/post_synth.dcp
 source $here/lisa_arty_mcp.tcl
 report_utilization -file $out/util_synth.rpt
 opt_design
-place_design
-phys_opt_design
-route_design
+# the timing-driven directives: the third chip's build at 50 MHz was 0.27 ns
+# short on one path that is 71% routing (the BF16 operand classification
+# registers -> the adder -> facc), the default directives' placement
+place_design -directive ExtraTimingOpt
+phys_opt_design -directive AggressiveExplore
+route_design -directive Explore
+phys_opt_design -directive AggressiveExplore
 write_checkpoint -force $out/post_route.dcp
 report_timing_summary -file $out/timing.rpt
 report_utilization -hierarchical -file $out/util.rpt
