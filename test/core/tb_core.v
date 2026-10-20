@@ -64,18 +64,18 @@ module tb_core;
    // ==========================================================================
    // The program: a byte image into a word array
    // ==========================================================================
-   reg  [7:0]     fmem[0:131071];
-   reg  [15:0]    imem[0:32767];
+   reg  [7:0]     fmem[0:4194303];         // 128 code banks of 16K words (REV3.md)
+   reg  [15:0]    imem[0:2097151];
    reg  [8*256-1:0] fname;
    integer        k;
    integer        ilat;
    initial begin
-      for (k = 0; k < 131072; k = k + 1)
+      for (k = 0; k < 4194304; k = k + 1)
          fmem[k] = 8'hFF;
       if (!$value$plusargs("FIRMWARE=%s", fname))
          fname = "../firmware.hex";
       $readmemh(fname, fmem);
-      for (k = 0; k < 32768; k = k + 1)
+      for (k = 0; k < 2097152; k = k + 1)
          imem[k] = {fmem[2*k+1], fmem[2*k]};
       if (!$value$plusargs("ILAT=%d", ilat))
          ilat = 0;
@@ -83,17 +83,26 @@ module tb_core;
 
    wire [14:0]    i_addr;
    wire           i_fetch;
+   wire           i_kfetch;
+   wire [6:0]     i_kbank;
+   wire [6:0]     code_bank;
+   wire           cb_we;
+   wire [6:0]     cb_val;
    wire [15:0]    inst_i;
    wire           inst_ready;
    reg  [15:0]    inst_r;
    reg            ready_r;
+   // the physical word as tt_um_lisa.v forms it: the upper 16K words from
+   // the code bank (or the constant's bank in IX), the lower common
+   wire [20:0]    i_paddr = i_kfetch ? {i_addr[14] ? i_kbank : 7'h0, i_addr[13:0]} :
+                                       {i_addr[14] ? code_bank : 7'h0, i_addr[13:0]};
    always @(posedge clk)
    begin
-      inst_r  <= imem[i_addr];
+      inst_r  <= imem[i_paddr];
       ready_r <= i_fetch;
    end
    // a hit answers in the fetch clock; after a miss the line arrives later
-   assign inst_i     = ilat == 0 ? imem[i_addr] : inst_r;
+   assign inst_i     = ilat == 0 ? imem[i_paddr] : inst_r;
    assign inst_ready = ilat == 0 ? i_fetch : (ready_r & i_fetch);
 
    // ==========================================================================
@@ -103,7 +112,7 @@ module tb_core;
    wire [7:0]     d_i_cache;
    wire [7:0]     d_i_periph;
    wire [7:0]     d_o_c;
-   wire [14:0]    d_addr_c;
+   wire [22:0]    d_addr_c;
    wire           d_periph_c;
    wire           d_we_c;
    wire           d_rd_c;
@@ -121,13 +130,17 @@ module tb_core;
       .inst_ready   ( inst_ready    ),
       .i_fetch      ( i_fetch       ),
       .i_addr       ( i_addr        ),
+      .i_kfetch     ( i_kfetch      ),
+      .i_kbank      ( i_kbank       ),
+      .code_bank    ( code_bank     ),
+      .cb_we        ( cb_we         ),
+      .cb_val       ( cb_val        ),
       .inst_o       (               ),
       .inst_we      (               ),
       .d_i          ( d_i           ),
       .d_o          ( d_o_c         ),
       .d_addr       ( d_addr_c      ),
       .d_periph     ( d_periph_c    ),
-      .d_sp         (               ),
       .d_we         ( d_we_c        ),
       .d_rd         ( d_rd_c        ),
       .d_valid      ( d_valid_c     ),
@@ -145,7 +158,7 @@ module tb_core;
 
    // the data bus registered as in tt_um_lisa.v
    reg  [7:0]     d_o;
-   reg  [14:0]    d_addr;
+   reg  [22:0]    d_addr;
    reg            d_valid;
    reg            d_we;
    reg            d_rd;
@@ -156,7 +169,7 @@ module tb_core;
       if (~rst_n)
       begin
          d_o      <= 8'h0;
-         d_addr   <= 15'h0;
+         d_addr   <= 23'h0;
          d_valid  <= 1'b0;
          d_we     <= 1'b0;
          d_rd     <= 1'b0;
@@ -182,7 +195,7 @@ module tb_core;
    wire [4:0]     ram_a;
    wire [31:0]    ram_di;
    wire [31:0]    ram_do;
-   wire [15:0]    cache_addr;
+   wire [22:0]    cache_addr;
    wire [15:0]    q_rdata;
    wire [15:0]    q_wdata;
    wire [1:0]     q_wstrb;
@@ -198,7 +211,6 @@ module tb_core;
       .rst_n                     ( rst_n                     ),
       .disabled                  ( cache_disabled            ),
       .d_addr                    ( d_addr                    ),
-      .d_bank                    ( {3'b0, d_addr[14]} ),   // bank 1 above 0x4000: the TT07 layout
       .d_i                       ( d_o                       ),
       .d_o                       ( d_i_cache                 ),
       .d_valid                   ( d_valid                   ),
@@ -244,7 +256,7 @@ module tb_core;
 
    lisa_qqspi i_lisa_qqspi
    (
-      .addr              ( {8'h0, cache_addr} ),
+      .addr              ( {1'b0, cache_addr} ),
       .rdata             ( q_rdata       ),
       .wdata             ( q_wdata       ),
       .wstrb             ( q_wstrb       ),
@@ -308,6 +320,9 @@ module tb_core;
       .d_periph           ( d_periph        ),
       .d_we               ( d_we            ),
       .d_rd               ( d_rd            ),
+      .code_bank          ( code_bank       ),
+      .cb_we              ( cb_we           ),
+      .cb_val             ( cb_val          ),
       .porta_in           ( porta_in        ),
       .portb              ( portb           ),
       .portc              ( portc           ),

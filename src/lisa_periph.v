@@ -124,11 +124,11 @@ module lisa_periph
    input  wire [7:0]    portd_in,
    output reg  [7:0]    porte,
 
-   // The bank registers (RESPIN 22)
-   output reg  [5:0]    code_bank,          // 6 bits: 64 code banks of 16K words (1M words)
-   output reg  [5:0]    const_bank,         // KB, 0x1F: the code bank lda (ix++) reads constants from (RESPIN 26)
-   output reg  [4:0]    data_bank,          // 5 bits: 32 granules of 8K in the data window 0x2000-0x3FFF (RESPIN 28)
-   output reg  [3:0]    stack_bank,
+   // The code bank register (RESPIN 22, REV3.md): 7 bits, 128 code banks of
+   // 16K words; the core writes it on a jump through IX or a return
+   output reg  [6:0]    code_bank,
+   input  wire          cb_we,
+   input  wire [6:0]    cb_val,
 
    output wire [7:0]    int_o,
    output reg  [7:0]    int_en,
@@ -223,10 +223,7 @@ module lisa_periph
          portc        <= 4'h00;
          porte        <= 8'h00;
          portc_dir    <= 4'h0;
-         code_bank    <= 6'h1;
-         const_bank   <= 6'h0;                 // the lower half: constants read as before
-         data_bank    <= 5'h1;
-         stack_bank   <= 4'h1;
+         code_bank    <= 7'h1;
          ms_prediv    <= 16'd29494;
          ms_count     <= 16'h0;
          ms_timer     <= 16'h0;
@@ -278,20 +275,16 @@ module lisa_periph
          if (d_periph && d_we && d_addr == 7'h05)
             porte <= d_i;
 
-         // The bank registers: code (fetches above word 0x4000), data
-         // (IX-relative and debugger accesses above 0x4000) and stack
-         // (SP-relative accesses above 0x4000).  1 = the upper half as the
-         // TT07 chip had it, so an image that never writes them runs as before
-         if (d_periph && d_we && d_addr == 7'h15)
-            code_bank <= d_i[5:0];
-         if (d_periph && d_we && d_addr == 7'h16)
-            data_bank <= d_i[4:0];
-         if (d_periph && d_we && d_addr == 7'h17)
-            stack_bank <= d_i[3:0];
-         // KB (RESPIN 26): lda (ix++) reads byte IX[0] of the word at IX[14:1]
-         // of this code bank - constants anywhere, packed two to a word
-         if (d_periph && d_we && d_addr == 7'h1F)
-            const_bank <= d_i[5:0];
+         // The code bank: fetches above word 0x4000 come from it.  1 = the
+         // upper half as the TT07 chip had it, so an image that never writes
+         // it runs as before.  call ix / jmp ix / ret / rets set it from the
+         // pointer or the return address (REV3.md); the data and stack banks
+         // and KB of revision 2 (0x16, 0x17, 0x1F) are gone: the data space
+         // is flat and lda (ix++) carries its bank in IX
+         if (cb_we)
+            code_bank <= cb_val;
+         else if (d_periph && d_we && d_addr == 7'h15)
+            code_bank <= d_i[6:0];
 
          // Latch porta_int0
          if (d_periph && d_we && d_addr == 7'h06)
@@ -553,11 +546,8 @@ module lisa_periph
       7'h14:   d_o_r = {6'h0, uart_tx_ie, uart_rx_ie};
 `endif
 
-      // Bank registers
-      7'h15:   d_o_r = {2'h0, code_bank};
-      7'h16:   d_o_r = {3'h0, data_bank};
-      7'h17:   d_o_r = {4'h0, stack_bank};
-      7'h1F:   d_o_r = {2'h0, const_bank};
+      // The code bank register
+      7'h15:   d_o_r = {1'h0, code_bank};
 
       // Timer2 readback
 `ifdef TIMER2

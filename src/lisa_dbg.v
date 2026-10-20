@@ -34,7 +34,8 @@ Debug module:
 
    Debug Addresses
       0:    Control / Status
-               { 8'h0, D_BITS[4:0], PC_BITS[3:0], 5'h0, single_step, resume, halt }
+               written { 13'h0, single_step, resume, halt }
+               read    { D_BITS[4:0], PC_BITS[3:0], 6'h0, halted } (D_BITS 23: REV3.md)
       1:    Acc / flags
                { 4'h0,  cond_code[1:0], cflag, zflag, acc }
       2:    PC
@@ -48,6 +49,10 @@ Debug module:
       9:    Breakpoint 0
                [ en1, bkpt1 }
       f:    Current instruction word
+      38:   {8'h0, ix_cond, IX[22:16]}      the upper bytes of the 24-bit registers (REV3.md);
+      39:   {9'h0, SP[22:16]}               2 / 3 / 4 / 5 read and write the low 16 bits
+      3a:   {8'h0, ra_cond, RA[22:16]}
+      3c:   {8'h0, data address 22:15}     7 writes {periph, address 14:0} as before
       etc.
 
 ==========================================================================================
@@ -73,8 +78,10 @@ module lisa_dbg
    input  wire [PC_BITS-1:0]  pc,
    input  wire [7:0]          acc,
    input  wire [D_BITS-1:0]   sp,
-   input  wire [PC_BITS-1:0]  ix,
-   input  wire [PC_BITS-1:0]  ra,
+   input  wire [D_BITS-1:0]   ix,          // 23 bits + the condition bit (REV3.md)
+   input  wire                ix_cond,
+   input  wire [D_BITS-1:0]   ra,
+   input  wire                ra_cond,
    input  wire [1:0]          cond,
    input  wire                zflag,
    input  wire                cflag,
@@ -131,7 +138,7 @@ module lisa_dbg
    reg  [1:0]        access_state;
    reg  [D_BITS:0]   d_addr_r;
    reg  [1:0]        delay;
-   wire [3:0]        d_bits;
+   wire [4:0]        d_bits;                 // 23 since REV3.md: five bits
    wire [3:0]        pc_bits;
    wire              d_active;
 	integer				i;
@@ -255,9 +262,12 @@ module lisa_dbg
          end
 `endif
 
-         // Data bus register write
+         // Data bus register write: 7 = {periph, address 14:0} as before,
+         // 0x3c = address bits 22:15 (REV3.md: 8 MB)
          if (dbg_we & dbg_a == 8'h7)
-            d_addr_r <= dbg_di[D_BITS:0];
+            d_addr_r <= {dbg_di[15], d_addr_r[D_BITS-1:15], dbg_di[14:0]};
+         else if (dbg_we & dbg_a == 8'h3c)
+            d_addr_r[D_BITS-1:15] <= dbg_di[D_BITS-16:0];
 
          // Increment data bus access address at the end of the cycle
          else if (d_access_r && !d_access)
@@ -482,14 +492,14 @@ module lisa_dbg
       if (dbg_a[7:4] == 4'h0)
       begin
          case (dbg_a)
-         0:    dbg_do = { d_bits, pc_bits, 7'h0, halted };
+         0:    dbg_do = { d_bits, pc_bits, 6'h0, halted };
          1:    dbg_do = { 1'b0, amode, cond, cflag, zflag, acc };
          2:    dbg_do = { {(16-PC_BITS){1'b0}}, pc };
-         3:    dbg_do = { {(16-D_BITS){1'b0}},  sp };
-         4:    dbg_do = { {(16-PC_BITS){1'b0}}, ra };
-         5:    dbg_do = { {(16-PC_BITS){1'b0}}, ix };
+         3:    dbg_do = sp[15:0];                   // the upper bytes: 0x38-0x3c
+         4:    dbg_do = ra[15:0];
+         5:    dbg_do = ix[15:0];
          6:    dbg_do = { 8'h0, d_i };
-         7:    dbg_do = d_addr_r;
+         7:    dbg_do = { d_addr_r[D_BITS], d_addr_r[14:0] };
          15:   dbg_do = inst;
          default:
             if (dbg_a[3])
@@ -498,12 +508,18 @@ module lisa_dbg
       end
       else if (dbg_a[7:4] == 4'h3)
       begin
-         case (dbg_a)
-         0:    dbg_do = f0;
-         1:    dbg_do = f1;
-         2:    dbg_do = f2;
-         3:    dbg_do = f3;
-         4:    dbg_do = facc;
+         // the BF16 registers, and the upper bytes of the 24-bit registers
+         // (REV3.md; written through lisa_core.v / register 0x3c above)
+         case (dbg_a[3:0])
+         4'h0: dbg_do = f0;
+         4'h1: dbg_do = f1;
+         4'h2: dbg_do = f2;
+         4'h3: dbg_do = f3;
+         4'h4: dbg_do = facc;
+         4'h8: dbg_do = { 8'h0, ix_cond, ix[D_BITS-1:16] };
+         4'h9: dbg_do = { 9'h0, sp[D_BITS-1:16] };
+         4'ha: dbg_do = { 8'h0, ra_cond, ra[D_BITS-1:16] };
+         4'hc: dbg_do = { 8'h0, d_addr_r[D_BITS-1:15] };
          default: dbg_do = 16'h0;
          endcase
       end

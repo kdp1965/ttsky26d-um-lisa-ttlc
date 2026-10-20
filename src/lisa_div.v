@@ -34,7 +34,8 @@ SUCH DAMAGE.
 
 module lisa_div
 #(
-      parameter PC_BITS        = 12
+      parameter PC_BITS        = 12,
+      parameter X_BITS         = 23        // IX and RA (REV3.md): their low 16 bits are the divider's b and result
  )
 (
    input                clk, rst_n,
@@ -62,14 +63,14 @@ module lisa_div
    output wire          zflag,
    input                zflag_val,
    input                zflag_load,
-   output [PC_BITS-1:0] ix,
+   output [X_BITS-1:0]  ix,
    output               ix_cond,
-   input  [PC_BITS-1:0] ix_val,
+   input  [X_BITS-1:0]  ix_val,
    input                ix_cond_val,
    input                ix_load,
-   output [PC_BITS-1:0] ra,
+   output [X_BITS-1:0]  ra,
    output               ra_cond,
-   input  [PC_BITS-1:0] ra_val,
+   input  [X_BITS-1:0]  ra_val,
    input                ra_cond_val,
    input                ra_load,
    output               ldx_stage_two,
@@ -150,10 +151,14 @@ module lisa_div
    assign zflag            = zflag_r;
    assign cflag            = cflag_r;
    assign signed_inversion = result[15];
-   assign ix               = b[PC_BITS-1:0];
-   assign ix_cond          = b[PC_BITS];
-   assign ra               = result[PC_BITS-1:0];
-   assign ra_cond          = PC_BITS == 15 ? cond : result[PC_BITS];
+   // IX: {cond, 22:16} in ix_hi, 15:0 in b; RA: 22:15 in ra_hi, 14:0 in
+   // result, the condition bit in cond (result[15] is signed_inversion)
+   reg  [7:0]                    ix_hi;
+   reg  [7:0]                    ra_hi;
+   assign ix               = {ix_hi[6:0], b};
+   assign ix_cond          = ix_hi[7];
+   assign ra               = {ra_hi, result[PC_BITS-1:0]};
+   assign ra_cond          = cond;
    assign ldx_stage_two    = ldx_stage_two_r & (state == s_idle);
 
    assign div_ready = (state == s_done);
@@ -172,6 +177,8 @@ module lisa_div
          neg_r         <= 1'b0;
          is_rem        <= 1'b0;
          cond          <= 1'b0;
+         ix_hi         <= 8'h0;
+         ra_hi         <= 8'h0;
          zflag_r       <= 1'b0;
          cflag_r       <= 1'b0;
       end
@@ -203,15 +210,10 @@ module lisa_div
                end
                else 
                begin 
-                  if (PC_BITS == 15)
+                  if (ra_load)
                   begin
-                     if (ra_load)
-                        {cond, result[PC_BITS-1:0]} <= {ra_cond_val, ra_val};
-                  end
-                  else
-                  begin
-                     if (ra_load)
-                        result[PC_BITS:0] <= {ra_cond_val, ra_val};
+                     {cond, result[PC_BITS-1:0]} <= {ra_cond_val, ra_val[PC_BITS-1:0]};
+                     ra_hi <= ra_val[X_BITS-1:PC_BITS];
                   end
 
                   if (cflag_load)
@@ -224,7 +226,10 @@ module lisa_div
                      zflag_r <= zflag_val;
 
                   if (ix_load)
-                     b[PC_BITS:0] <= {ix_cond_val, ix_val};
+                  begin
+                     b     <= ix_val[15:0];
+                     ix_hi <= {ix_cond_val, ix_val[X_BITS-1:16]};
+                  end
 
                   if (ldx_stage_two_load)
                      ldx_stage_two_r <= ldx_stage_two_val;
@@ -241,11 +246,14 @@ module lisa_div
 
             s_setup_output : 
             begin
-               // the 16-bit result in RA: bits 14:0 in ra, bit 15 as ra_cond,
-               // so xchg ra / txau read it whole; the other one in IX
+               // the 16-bit result in RA: bits 14:0 in ra, bit 15 as RA[15] and
+               // as ra_cond, so xchg ra / txau read it whole; the other one in
+               // IX, its upper byte 0 (REV3.md)
                result <= ra_fin;
                b      <= ix_fin;
                cond   <= ra_fin[15];
+               ra_hi  <= {7'h0, ra_fin[15]};
+               ix_hi  <= 8'h0;
                state  <= s_done;
             end
 

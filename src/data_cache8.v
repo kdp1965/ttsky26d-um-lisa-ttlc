@@ -26,7 +26,8 @@ OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 SUCH DAMAGE.
 
 Due to size limitations in Tiny Tapeout, this is a direct map controller
-with 8 CACHE lines of size of 16-bytes each
+with 8 CACHE lines of size of 16-bytes each.  The address is the core's
+23-bit one, flat (REV3.md): the line is address bits 6:4, the tag 22:7.
 ==============================================================================
 */
 
@@ -37,10 +38,7 @@ module data_cache
    input  wire          disabled,
 
    // The data bus connection to LISA core
-   input  wire [14:0]   d_addr,
-   input  wire [3:0]    d_bank,              // Physical address bits 17:14 (tt_um_lisa.v): the bank of a
-                                             // stack window address, the data bank's upper bits, 0 below 0x2000
-   input  wire          d_a13,               // Physical address bit 13 (RESPIN 28: the data window's granule)
+   input  wire [22:0]   d_addr,
    input  wire [7:0]    d_i,
    output wire [7:0]    d_o,
    input  wire          d_valid,
@@ -55,15 +53,17 @@ module data_cache
    input  wire [31:0]   ram_di,
    output wire [31:0]   ram_do,
    
-   // Selects the upper bit for CACHE line mapping
+   // The TT07 map select: the flat 8 MB space has one map (REV3.md)
+   /* verilator lint_off UNUSEDSIGNAL */
    input  wire [1:0]    cache_map_sel,
+   /* verilator lint_on UNUSEDSIGNAL */
    input  wire          data_cache_flush,
    output reg           data_cache_flush_ack,
    input  wire          data_cache_invalidate,
    output reg           data_cache_invalidate_ack,
 
    // Interface to the QSPI controller
-   output wire [17:0]   qspi_addr,           // 8Mx32
+   output wire [22:0]   qspi_addr,           // the byte address (8 MB)
    input  wire [15:0]   qspi_rdata,          // Read data
    output wire [15:0]   qspi_wdata,          // Data to write
    output wire [1:0]    qspi_wstrb,          // Which bytes in the 32-bits to write
@@ -88,25 +88,15 @@ module data_cache
    // ==========================================================================
    // CACHE line addresses and controls
    // ==========================================================================
-   reg   [7:0]          cl_addr0;            // CACHE Line address 0 (Low RAM)
-   reg   [7:0]          cl_addr1;            // CACHE Line address 1
-   reg   [7:0]          cl_addr2;            // CACHE Line address 2
-   reg   [7:0]          cl_addr3;            // CACHE Line address 3
-   reg   [7:0]          cl_addr4;            // CACHE Line address 4
-   reg   [7:0]          cl_addr5;            // CACHE Line address 5
-   reg   [7:0]          cl_addr6;            // CACHE Line address 6 (The stack)
-   reg   [7:0]          cl_addr7;            // CACHE Line address 7 (The stack)
-   reg   [3:0]          cl_bank0;            // The bank of each line's address (RESPIN 22)
-   reg   [3:0]          cl_bank1;
-   reg   [3:0]          cl_bank2;
-   reg   [3:0]          cl_bank3;
-   reg   [3:0]          cl_bank4;
-   reg   [3:0]          cl_bank5;
-   reg   [3:0]          cl_bank6;
-   reg   [3:0]          cl_bank7;
-   reg   [3:0]          cl_map_bank;         // The mapped line's bank
-   wire  [3:0]          bank;                // The access's bank: 0 unless the 32K map (cache_map_sel 3)
-   wire  [7:0]          tag_addr;            // The access's line tag: physical bits 13:6 (bit 13 from d_a13 in the 32K map)
+   reg   [15:0]         cl_addr0;            // CACHE Line tag 0: address bits 22:7 (REV3.md)
+   reg   [15:0]         cl_addr1;            // CACHE Line tag 1
+   reg   [15:0]         cl_addr2;            // CACHE Line tag 2
+   reg   [15:0]         cl_addr3;            // CACHE Line tag 3
+   reg   [15:0]         cl_addr4;            // CACHE Line tag 4
+   reg   [15:0]         cl_addr5;            // CACHE Line tag 5
+   reg   [15:0]         cl_addr6;            // CACHE Line tag 6
+   reg   [15:0]         cl_addr7;            // CACHE Line tag 7
+   wire  [15:0]         tag_addr;            // The access's line tag
    reg   [7:0]          cl_valid;            // CACHE Line valid bits
    reg   [7:0]          cl_dirty;            // CACHE Line dirty bits
    reg   [7:0]          cl_set_valid;        // Flag to set cache line valid
@@ -115,10 +105,9 @@ module data_cache
    wire  [7:0]          cl_hit;              // Address match per CACHE line
    wire  [7:0]          cl_addr;             // Address match per CACHE line
    wire  [2:0]          cache_map;           // The mapped CACHE line
-   reg   [7:0]          cl_map_addr;
+   reg   [15:0]         cl_map_addr;
    wire                 cache_hit;           // True when we have a CACHE hit
    wire                 cache_valid;
-   reg                  cache_map_bit;
 
    // ==========================================================================
    // Save/Load state machine signals
@@ -145,14 +134,14 @@ module data_cache
    // ==========================================================================
    // Test for data hit
    // ==========================================================================
-   assign cl_addr[0]   = cl_addr0 == tag_addr && cl_bank0 == bank;
-   assign cl_addr[1]   = cl_addr1 == tag_addr && cl_bank1 == bank;
-   assign cl_addr[2]   = cl_addr2 == tag_addr && cl_bank2 == bank;
-   assign cl_addr[3]   = cl_addr3 == tag_addr && cl_bank3 == bank;
-   assign cl_addr[4]   = cl_addr4 == tag_addr && cl_bank4 == bank;
-   assign cl_addr[5]   = cl_addr5 == tag_addr && cl_bank5 == bank;
-   assign cl_addr[6]   = cl_addr6 == tag_addr && cl_bank6 == bank;
-   assign cl_addr[7]   = cl_addr7 == tag_addr && cl_bank7 == bank;
+   assign cl_addr[0]   = cl_addr0 == tag_addr;
+   assign cl_addr[1]   = cl_addr1 == tag_addr;
+   assign cl_addr[2]   = cl_addr2 == tag_addr;
+   assign cl_addr[3]   = cl_addr3 == tag_addr;
+   assign cl_addr[4]   = cl_addr4 == tag_addr;
+   assign cl_addr[5]   = cl_addr5 == tag_addr;
+   assign cl_addr[6]   = cl_addr6 == tag_addr;
+   assign cl_addr[7]   = cl_addr7 == tag_addr;
    assign cl_hit[0]    = cl_addr[0] && cl_valid[0] && cache_sel[0];
    assign cl_hit[1]    = cl_addr[1] && cl_valid[1] && cache_sel[1];
    assign cl_hit[2]    = cl_addr[2] && cl_valid[2] && cache_sel[2];
@@ -162,10 +151,9 @@ module data_cache
    assign cl_hit[6]    = cl_addr[6] && cl_valid[6] && cache_sel[6];
    assign cl_hit[7]    = cl_addr[7] && cl_valid[7] && cache_sel[7];
    assign cache_hit    = |cl_hit;
-   assign bank         = cache_map_sel == 2'h3 ? d_bank : 4'h0;
-   assign tag_addr     = {cache_map_sel == 2'h3 ? d_a13 : d_addr[13], d_addr[12:6]};
+   assign tag_addr     = d_addr[22:7];
    assign cache_valid  = cache_hit & d_valid;
-   assign cache_map    = flush_active ? flush_cache_line : {cache_map_bit, d_addr[5:4]};
+   assign cache_map    = flush_active ? flush_cache_line : d_addr[6:4];
    assign cache_sel[0] = cache_map == 3'h0;
    assign cache_sel[1] = cache_map == 3'h1;
    assign cache_sel[2] = cache_map == 3'h2;
@@ -177,37 +165,16 @@ module data_cache
 
    always @*
    begin
-      cl_map_addr = 8'h0;
-      cl_map_bank = 4'h0;
+      cl_map_addr = 16'h0;
       case (1'b1)
-         cache_sel[0]: begin cl_map_addr = cl_addr0; cl_map_bank = cl_bank0; end
-         cache_sel[1]: begin cl_map_addr = cl_addr1; cl_map_bank = cl_bank1; end
-         cache_sel[2]: begin cl_map_addr = cl_addr2; cl_map_bank = cl_bank2; end
-         cache_sel[3]: begin cl_map_addr = cl_addr3; cl_map_bank = cl_bank3; end
-         cache_sel[4]: begin cl_map_addr = cl_addr4; cl_map_bank = cl_bank4; end
-         cache_sel[5]: begin cl_map_addr = cl_addr5; cl_map_bank = cl_bank5; end
-         cache_sel[6]: begin cl_map_addr = cl_addr6; cl_map_bank = cl_bank6; end
-         cache_sel[7]: begin cl_map_addr = cl_addr7; cl_map_bank = cl_bank7; end
-      endcase
-   end
-
-   always @*
-   begin
-      // the 32K map: address bit 14 - the stack window has lines 4-7, the
-      // common 8K and the data window lines 0-3 (RESPIN 28; item 22 had "a
-      // bank other than 0", which on the three-region map put the data
-      // window's granules on the stack's side: a task's stack and heap
-      // thrashed).  The tag is physical, so a byte seen through both
-      // windows at once (a stack bank's half as a granule, bank 0 through
-      // the stack window) is coherent only once its dirty line is written
-      // back; granule 0 through the data window is the common 8K in the
-      // same half, one place.
-      cache_map_bit = d_addr[14];
-      case (cache_map_sel)
-         2'h3: cache_map_bit = d_addr[14];
-         2'h2: cache_map_bit = d_addr[13];
-         2'h1: cache_map_bit = d_addr[12];
-         2'h0: cache_map_bit = d_addr[11];
+         cache_sel[0]: cl_map_addr = cl_addr0;
+         cache_sel[1]: cl_map_addr = cl_addr1;
+         cache_sel[2]: cl_map_addr = cl_addr2;
+         cache_sel[3]: cl_map_addr = cl_addr3;
+         cache_sel[4]: cl_map_addr = cl_addr4;
+         cache_sel[5]: cl_map_addr = cl_addr5;
+         cache_sel[6]: cl_map_addr = cl_addr6;
+         cache_sel[7]: cl_map_addr = cl_addr7;
       endcase
    end
 
@@ -235,16 +202,11 @@ module data_cache
    // We always transfer 8 16-bit words (16-byte CACHE line size)
    assign qspi_xfer_len   = 4'h7;
    assign qspi_wstrb      = { save_active, save_active };
-   // the line's address above bit 13 is its bank (RESPIN 22; bank 1 is the
-   // upper half of the 32K map, so a line of the TT07 layout is where it
-   // was); TT07 took cache_map[1] (= d_addr[5]) for bit 14, so X and
-   // X ^ 0x4000 shared one RAM location.  The smaller maps have no banks
-   assign qspi_addr[17:14] = cache_map_sel == 2'h3 ? cl_map_bank : 4'h0;
-   assign qspi_addr[13]   = cache_map_sel == 2'h2 ? cache_map[2] : cl_map_addr[7];
-   assign qspi_addr[12]   = cache_map_sel == 2'h1 ? cache_map[2] : cl_map_addr[6];
-   assign qspi_addr[11]   = cache_map_sel == 2'h0 ? cache_map[2] : cl_map_addr[5];
-   assign qspi_addr[10:6] = cl_map_addr[4:0];
-   assign qspi_addr[5:4]  = cache_map[1:0];
+   // the line's address: its tag, its index, the word (REV3.md: one flat map;
+   // TT07 took cache_map[1] (= d_addr[5]) for bit 14, so X and X ^ 0x4000
+   // shared one RAM location)
+   assign qspi_addr[22:7] = cl_map_addr;
+   assign qspi_addr[6:4]  = cache_map;
    assign qspi_addr[3:1]  = fsm_a;
    assign qspi_addr[0]    = 1'b0;            // All 16-bit accesses
    assign qspi_wdata      = fsm_a[0] ? ram_di[31:16] : ram_di[15:0];
@@ -261,22 +223,14 @@ module data_cache
       begin
          cl_valid <= 8'h0;
          cl_dirty <= 8'h0;
-         cl_addr0 <= 8'h0;
-         cl_addr1 <= 8'h0;
-         cl_addr2 <= 8'h0;
-         cl_addr3 <= 8'h0;
-         cl_addr4 <= 8'h0;
-         cl_addr5 <= 8'h0;
-         cl_addr6 <= 8'h0;
-         cl_addr7 <= 8'h0;
-         cl_bank0 <= 4'h0;
-         cl_bank1 <= 4'h0;
-         cl_bank2 <= 4'h0;
-         cl_bank3 <= 4'h0;
-         cl_bank4 <= 4'h0;
-         cl_bank5 <= 4'h0;
-         cl_bank6 <= 4'h0;
-         cl_bank7 <= 4'h0;
+         cl_addr0 <= 16'h0;
+         cl_addr1 <= 16'h0;
+         cl_addr2 <= 16'h0;
+         cl_addr3 <= 16'h0;
+         cl_addr4 <= 16'h0;
+         cl_addr5 <= 16'h0;
+         cl_addr6 <= 16'h0;
+         cl_addr7 <= 16'h0;
       end
       else
       begin
@@ -298,45 +252,21 @@ module data_cache
 
          // Implement the cl_addr updates
          if (cl_update[0])
-         begin
             cl_addr0 <= tag_addr;
-            cl_bank0 <= bank;
-         end
          if (cl_update[1])
-         begin
             cl_addr1 <= tag_addr;
-            cl_bank1 <= bank;
-         end
          if (cl_update[2])
-         begin
             cl_addr2 <= tag_addr;
-            cl_bank2 <= bank;
-         end
          if (cl_update[3])
-         begin
             cl_addr3 <= tag_addr;
-            cl_bank3 <= bank;
-         end
          if (cl_update[4])
-         begin
             cl_addr4 <= tag_addr;
-            cl_bank4 <= bank;
-         end
          if (cl_update[5])
-         begin
             cl_addr5 <= tag_addr;
-            cl_bank5 <= bank;
-         end
          if (cl_update[6])
-         begin
             cl_addr6 <= tag_addr;
-            cl_bank6 <= bank;
-         end
          if (cl_update[7])
-         begin
             cl_addr7 <= tag_addr;
-            cl_bank7 <= bank;
-         end
       end
    end
 
