@@ -237,17 +237,25 @@ void main(void)
   CHECK(20, peek(0x0100) == 0xa5);
 
   /* granule 1 (the data bank at reset) is the upper half of bank 0: the
-   * same byte through the stack window with the stack bank 0 */
+   * same byte through the stack window with the stack bank 0.  The two
+   * windows have their own cache lines (the index is address bit 14), so
+   * a byte written through one is seen through the other once its line
+   * is written back: evict it with another line of the same index first
+   * (the same address bits 5:4 in the same window) */
   poke(0x2345, 0x77);
+  poke(0x2745, 0);                      /* evicts 0x2345's line (dirty: written back) */
+  peek(0x2745);
   CHECK(21, peek_sb(0x6345, 0) == 0x77);
 
-  /* granule 2 is the lower half of bank 1: one byte, two addresses (the
-   * cache keeps one line for it) */
+  /* granule 2 is the lower half of bank 1: one byte, two addresses */
   poke(0x5000, 0x11);
+  poke(0x7000, 0);                      /* evicts 0x5000's line */
   DATA_BANK = 2;
   CHECK(22, peek(0x3000) == 0x11);
   poke(0x3000, 0x12);
+  poke(0x3400, 0);                      /* evicts 0x3000's line */
   DATA_BANK = 1;
+  peek_sb(0x7000, 2);                   /* and the stale line of 0x5000 (index 4): another bank's same index */
   CHECK(23, peek(0x5000) == 0x12);
 
   /* the stack window goes by address: an IX access there sees the stack
@@ -277,8 +285,14 @@ void main(void)
   }
   DATA_BANK = 1;
   CHECK(27, fails == 0);
-  /* ... and bank 2 through the stack window shows them: granule 4 is its
-   * lower half, granule 5 its upper */
+  /* ... and bank 2 through the stack window shows them (written back by
+   * the evictions above): granule 4 is its lower half, granule 5 its
+   * upper */
+  DATA_BANK = 4;
+  poke(0x3480, 0);                      /* the last lines of the loop out */
+  DATA_BANK = 5;
+  poke(0x3480, 0);
+  DATA_BANK = 1;
   CHECK(28, peek_sb(0x5040, 2) == 1 && peek_sb(0x7040, 2) == 0x81);
 
   /* the stack bank: the two pushes landed in bank 2, bank 1 untouched */

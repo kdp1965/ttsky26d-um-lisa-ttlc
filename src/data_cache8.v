@@ -193,11 +193,18 @@ module data_cache
 
    always @*
    begin
-      // the 32K map: bit 14 of the physical address is "a bank other than 0"
-      // (bank 0 through the upper window is the lower half: one place)
-      cache_map_bit = |bank;
+      // the 32K map: address bit 14 - the stack window has lines 4-7, the
+      // common 8K and the data window lines 0-3 (RESPIN 28; item 22 had "a
+      // bank other than 0", which on the three-region map put the data
+      // window's granules on the stack's side: a task's stack and heap
+      // thrashed).  The tag is physical, so a byte seen through both
+      // windows at once (a stack bank's half as a granule, bank 0 through
+      // the stack window) is coherent only once its dirty line is written
+      // back; granule 0 through the data window is the common 8K in the
+      // same half, one place.
+      cache_map_bit = d_addr[14];
       case (cache_map_sel)
-         2'h3: cache_map_bit = |bank;
+         2'h3: cache_map_bit = d_addr[14];
          2'h2: cache_map_bit = d_addr[13];
          2'h1: cache_map_bit = d_addr[12];
          2'h0: cache_map_bit = d_addr[11];

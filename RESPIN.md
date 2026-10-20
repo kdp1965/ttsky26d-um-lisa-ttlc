@@ -755,6 +755,23 @@ physical bits 13:6 (`tag_addr`) instead of the window address's, in the
 compares and the tag stores; the bank bits, the index bit "bank != 0" and
 the fill / write-back address are unchanged.  Nothing in `lisa_core.v`.
 
+**The cache's line index** (the same day, after NuttX on the Arty).
+Item 22 indexed the eight lines by "a bank other than 0" of the physical
+address, which on this map put the data window's granules on the stack's
+side: four direct-mapped lines for a task's stack and heap together, and
+a loop over both thrashed (a probe, `lisa-tools/sdcc_test/test_bankspeed.c`:
+108 ms for 12K accesses in the data window against 49 ms in the common
+8K, 2.2x, on the chip bench and the Arty alike).  The index is address
+bit 14 now, Ken's intent for the map - the stack window has lines 4-7,
+the common 8K and the data window lines 0-3 - and the data window runs at
+the common 8K's speed (49 ms).  The tags stay physical, so the only
+consequence is for a byte reached through both windows at once (a stack
+bank's half as a granule, bank 0 through the stack window): the two
+windows cache it in different lines, and a write through one is seen
+through the other once its dirty line is written back; granule 0 through
+the data window is the common 8K in the same half, one place.  bank.c's
+cross-window checks evict the lines first.
+
 **Test.** `test/progs/bank.c` rewritten (`make BANK=1`, 35 checks, passes
 on Verilator): the widths (5, 4, 6 bits), the code banks as before, one
 address in three granules through the cache and the write right before
@@ -772,7 +789,16 @@ places a `DBANKn` area in 0x2000-0x3FFF and wants ordinary data below
 the task banks on this map - each task a granule for its heap, a stack
 in a shared bank or (a stack of 4 KB or more) a bank of its own with the
 heap up to the stack, the kernel's visits on a scratch stack in the
-common 8K, `free` over the 31 granules.
+common 8K, `free` over the 31 granules; verified on lisa_sim, the chip
+bench and the Arty (bitstream slack -2.83 ns).  The Arty hunt for lost
+typed input found the shell starved by same-priority tasks and its
+63-byte receive ring overflowing while `ps` took a second per task: nsh
+runs at 110 above the applications now, with a 256-byte ring (nuttx
+d9b13ebb).  It also found the Arty tools still loading the QSPI timing
+of the emulated-RAM days, 0x1e = 0x08d3 (SCLK clk/8, a 13-clock gap
+between transactions, mode 1 on the flash); the Pmod's flash and PSRAM
+run at clk/4 with a 1-clock gap (`SPI=0x0811`, twice the memory
+throughput; clk/2 fails in either mode), the testbench at clk/2.
 
 ## Verification (test/, see test/README.md)
 
@@ -1326,6 +1352,20 @@ common 8K, `free` over the 31 granules.
   gds/, lef/, pnl/ are rc11's, macro.json's anchor table its placement
   (placements/macro-rc11_final_cells.json); rc10's table stays as the
   overlay trial_anchor_rc10.json.  Tag rc11.
+* rc12 (2026-10-19, runs/macro-rc12 on item 28's RTL - the three-region
+  data map, the data bank 5 bits, the cache tagged with physical bit 13
+  and its lines indexed by address bit 14 - on rc11's, a free draw with
+  the art): synthesized 154363 um2 (+0.06% over rc11: the wider data
+  bank, the tag bit, the page mux), 62654 instances, placed at 67.5%,
+  825K um of wire, Magic DRC / LVS / antenna 0, hold +0.066, setup +5.5
+  nominal, -4.8 at nominal ss and -5.9 at the slow max corner (rc11: -5.5
+  and -6.4); max-cap / max-slew at ss 72 / 7659 (rc11: 78 / 8072).  The
+  chip testbench's bank test, the cache suites and the Arty (bitstream
+  slack -2.30 ns; the SDCC programs and the banked NuttX) pass on the
+  RTL.  Promoted 2026-10-19 (Ken; the precheck left to the gds workflow):
+  gds/, lef/, pnl/ are rc12's, macro.json's anchor table its placement
+  (placements/macro-rc12_final_cells.json); rc11's table stays as the
+  overlay trial_anchor_rc11.json.  Tag rc12.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception

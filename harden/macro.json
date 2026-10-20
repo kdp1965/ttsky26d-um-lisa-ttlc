@@ -62,8 +62,8 @@
       }
     }
   },
-  "//": "ANCHOR_CELLS_TABLE: the placement replayed from the release candidate, rc11 (placements/macro-rc11_final_cells.json, an odb_anchor_cells.py --dump of runs/macro-rc11's final ODB, 2026-10-19): a FREE draw of the netlist with the art's keep-out; the registers matched by RTL name and the logic by structure, so a rebuild of the same netlist reproduces it and a rebuild after an RTL change reuses what still matches - but judge a changed design at global routing, and consider a free draw (trial_anchor_free.json) first: the anchored replays (rc3 of rc2, rc5 of rc4) routed 15% heavier than fresh draws. The older tables are overlays: trial_anchor_rc10.json, trial_anchor_rc8.json, trial_anchor_rc7.json, trial_anchor_rc6.json, trial_anchor_rc4.json, trial_anchor_rc3.json, trial_anchor_rc2.json.",
-  "ANCHOR_CELLS_TABLE": "dir::placements/macro-rc11_final_cells.json",
+  "//": "ANCHOR_CELLS_TABLE: the placement replayed from the release candidate, rc12 (placements/macro-rc12_final_cells.json, an odb_anchor_cells.py --dump of runs/macro-rc11's final ODB, 2026-10-19): a FREE draw of the netlist with the art's keep-out; the registers matched by RTL name and the logic by structure, so a rebuild of the same netlist reproduces it and a rebuild after an RTL change reuses what still matches - but judge a changed design at global routing, and consider a free draw (trial_anchor_free.json) first: the anchored replays (rc3 of rc2, rc5 of rc4) routed 15% heavier than fresh draws. The older tables are overlays: trial_anchor_rc10.json, trial_anchor_rc8.json, trial_anchor_rc7.json, trial_anchor_rc6.json, trial_anchor_rc4.json, trial_anchor_rc3.json, trial_anchor_rc2.json.",
+  "ANCHOR_CELLS_TABLE": "dir::placements/macro-rc12_final_cells.json",
   "EXTRA_VERILOG_MODELS": [
     "dir::../src/RAM32.v"
   ],
