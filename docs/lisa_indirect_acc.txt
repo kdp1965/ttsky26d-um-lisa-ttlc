@@ -9,6 +9,6 @@
     |   [15:10]+----->   |{pb}            |
     +----------+         +----------------+
       {pt}                                
-    <h4>Figure 846.6: Accumulator Indirect Operations Diagram</h4>
+    <h4>Figure 7: Accumulator Indirect Operations Diagram</h4>
                                                                                       
 {:FILE scale 0.9 theme light font-size 10}

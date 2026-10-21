@@ -14,6 +14,6 @@
   |          |                            \-------------/     |        |  
   |          |                                                +--------+  
   +----------+                                                                    
-              <h4>Figure 846.8: Stack Addressing Diagram</h4>              
+              <h4>Figure 9: Stack Addressing Diagram</h4>              
                                                                       
 {:FILE scale 0.9 theme light font-size 10}

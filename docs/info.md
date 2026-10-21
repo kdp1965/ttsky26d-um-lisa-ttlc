@@ -1,88 +1,3 @@
-## Revision 2: what changed since Tiny Tapeout 7
-
-The TT07 chip was characterized on the demo board with the SDCC port's test
-suite, the LISA Commander and lisa_ide; this revision fixes what was found
-(the list, with the tests, is `RESPIN.md` in the repository):
-
-* The ALU's carry: `adc`, `sub`, `cmp` and `cpi` use a real carry-in (TT07
-  folded it into an 8-bit operand: `adc #0xff` with C set added 0, `sub`
-  and `cmp` of a zero operand borrowed); `cpi` records the signed inversion.
-  `add` has no carry-in, as designed.
-* `ret #imm8` loads A with the immediate.
-* The divider keeps its 16-bit result in RA, bit 15 as `ra_cond`, so `xchg
-  ra; txau` reads the high byte; it writes nothing to memory. Division by
-  one gives the whole dividend.
-* `swap a,n(sp)` exchanges with the byte at sp + n.
-* The data cache maps the whole 32K (TT07 took bit 14 of a line's address
-  from address bit 5, so X and X ^ 0x4000 shared a location), and a
-  read-modify-write on a cache miss waits for the line.
-* Interrupts are taken only between whole instructions: not after `if`,
-  `iftt`, `ifte`, the first word of `ldx`, `lddiv` or a two-word `div`/`rem`,
-  nor after `ei`/`di`, `stirq`, `xchg ia`. The shadows take the state the
-  interrupted instruction leaves behind, now including `amode`, `cflag_save`
-  and the live signed inversion; `rets` restores them all and sets the
-  predicate to 11. `ldirq`/`stirq` carry the whole set: bits 7:5 amode, 4
-  the live signed inversion, 3 cflag_save, 2 the saved signed inversion, 1
-  Z, 0 C. A new `ldamode` (0xA148) reads {ie, amode} into A bits 3:0.
-* The bfloat16 adder is correct (three guard bits, round to nearest even,
-  or toward zero with amode[2]; subnormals; inf - inf = NaN) and `fmul`'s
-  underflow is zero, not infinity (subnormal operands and results flush to
-  zero; the product is truncated as before).
-* The debugger: a halt no longer takes the data bus while a store is landing
-  (a breakpoint right after a store kept the store and RAM[IX]); the step
-  bit executes exactly one instruction; a resume runs the instruction at its
-  breakpoint; `brk` halts the core; RAM reads with the cache off return the
-  addressed byte; register 1 shows `amode` in bits 14:12.
-* The console UART has an 8-byte receive FIFO (TT07 held one byte) and an
-  overrun flag, status bit 2 (UART2: bit 3 of 0x13): a byte arrived with
-  the FIFO full; it clears once the FIFO has been read empty.  A write to
-  the UART no longer pops the receive side (TT07's decode did, hidden by
-  its one-byte receiver), and UART2's baud divisor is its own register,
-  0x1E (TT07 wrote it on any access to the interrupt enables, 0x14).
-* The UART interrupts work: the enables at 0x14 can be written (TT07's
-  flops were never loaded, so no UART interrupt ever fired there), and the
-  request is a level - INT_STATUS bit 2 (bit 3 for UART2) is "a byte waits
-  and the receive interrupt is enabled, or the transmitter is empty and its
-  interrupt is enabled" for as long as that holds; the handler ends it by
-  reading the FIFO, writing the next byte or dropping the enable, and a 1
-  written to the bit changes nothing.  The timers, the port's edges and the
-  TTLC stay latched until their bit is written.
-* `lda (ix++)` (0xA14C) reads a constant from the code memory: A takes byte
-  IX[0] of the word at {KB, IX[14:1]}, KB being the constant bank register
-  at 0x21F (6 bits, reset 0 = the lower half), Z follows the byte and IX
-  moves on by one.  Constants pack two to a word in any bank instead of an
-  `ldi; ret` pair per byte in the lower half; a constant stays within its
-  bank (KB does not carry when IX wraps).
-* The TTLC's input scan takes 16 samples (TT07: 17, every input one position
-  high), its breakpoints halt before their instruction, its step bit runs
-  one instruction, and a stepped `jmp`/`rtn`/`nopf` keeps its PC change.
-
-* Bank registers: the upper 16K of the code space and of the data space are
-  windows on one of 64 code banks or 16 data banks, chosen by three
-  peripheral registers - 0x15 the code bank (6 bits; fetches above word
-  0x4000), 0x16 the data bank
-  (IX-relative accesses above 0x4000), 0x17 the stack bank (SP-relative
-  ones).  All reset to 1, the TT07 layout; below 0x4000 is bank 0, common.
-  Up to 2 MB of code and 256 KB of data through the QSPI Pmod (`RESPIN.md`
-  item 22, `lisa_isa.md` "Bank registers").
-
-## The TTLC program format (revision 2)
-
-A TTLC instruction is 12 bits, {address[7:0], opcode[3:0]} (the I/O space
-has 139 bits: 8 address bits), four to a group of three 16-bit words: slot
-k of group g is bits [12k+11:12k] of the 48-bit group whose word 3g is at
-the low end.  `jmp` takes two slots, its own and the next, which holds the
-12-bit target group; jump targets are groups (slot 0).  The PC (register
-0x41) is {group[11:0], slot[1:0]} - an instruction index for code without
-jumps; a breakpoint (0x48-0x4a) is {valid, pc[13:0]}, and halts before its
-instruction.  TT07 spent a 16-bit word on every instruction, 12 of its bits
-a jump address almost never used; the 6x2 elevator controller is a quarter
-smaller this way and fetches a quarter fewer bursts.  `test/progs/ttlc/
-mc14500_as.py` assembles it (`--format words` gives TT07's); every label
-starts a group and a `jmp` pair never straddles one, padded with `nop`
-(`or 137`, the constant-0 bit), and a `skz` is kept next to the instruction
-it skips.
-
 ## What is LISA with TTLC?
 
 LISA is a Microcontroller built around a custom 8-Bit Little ISA (LISA)
@@ -102,7 +17,7 @@ The following is a block diagram of the design:
 
 
 ### Deailed list of the features
-   - Harvard architecture LISA Core (16-bit instruction, 15-bit address space)
+   - Harvard architecture LISA Core (16-bit instruction, 22-bit address space)
    - Motorola MC14500B System Controller with PC, Stack, I/O and stroage
    - Debug interface
       * UART controlled
@@ -120,7 +35,8 @@ The following is a block diagram of the design:
       * Quad or Single SPI.  Hereafter called QSPI, but supports either.
    - Onboard 128 Byte RAM for DATA / DATA CACHE
    - Data bus CACHE controller with 8 16-byte CACHE lines
-   - Instruction CACHE with a single 4-instruction CACHE line
+   - Streaming QSPI instruction fetch controller
+   - Instruction CACHE with a single 8-instruction CACHE line for small loops
    - Two 16-bit programmable timers (with pre-divide)
    - Debug UART available to LISA core also
    - Dedicated UART2 that is not shared with the debug interface
@@ -132,7 +48,7 @@ The following is a block diagram of the design:
    - Hardware 16/8 or 16/16 integer divider
    - Hardware Brain Float 16 (BF16) Multiply/Divide/Add/Negate/ItoF/FtoI
    - Programmable I/O mux for maximum flexibility of I/O usage.
-   - TTLC 48-Outputs plus 48-Inputs via external 74HC595 / 74HC166 chips
+   - TTLC 48-Outputs plus 48-Inputs via external 74HC595 / 74HC165 chips
    - TTLC 32-Bit internal storage plus 16 bit I/O to LISA (8 each direction)
 
 A 32x32 1RW [DFFRAM](https://github.com/AUCOHL/DFFRAM) macro implements a 128 byte RAM module.
@@ -154,17 +70,13 @@ I/O pins are auto-detected by the debug_autobaud module from the following choic
 The RX/TX pair port is auto-detected after reset by the autobaud circuit, and the UART baud rate can either be
 configured manually or auto detected by the autobaud module.  After reset, the ui_in[7] pin is sampled to determine
 the baud rate selection mode.  If this input pin is HIGH, then autobaud is disabled and ui_in[6:0] is sampled as
-the UART baud divider and written to the Baud Rate Generator (BRG): a bit is 32 x (b_div + 1) clocks, so b_div =
-clk_freq / baud_rate / 32 - 1 (for a 50 MHz clock and 156250 baud, 9; the divider pins can only set rates whose bit is a
-multiple of 32 clocks).
+the UART baud divider and written to the Baud Rate Generator (BRG).  The value of this divider should be: clk_freq / baud_rate / 8 - 1.
+Due to last minute additions of complex floating point operations, and only 2 hours left on the count-down clock, the timing
+was relaxed to 20MHz input clock max.  So for a 20MHz clock and 115200 baud, the b_div[6:0] value would be 42 (for instance).
 
 If the ui_in[7] pin is sampled LOW, then the autobaud module will monitor all three potential RX input pins for LINEFEED
-(ASCII 0x0A) code to detect baud rate and set the bit period automatically.  It monitors bit transitions and searches for three
-successive pulses of the same width (within two clocks; the width is at least 32 clocks).  Since ASCII code 0x0A contains a
-"0 1 0 1 0" bit sequence, the baud rate can be detected easily (a CR or a "+" serve as well).  Revision 2 measures the
-pulse in clocks and the BRG takes the period as it is: any rate from clk / 32 down works (TT07 kept the width over 32 and
-the BRG counted in 32s, so only rates whose bit is a multiple of 32 clocks locked - at 50 MHz neither 115200 nor 460800).
-The port is connected to the chosen RX pin once the line has idled for 16383 clocks after the training character.
+(ASCII 0x0A) code to detect baud rate and set the b_div value automatially.  It monitors bit transistions and searches for three
+successive bits with the same bit period.  Since ASCII code 0x0A contains a "0 1 0 1 0" bit sequence, the baud rate can be detected easily.
 
 Regardless if the baud rate is set manually or using autobaud, the input port selection will be detect automatically 
 by the autobaud.  In the case of manual buad rate selection, it simply looks for the first transition on any of the
@@ -180,7 +92,7 @@ terminated with a LINFEED plus CR sequence (0x0A, 0x0D).  All HEX values must be
 
  | Command   | Description                                                          |
  | --------- | -------------------------------------------------------------------- |
- | v         | Report Debugger version.  Returns lisav2.0 (the TT07 chip: lisav1.2). |
+ | v         | Report Debugger version.  Should return: lisav1.2                    |
  | wAAVVVV   | Write 16-bit HEX value 'VVVV' to register at 8-bit HEX address 'AA'. |
  | rAA       | Read 16-bit register value from 8-bit HEX address 'AA'.              |
  | t         | Reset the LISA core.                                                 |
@@ -193,30 +105,32 @@ The following table describes the configuration and LISA debug register addresse
 commands.  The individual register details will be described in the sections to follow.
 
  | ADDR | Description                  | ADDR | Description                  |
- | ---- | --------------------------   | ---- | ---------------------------- | 
- | 0x00 | LISA Core Run Control        | 0x17 | QSPI Mode (QUAD, flash, 16b) | 
- | 0x01 | LISA Accumulator / FLAGS     | 0x18 | QSPI Dummy read cycles       | 
- | 0x02 | LISA Program Counter (PC)    | 0x19 | QSPI Write CMD value         | 
- | 0x03 | LISA Stack Pointer (SP)      | 0x1a | The '+++' guard time count   | 
- | 0x04 | LISA Return Address (RA)     | 0x1b | Mux bits for uo_out          | 
- | 0x05 | LISA Index Register (IX)     | 0x1c | Mux bits for uio             | 
- | 0x06 | LISA Data bus                | 0x1d | CACHE control                | 
- | 0x07 | LISA Data bus address        | 0x1e | QSPI edge / SCLK speed       | 
- | 0x08 | LISA Breakpoint 1            | 0x1f | MC14500b Base Address        | 
- | 0x09 | LISA Breakpoint 2            | 0x20 | Debug QSPI Read / Write      | 
- | 0x0a | LISA Breakpoint 3            | 0x21 | Debug QSPI custom command    | 
- | 0x0b | LISA Breakpoint 4            | 0x22 | Debug read SPI status reg    | 
- | 0x0c | LISA Breakpoint 5            | 0x30 | Floating point reg f0        | 
- | 0x0d | LISA Breakpoint 6            | 0x31 | Floating point reg f1        | 
- | 0x0f | LISA Current Opcode Value    | 0x32 | Floating point reg f2        | 
- | 0x10 | Debug QSPI Address (LSB16)   | 0x33 | Floating point reg f3        | 
- | 0x11 | Debug QSPI Address (MSB8)    | 0x34 | Floating point reg facc      | 
- | 0x12 | LISA1 QSPI base address      | 0x40 | MC14500B Run Control         | 
- | 0x13 | LISA2 QSPI base address      | 0x41 | MC14500B Program Counter {group[11:0], slot[1:0]} | 
- | 0x14 | LISA1 QSPI CE select         | 0x48 | MC14500B Breakpoint 1 {valid, pc[13:0]} | 
- | 0x15 | LISA2 QSPI CE select         | 0x49 | MC14500B Breakpoint 2        | 
- | 0x16 | Debug QSPI CE select         | 0x4a | MC14500B Breakpoint 3        | 
-                                         
+ | ---- | --------------------------   | ---- | ---------------------------- |   
+|| 0x00 | LISA Core Run Control        | 0x19 | QSPI Write CMD value         |                                           
+ | 0x01 | LISA Accumulator / FLAGS     | 0x1a | The '+++' guard time count   |   
+ | 0x02 | LISA Program Counter (PC)    | 0x1b | Mux bits for uo_out          |   
+ | 0x03 | LISA Stack Pointer (SP) LSW  | 0x1c | UIO mux, clk_div, psram_mod  |   
+ | 0x04 | LISA Return Address (RA) LSW | 0x1d | CACHE control                |   
+ | 0x05 | LISA Index Register (IX) LSW | 0x1e | QSPI edge / SCLK speed       |   
+ | 0x06 | LISA Data bus                | 0x1f | MC14500b Base Address        |   
+ | 0x07 | LISA Data bus address LSW    | 0x20 | Debug QSPI Read / Write      |   
+ | 0x08 | LISA Breakpoint 1            | 0x21 | Debug QSPI custom command    |   
+ | 0x09 | LISA Breakpoint 2            | 0x22 | Debug read SPI status reg    |   
+ | 0x0a | LISA Breakpoint 3            | 0x30 | Floating point reg f0        |   
+ | 0x0b | LISA Breakpoint 4            | 0x31 | Floating point reg f1        |   
+ | 0x0c | LISA Breakpoint 5            | 0x32 | Floating point reg f2        |   
+ | 0x0d | LISA Breakpoint 6            | 0x33 | Floating point reg f3        |   
+ | 0x0f | LISA Current Opcode Value    | 0x34 | Floating point reg facc      |     
+ | 0x10 | Debug QSPI Address (LSB16)   | 0x38 | LISA IX_COND, IX MSB         |     
+ | 0x11 | Debug QSPI Address (MSB8)    | 0x39 | LISA SP MSB                  |     
+ | 0x12 | LISA1 QSPI base address      | 0x3a | LISA RX_COND, RA MSB         |     
+ | 0x13 | LISA2 QSPI base address      | 0x3c | LISA Data bus addr MSB       |     
+ | 0x14 | LISA1 QSPI CE select         | 0x40 | MC14500B Run Control         |     
+ | 0x15 | LISA2 QSPI CE select         | 0x41 | MC14500B Program Counter     |     
+ | 0x16 | Debug QSPI CE select         | 0x48 | MC14500B Breakpoint 1        |     
+ | 0x17 | QSPI Mode (QUAD, flash, 16b) | 0x49 | MC14500B Breakpoint 2        |     
+ | 0x18 | QSPI Dummy read cycles       | 0x4a | MC14500B Breakpoint 3        |     
+                                                                                   
 ### LISA Processor Interface Details                                         
 
 The LISA Core requires external memory for all Instructions and Data.  To accomodate external memory,
@@ -302,6 +216,20 @@ resistor as indicated to allow CE updates if the FLASH/SRAM is driving DQ0/DQ1. 
  | uio[7] | -/DQ3              | Must be enabled via uio MUX bits             |
 
 This leaves uio[4]/uio[5] available for use as either UART or I2C.
+
+There is also a QSPI PSRAM PMOD mode that maps the QSPI signals to be compatible with the standard Tiny Tapeout
+PMOD.  In that mode (enabled using the psram_mod bit), the pinout becomes:
+
+ | Pin    | SPI   | QSPI | Notes                            |
+ | ------ | ----- | ---- | -------------------------------- |
+ | uio[0] | CE0   | CE0  | Chip Select for flash            |
+ | uio[1] | MOSI  | DQ0  | Also MOSI prior to QUAD mode DQ0 |
+ | uio[2] | MISO  | DQ1  | Also MISO prior to QUAD mode DQ1 |
+ | uio[3] | SCLK  | SCLK |                                  |
+ | uio[4] |  -    | DQ2  | QUAD mode DQ2                    |
+ | uio[5] |  -    | DQ3  | QUAD mode DQ3                    |
+ | uio[6] | CE1   | CE1  | Chip Select for PSRAM A          |
+ | uio[7] |  1    | 1    | Chip Select for PSRAM B (unused) |
 
 Once the SPI/QSPI SRAM and optional FLASH have been chosen and connected, the Debug configuration registers must
 be programmed to indicate the nature of the external device(s).  This is accompilished using Debug registers 0x12 - 0x19 and
@@ -627,6 +555,38 @@ opcodes for things like setting arithemetic mode, complimenting the C flag, etc.
  | taxu    | IX[H] <= acc  | 1010_0001_0000_01xx | Transfer acc to IX[14:0]  |
  | txa     | acc <= IX[L]  | 1010_0000_0001_00xx | Transfer IX[7:0] to acc   |
  | txau    | acc <= IX[H]  | 1010_0000_0001_10xx | Transfer IX[14:0] to acc  |
+
+## The Tiny Tapeout Logic Controller (TTLC)
+
+The second subsystem within this design is a small PLC type circuit.  It is architected around a 1-bit processor from 1977
+designed by Motorola ... the MC14500B Industrial Control Unit (ICU).  The TTLC wraps the ICU "processor" with an instruction
+fetch pipeline and a bit-level I/O subsystem.
+
+![](ttlc_block_diag.png)
+
+The instruciton fetch pipeline uses 12-bit instructions ... 4 bits for the MC14500B opcode and 8-bits for operand
+such as bit address to access, etc.  It uses a 14-bit Program Counter (PC) giving up to 16K instructions.
+Since the LISA SPI/QSPI interface is 16-bits wide, the fetch interface pulls 4 12-bit instructions (slots) packed into
+3 16-bit words.  For 'jump' instructions, two 12-bit slots are used ... one to specify the opcode and the second
+to specify the upper 12 bits of the PC jump location (jump targets must align properly using NOPs).  The "assembler"
+takes care of this.
+
+The I/O subsystem uses an 8-bit address and supports the following:
+
+   - 48-Outputs plus 48-Inputs via external 74HC595 / 74HC165 chips
+   - 32-Bit internal storage
+   - 16 bit I/O to/from LISA (8 each direction)
+   - Ability to send interrupt to LISA
+   - Constant zero / one bits 
+
+The 48-outputs and 48-inputs are managed by a shift-register state machine that interfaces to the external
+world using ui_in and uo_out pins.  It implement three parallel 16-bit serial shift busses to external
+74HC595 / 74HC165 chips.  This consists of a clock, latch signal, 3 output pins and 3 input pins.
+The FSM performs shift and I/O updates when FLAG_O is raised via opcode.  This is also the "return to
+address zero" opcode to restart the PLC / TTLC loop.  So the idea is the code loops through the logic
+once using current inputs, updates internal storage and outputs, then at the end triggers an I/O update
+and jump to zero.  Then during the I/O update / busy period, the processor (ICU) core is held idle
+at address zero until the I/O transaction is complete.
 
 ## How to test
 

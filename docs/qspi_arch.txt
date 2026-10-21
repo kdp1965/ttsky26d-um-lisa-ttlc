@@ -22,6 +22,6 @@
                   |      Configuration Registers      |                                                   
                   +-----------------------------------+                                                   
 
-           <h4>Figure 846.3: (Q)SPI Controller Interface Diagram</h4>
+           <h4>Figure 4: (Q)SPI Controller Interface Diagram</h4>
                                                                                       
 {:FILE scale 0.7 theme light font-size 10}

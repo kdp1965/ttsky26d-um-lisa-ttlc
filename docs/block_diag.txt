@@ -25,5 +25,5 @@
                                 {pr}| RAM32 +--------+ DATA  |    | INST  |    +---->|   LISA   |{pt}                 
                                     | 128B  |        | CACHE |    | CACHE |          |  Debug   |                     
                                     +-------+        +-------+    +-------+          +----------+                     
-                               <h4>Figure 846.1: LISA/TTLC Block Diagram</h4>
+                               <h4>Figure 1: LISA/TTLC Block Diagram</h4>
 {:FILE scale 0.7 theme light font-size 10}

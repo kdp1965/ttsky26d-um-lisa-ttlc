@@ -1,0 +1,52 @@
+     +--------------+   +-------------------------+    /-------------\    +-----------+
+     | {pt}         |   | {pt}                    |    |             |    |           |   QSPI
+     |    Debug     |   |      TTLC Control       |    |  LISA QSPI  +--->|   LISA    |<----------->
+     |     Regs     +-->|    halt / step / brk    |    |     ARB     |<---+   QSPI    |   flash
+     |              |   |                         |    |     {pw}    |    |  {pw}     |   CEs
+     +--------------+   +-------+-----------------+    \-------+-----/    +-----------+
+                                | halt                      ^  |            
+                                v                           |  v 3 16-bit word bursts                             
+     +------------------------------------+   +-------------+--------------------------------------+ 
+     |                                    |   |                    TTLC Fetch                      |  
+     |               MC14500B             |   |                                                    |  
+     |                 ICU                |   | +------------------+                               |  
+     |                                    |   | |     Prefetch     |                               |  
+     |                                    |   | | 4 x 12-bit slots | PC = group[11:0],slot[1:0]    |  
+     |                                    |   | +--------+---------+ RTN = stack                   |
+     |           RR / IEN / OEN           |   |          v           slot = addr[7:0],opcode[3:0]  |  
+     |                  {pb}              |   | +------------------+ jmp = 2 slots: opcode,target  |  
+     |                 JMP / RTN / FLAG_F +-->| |     Execute      |                               |  
+     |                                    |   | | 4 x 12-bit slots |                               |  
+     | FLAG_O      skip                   |   | +------------------+                   {pw}        |
+     +---+----------------+---------------+   +----------+----------------+------------------------+
+         |     DATA ^     | WRITE / DATA_OUT             | address[7:0]   | opcode[3:0]                       
+         |          |     v                              v                v                            
+         |    /-----+--------------------------------------------------------------------\                     
+         |    |                                 TTLC I/O                                 |                     
+         |    |          {pr}                                                            |            
+         |    |   One-bit read mux and write decode on the 8-bit address                 |            
+         |    |                                                                          |            
+         |    |   0x00-0x2F  outputs (r/w)                  0x80-0x87  port from LISA    |            
+         |    |   0x30-0x5F  inputs                         0x88       RR                |            
+         |    |   0x60-0x7F  scratch, 32 bits (r/w)         0x89/0x8A  constant 0 / 1    |            
+         |    |                                                                          |            
+         |    \----+-------------+----------------------------+-----------------+--------/                                                       
+         |         | out[47:0]   ^ in[47:0]                   | scratch[8:0]    ^ port E[7:0]   
+         |         v             |                            v                 |               
+         |    +------------------+-------+              +-----------------------+--------+    
+         |    |          Shift           |              | {py}     LISA Periph           |   
+         +--->|        Interface         |              |                                |   
+       start  |          {pt}            |              |  port D in  <- scratch[7:0]    |   
+              |      48 out / 48 in      |              |  port E out -> 0x80-0x87       |   
+              |    3 chains x 16 bits    |              |  INT_STATUS <- scratch[8]      |   
+              |    clk / 2, 4, 8, 16     |              |                                |   
+              +---+----+-----------------+              +---------------+----------------+   
+                  |    |    ^  latch, shift clk                         | interrupt          
+                  |    |    |  out: 3 x data                            |                    
+                  v    v    |  in:  3 x data                            v                    
+              +-------------+------------+                     +----------------+            
+              | 6 x 74HC595  48 outputs  |  TTLC               | {pb}           |            
+              | 6 x 74HC165  48 inputs   |  Pmod               |   ^LISA Core^  |            
+              +--------------------------+                     +----------------+            
+                                <h4>Figure 2: TTLC Architectural Diagram</h4>
+{:FILE scale 0.7 theme light font-size 12}

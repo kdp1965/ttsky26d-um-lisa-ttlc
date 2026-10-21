@@ -1,11 +1,11 @@
-     To QSPI Arbiter     15 Bit  {pr}         {pr}      15 Bit                    To QSPI Arbiter
+     To QSPI Arbiter     23 Bit  {pr}         {pr}      23 Bit                    To QSPI Arbiter
           ^        /-----------------\       /-----------------\     .-.     |\         ^
           |        | Return Address  |<--*-->|    Index Reg    +--->| + +--->| |        |      
           |        \-----------------/   |   \-----------------/     '-'     | |        v      
           v                              |                            ^      | |    +---+----+ 
-      +---+---+          15 Bit  {pr}    |    {pr}      15 Bit        +---+  | | 15 | Data   | 
-      | Inst  | 15 /-----------------\   |   /-----------------\     .-.  |  | +-/->| CACHE  | 
-      | CACHE |<-/-+ Program Counter |<--*-->|  Stack Pointer  +-*->| + +-|->| |    |   {pw} | 
+      +---+---+          22 Bit  {pr}    |    {pr}      23 Bit        +---+  | | 23 | Data   | 
+      | Inst  | 22 /-----------------\   |   /-----------------\     .-.  |  | +-/->| CACHE  | 
+      | CACHE |<-/-+  PC + Bank Reg  |<--*-->|  Stack Pointer  +-*->| + +-|->| |    |   {pw} | 
       |       |    \-----------------/       \-----------------/ |   '-'  |  | |    +---+----+   
       |       |                                                  |    ^   |  | |        ^        
       | Store | 16 +-----------------+                           +----|---|->| |        |        
@@ -23,6 +23,6 @@
              |        |     | Accumulator |     | Accumulator |                            
              +--------+     +-------------+     +-------------+                            
                                                                  
-                   <h3>Figure 846.4: Simplified LISA Processor Block Diagram</h3>
+                   <h3>Figure 5: Simplified LISA Processor Block Diagram</h3>
                                                                                       
 {:FILE scale 0.9 theme light font-size 10}
