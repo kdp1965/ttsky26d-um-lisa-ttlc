@@ -23,6 +23,6 @@
              |        |     | Accumulator |     | Accumulator |                            
              +--------+     +-------------+     +-------------+                            
                                                                  
-                   <h3>Figure 5: Simplified LISA Processor Block Diagram</h3>
+                   <h3>Figure 4: Simplified LISA Processor Block Diagram</h3>
                                                                                       
 {:FILE scale 0.9 theme light font-size 10}

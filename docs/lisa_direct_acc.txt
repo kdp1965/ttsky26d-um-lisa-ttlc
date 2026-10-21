@@ -11,6 +11,6 @@
                        |  Flags  |{pr}                                                     
                        +---------+                                                         
                        
-    <h5>Figure 6: Accumulator Direct Operations Diagram</hh>
+    <h5>Figure 5: Accumulator Direct Operations Diagram</hh>
                                                                                       
 {:FILE scale 0.9 theme light font-size 10}

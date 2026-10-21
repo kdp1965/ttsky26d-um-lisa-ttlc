@@ -48,5 +48,5 @@
               | 6 x 74HC595  48 outputs  |  TTLC               | {pb}           |            
               | 6 x 74HC165  48 inputs   |  Pmod               |   ^LISA Core^  |            
               +--------------------------+                     +----------------+            
-                                <h4>Figure 2: TTLC Architectural Diagram</h4>
+                                <h4>Figure 9: TTLC Architectural Diagram</h4>
 {:FILE scale 0.7 theme light font-size 12}

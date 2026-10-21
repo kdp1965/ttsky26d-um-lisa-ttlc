@@ -13,6 +13,6 @@
        |    ^Debug^    | .Baud Set.                        |  |      +-------------------------|----------> 
        |  ^Autobaud^   +-----------------------------------+  +--------------------------------+  Uart 
        +---------------+                                                                       Passthrough
-                        <h4>Figure 3: Debug Connectivity and Autobaud</h4>
+                        <h4>Figure 2: Debug Connectivity and Autobaud</h4>
 
 {:FILE scale 0.8 theme light font-size 10}

@@ -105,32 +105,30 @@ The following table describes the configuration and LISA debug register addresse
 commands.  The individual register details will be described in the sections to follow.
 
  | ADDR | Description                  | ADDR | Description                  |
- | ---- | --------------------------   | ---- | ---------------------------- |   
-|| 0x00 | LISA Core Run Control        | 0x19 | QSPI Write CMD value         |                                           
- | 0x01 | LISA Accumulator / FLAGS     | 0x1a | The '+++' guard time count   |   
- | 0x02 | LISA Program Counter (PC)    | 0x1b | Mux bits for uo_out          |   
- | 0x03 | LISA Stack Pointer (SP) LSW  | 0x1c | UIO mux, clk_div, psram_mod  |   
- | 0x04 | LISA Return Address (RA) LSW | 0x1d | CACHE control                |   
- | 0x05 | LISA Index Register (IX) LSW | 0x1e | QSPI edge / SCLK speed       |   
- | 0x06 | LISA Data bus                | 0x1f | MC14500b Base Address        |   
- | 0x07 | LISA Data bus address LSW    | 0x20 | Debug QSPI Read / Write      |   
- | 0x08 | LISA Breakpoint 1            | 0x21 | Debug QSPI custom command    |   
- | 0x09 | LISA Breakpoint 2            | 0x22 | Debug read SPI status reg    |   
- | 0x0a | LISA Breakpoint 3            | 0x30 | Floating point reg f0        |   
- | 0x0b | LISA Breakpoint 4            | 0x31 | Floating point reg f1        |   
- | 0x0c | LISA Breakpoint 5            | 0x32 | Floating point reg f2        |   
- | 0x0d | LISA Breakpoint 6            | 0x33 | Floating point reg f3        |   
- | 0x0f | LISA Current Opcode Value    | 0x34 | Floating point reg facc      |     
- | 0x10 | Debug QSPI Address (LSB16)   | 0x38 | LISA IX_COND, IX MSB         |     
- | 0x11 | Debug QSPI Address (MSB8)    | 0x39 | LISA SP MSB                  |     
- | 0x12 | LISA1 QSPI base address      | 0x3a | LISA RX_COND, RA MSB         |     
- | 0x13 | LISA2 QSPI base address      | 0x3c | LISA Data bus addr MSB       |     
- | 0x14 | LISA1 QSPI CE select         | 0x40 | MC14500B Run Control         |     
- | 0x15 | LISA2 QSPI CE select         | 0x41 | MC14500B Program Counter     |     
- | 0x16 | Debug QSPI CE select         | 0x48 | MC14500B Breakpoint 1        |     
- | 0x17 | QSPI Mode (QUAD, flash, 16b) | 0x49 | MC14500B Breakpoint 2        |     
- | 0x18 | QSPI Dummy read cycles       | 0x4a | MC14500B Breakpoint 3        |     
-                                                                                   
+ | ---- | --------------------------   | ---- | ---------------------------- | 
+ | 0x00 | LISA Core Run Control        | 0x17 | QSPI Mode (QUAD, flash, 16b) | 
+ | 0x01 | LISA Accumulator / FLAGS     | 0x18 | QSPI Dummy read cycles       | 
+ | 0x02 | LISA Program Counter (PC)    | 0x19 | QSPI Write CMD value         | 
+ | 0x03 | LISA Stack Pointer (SP)      | 0x1a | The '+++' guard time count   | 
+ | 0x04 | LISA Return Address (RA)     | 0x1b | Mux bits for uo_out          | 
+ | 0x05 | LISA Index Register (IX)     | 0x1c | Mux bits for uio             | 
+ | 0x06 | LISA Data bus                | 0x1d | CACHE control                | 
+ | 0x07 | LISA Data bus address        | 0x1e | QSPI edge / SCLK speed       | 
+ | 0x08 | LISA Breakpoint 1            | 0x1f | MC14500b Base Address        | 
+ | 0x09 | LISA Breakpoint 2            | 0x20 | Debug QSPI Read / Write      | 
+ | 0x0a | LISA Breakpoint 3            | 0x21 | Debug QSPI custom command    | 
+ | 0x0b | LISA Breakpoint 4            | 0x22 | Debug read SPI status reg    | 
+ | 0x0c | LISA Breakpoint 5            | 0x30 | Floating point reg f0        | 
+ | 0x0d | LISA Breakpoint 6            | 0x31 | Floating point reg f1        | 
+ | 0x0f | LISA Current Opcode Value    | 0x32 | Floating point reg f2        | 
+ | 0x10 | Debug QSPI Address (LSB16)   | 0x33 | Floating point reg f3        | 
+ | 0x11 | Debug QSPI Address (MSB8)    | 0x34 | Floating point reg facc      | 
+ | 0x12 | LISA1 QSPI base address      | 0x40 | MC14500B Run Control         | 
+ | 0x13 | LISA2 QSPI base address      | 0x41 | MC14500B Program Counter     | 
+ | 0x14 | LISA1 QSPI CE select         | 0x48 | MC14500B Breakpoint 1        | 
+ | 0x15 | LISA2 QSPI CE select         | 0x49 | MC14500B Breakpoint 2        | 
+ | 0x16 | Debug QSPI CE select         | 0x4a | MC14500B Breakpoint 3        | 
+                                         
 ### LISA Processor Interface Details                                         
 
 The LISA Core requires external memory for all Instructions and Data.  To accomodate external memory,
@@ -216,20 +214,6 @@ resistor as indicated to allow CE updates if the FLASH/SRAM is driving DQ0/DQ1. 
  | uio[7] | -/DQ3              | Must be enabled via uio MUX bits             |
 
 This leaves uio[4]/uio[5] available for use as either UART or I2C.
-
-There is also a QSPI PSRAM PMOD mode that maps the QSPI signals to be compatible with the standard Tiny Tapeout
-PMOD.  In that mode (enabled using the psram_mod bit), the pinout becomes:
-
- | Pin    | SPI   | QSPI | Notes                            |
- | ------ | ----- | ---- | -------------------------------- |
- | uio[0] | CE0   | CE0  | Chip Select for flash            |
- | uio[1] | MOSI  | DQ0  | Also MOSI prior to QUAD mode DQ0 |
- | uio[2] | MISO  | DQ1  | Also MISO prior to QUAD mode DQ1 |
- | uio[3] | SCLK  | SCLK |                                  |
- | uio[4] |  -    | DQ2  | QUAD mode DQ2                    |
- | uio[5] |  -    | DQ3  | QUAD mode DQ3                    |
- | uio[6] | CE1   | CE1  | Chip Select for PSRAM A          |
- | uio[7] |  1    | 1    | Chip Select for PSRAM B (unused) |
 
 Once the SPI/QSPI SRAM and optional FLASH have been chosen and connected, the Debug configuration registers must
 be programmed to indicate the nature of the external device(s).  This is accompilished using Debug registers 0x12 - 0x19 and
@@ -555,38 +539,6 @@ opcodes for things like setting arithemetic mode, complimenting the C flag, etc.
  | taxu    | IX[H] <= acc  | 1010_0001_0000_01xx | Transfer acc to IX[14:0]  |
  | txa     | acc <= IX[L]  | 1010_0000_0001_00xx | Transfer IX[7:0] to acc   |
  | txau    | acc <= IX[H]  | 1010_0000_0001_10xx | Transfer IX[14:0] to acc  |
-
-## The Tiny Tapeout Logic Controller (TTLC)
-
-The second subsystem within this design is a small PLC type circuit.  It is architected around a 1-bit processor from 1977
-designed by Motorola ... the MC14500B Industrial Control Unit (ICU).  The TTLC wraps the ICU "processor" with an instruction
-fetch pipeline and a bit-level I/O subsystem.
-
-![](ttlc_block_diag.png)
-
-The instruciton fetch pipeline uses 12-bit instructions ... 4 bits for the MC14500B opcode and 8-bits for operand
-such as bit address to access, etc.  It uses a 14-bit Program Counter (PC) giving up to 16K instructions.
-Since the LISA SPI/QSPI interface is 16-bits wide, the fetch interface pulls 4 12-bit instructions (slots) packed into
-3 16-bit words.  For 'jump' instructions, two 12-bit slots are used ... one to specify the opcode and the second
-to specify the upper 12 bits of the PC jump location (jump targets must align properly using NOPs).  The "assembler"
-takes care of this.
-
-The I/O subsystem uses an 8-bit address and supports the following:
-
-   - 48-Outputs plus 48-Inputs via external 74HC595 / 74HC165 chips
-   - 32-Bit internal storage
-   - 16 bit I/O to/from LISA (8 each direction)
-   - Ability to send interrupt to LISA
-   - Constant zero / one bits 
-
-The 48-outputs and 48-inputs are managed by a shift-register state machine that interfaces to the external
-world using ui_in and uo_out pins.  It implement three parallel 16-bit serial shift busses to external
-74HC595 / 74HC165 chips.  This consists of a clock, latch signal, 3 output pins and 3 input pins.
-The FSM performs shift and I/O updates when FLAG_O is raised via opcode.  This is also the "return to
-address zero" opcode to restart the PLC / TTLC loop.  So the idea is the code loops through the logic
-once using current inputs, updates internal storage and outputs, then at the end triggers an I/O update
-and jump to zero.  Then during the I/O update / busy period, the processor (ICU) core is held idle
-at address zero until the I/O transaction is complete.
 
 ## How to test
 
