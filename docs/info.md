@@ -10,11 +10,13 @@ The following is a block diagram of the design:
 
 ![](block_diag.png)
 
-   - The LISA Core has a minimal set of register that allow it to run C programs:
+   - The LISA Core has a minimal set of registers that allow it to run C programs:
       - Program Counter + Return Address Resister
       - Stack Pointer and Index Register (Indexed DATA RAM access)
       - 8-bit Accumulator + 16-bit BF16 Accumulator and 4 BF16 registers
-
+      - Flag bits and ALU mode register
+      - BF16 Floating point registers
+      - Interrupt control bits
 
 ### Deailed list of the features
    - Harvard architecture LISA Core (16-bit instruction, 22-bit address space)
