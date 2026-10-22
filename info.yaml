@@ -1,6 +1,6 @@
 # Tiny Tapeout project information
 project:
-  title:        "LISA Microcontroller with TTLC (rev 2)"
+  title:        "LISA Microcontroller with TTLC (Ver 3)"
   author:       "Ken Pettit"
   discord:      "busy_courgette_50064"
   description:  "8-Bit Microcontroller SOC with Tiny Tapeout Logic Controller - the TT07 LISA with its silicon bugs fixed"
