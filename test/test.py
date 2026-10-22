@@ -1,4 +1,4 @@
-# test.py - tt_um_lisa in the testbench: the debugger over the UART, and a
+# test.py - tt_um_pettit_lisa in the testbench: the debugger over the UART, and a
 # program from the flash model.
 #   make                                 test_debugger, test_bringup (firmware.hex)
 #   make IHX=../../lisa-tools/sdcc_test/test_core.ihx [CACHE=1] [TIMEOUT=clocks]

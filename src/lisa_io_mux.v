@@ -33,7 +33,7 @@ SUCH DAMAGE.
 //
 //
 //                 +------------------------+
-//                 |     tt_um_lisa         |
+//                 |   tt_um_pettit_lisa    |
 //                 |                        |
 //                 |ui_in             uo_out|
 //        |        | 0                    0 |

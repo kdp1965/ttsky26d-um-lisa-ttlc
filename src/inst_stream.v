@@ -54,7 +54,7 @@ module inst_stream
    input  wire          rst_n,
 
    // The instruction bus
-   input  wire [20:0]   core_i_addr,      // The physical word: {bank[6:0], PC[13:0]} (tt_um_lisa.v; REV3.md: 128 banks)
+   input  wire [20:0]   core_i_addr,      // The physical word: {bank[6:0], PC[13:0]} (tt_um_pettit_lisa.v; REV3.md: 128 banks)
    output wire [15:0]   core_inst,
    /* verilator lint_off UNUSEDSIGNAL */
    input  wire [15:0]   core_inst_i,      // The TT07 write path: the debugger writes the

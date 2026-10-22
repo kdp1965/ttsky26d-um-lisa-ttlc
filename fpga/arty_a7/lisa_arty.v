@@ -1,4 +1,4 @@
-// LISA (tt_um_lisa, this repository's RTL) on the Digilent Arty A7-35T.
+// LISA (tt_um_pettit_lisa, this repository's RTL) on the Digilent Arty A7-35T.
 //
 // The Tiny Tapeout pins come out on three Pmods in the demo board's order
 // (Pmod pins 1-4 and 7-10 are bits 0-3 and 4-7):
@@ -163,7 +163,7 @@ module lisa_arty
       end
    endgenerate
 
-   tt_um_lisa lisa
+   tt_um_pettit_lisa lisa
    (
       .ui_in      ( ui_in   ),
       .uo_out     ( uo_out  ),

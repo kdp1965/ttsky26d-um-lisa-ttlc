@@ -1,4 +1,4 @@
-# The constraints of tt_um_lisa: LibreLane's defaults (the clock from
+# The constraints of tt_um_pettit_lisa: LibreLane's defaults (the clock from
 # CLOCK_PERIOD, the I/O delays, max fanout/transition/capacitance) plus the
 # core's multi-cycle paths, the ones the TT07 build (OpenLane 2, impl.sdc,
 # 30 ns) closed with.  An instruction takes the fetch, pre-decode and decode

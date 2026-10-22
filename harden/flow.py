@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""flow.py [--macro] [run-tag] - harden tt_um_lisa locally with LibreLane's
+"""flow.py [--macro] [run-tag] - harden tt_um_pettit_lisa locally with LibreLane's
 Classic flow on config_merged.json (configure.py; config_merged_macro.json
 with --macro).  With --macro the RAM32
 DFFRAM macro is in the design and one extra step runs the tile's vertical

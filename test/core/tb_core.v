@@ -92,7 +92,7 @@ module tb_core;
    wire           inst_ready;
    reg  [15:0]    inst_r;
    reg            ready_r;
-   // the physical word as tt_um_lisa.v forms it: the upper 16K words from
+   // the physical word as tt_um_pettit_lisa.v forms it: the upper 16K words from
    // the code bank (or the constant's bank in IX), the lower common
    wire [20:0]    i_paddr = i_kfetch ? {i_addr[14] ? i_kbank : 7'h0, i_addr[13:0]} :
                                        {i_addr[14] ? code_bank : 7'h0, i_addr[13:0]};
@@ -156,7 +156,7 @@ module tb_core;
       .dbg_halted   ( dbg_halted    )
    );
 
-   // the data bus registered as in tt_um_lisa.v
+   // the data bus registered as in tt_um_pettit_lisa.v
    reg  [7:0]     d_o;
    reg  [22:0]    d_addr;
    reg            d_valid;

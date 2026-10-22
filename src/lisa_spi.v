@@ -53,7 +53,7 @@ release, and holds its level otherwise: a CPOL written before the grant
 reaches the pin a clock after the selects are the SPI's.  Claim with
 the selects deasserted and assert them once OWNED.  CLAIM is granted between scans (the
 shift-register I/O idle and no scan requested); a scan the TTLC requests
-while the pins are owned waits (tt_um_lisa.v) and the ICU with it, and the
+while the pins are owned waits (tt_um_pettit_lisa.v) and the ICU with it, and the
 pins go back when CLAIM is cleared and the last byte is out.  A byte
 written while CLAIM is set and not yet granted waits for the grant.
 

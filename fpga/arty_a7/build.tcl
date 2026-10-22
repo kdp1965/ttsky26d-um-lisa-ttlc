@@ -15,7 +15,7 @@ file mkdir $out
 # debug_regs.v and lisa_dbg.v from gen/ (latch2flop.py: the sky130
 # latches as flops) and the FPGA models of the two sky130 cells.
 set sources {
-   tt_um_lisa.v RAM32.v
+   tt_um_pettit_lisa.v RAM32.v
    lisa_core.v lisa_dbg.v lisa_div.v lisa_periph.v lisa_io_mux.v
    lisa_qqspi.v lisa_qspi_controller.v lisa_rx8n.v lisa_tx8n.v lisa_i2c.v lisa_spi.v
    debug_ctrl.v debug_autobaud.v debug_brg.v debug_regs.v

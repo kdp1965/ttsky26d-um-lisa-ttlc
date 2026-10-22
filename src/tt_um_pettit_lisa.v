@@ -1,6 +1,6 @@
 /*
 ==============================================================================
-tt_um_lisa.v:  Tiny Tapeout User Module for the LISA 8-bit processor.
+tt_um_pettit_lisa.v:  Tiny Tapeout User Module for the LISA 8-bit processor.
 
 Copyright 2024 by Ken Pettit <pettitkd@gmail.com>
 
@@ -33,7 +33,7 @@ SUCH DAMAGE.
 //
 //
 //                          +------------------------+
-//                          |     tt_um_lisa         |
+//                          |   tt_um_pettit_lisa    |
 //          On              |                        |
 //         Reset            |ui_in             uo_out|
 //           |          pa0 | 0                    0 | pb0
@@ -66,7 +66,7 @@ SUCH DAMAGE.
 
 `define WANT_UART2
 
-module tt_um_lisa
+module tt_um_pettit_lisa
 (
 `ifdef USE_POWER_PINS
     input                  VPWR,
@@ -1184,5 +1184,5 @@ module tt_um_lisa
 
    assign ttlc_io_start = ttlc_scan_req & !spi_owned;
 
-endmodule // tt_um_lisa
+endmodule // tt_um_pettit_lisa
 

@@ -5,7 +5,7 @@
 #
 # Usage (the LibreLane nix shell, or its openroad directly):
 #   openroad -exit -no_splash -python seq_placement.py <design.odb> <out.json> [<out.txt>]
-#   e.g. runs/macro-fix/final/odb/tt_um_lisa.odb placements/macro-fix_final_seq.json
+#   e.g. runs/macro-fix/final/odb/tt_um_pettit_lisa.odb placements/macro-fix_final_seq.json
 #
 # The RTL name of a register is the name of the net on its data output (Q,
 # or Q_N when that is the only output): Yosys keeps a register's name on

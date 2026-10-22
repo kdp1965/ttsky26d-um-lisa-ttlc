@@ -143,7 +143,7 @@ estimated 1% to 2% of rc12's 62654 instances.
 
 ## The plan
 
-1. RTL (`src/lisa_core.v`, `tt_um_lisa.v`, `data_cache8.v`, `lisa_periph.v`,
+1. RTL (`src/lisa_core.v`, `tt_um_pettit_lisa.v`, `data_cache8.v`, `lisa_periph.v`,
    `debug_regs.v`): the widths, the third stage, the new opcodes, CB 7 bits,
    the bank registers removed, the cache tags.  `test/core` and `test/`
    programs for the pairs, the far pointers, the calls across banks.

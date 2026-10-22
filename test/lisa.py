@@ -1,4 +1,4 @@
-"""lisa.py - drive tt_um_lisa through the testbench's UART: the debugger
+"""lisa.py - drive tt_um_pettit_lisa through the testbench's UART: the debugger
 protocol (rXX / wXXYYYY / v / t / l), the configuration registers the LISA
 Commander writes, and running a program from the flash model.
 

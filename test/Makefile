@@ -25,7 +25,7 @@ SRC_DIR = $(PWD)/../src
 # The design, as info.yaml lists it (data_cache8.v is the 8-line cache the
 # chip has; data_cache.v is the older 4-line one with the same module name,
 # so only one of them can be compiled).
-PROJECT_SOURCES  = tt_um_lisa.v RAM32.v
+PROJECT_SOURCES  = tt_um_pettit_lisa.v RAM32.v
 PROJECT_SOURCES += lisa_core.v lisa_dbg.v lisa_div.v lisa_periph.v lisa_io_mux.v
 PROJECT_SOURCES += lisa_qqspi.v lisa_qspi_controller.v lisa_rx8n.v lisa_tx8n.v lisa_i2c.v lisa_spi.v
 PROJECT_SOURCES += debug_ctrl.v debug_autobaud.v debug_brg.v debug_regs.v

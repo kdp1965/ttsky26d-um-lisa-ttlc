@@ -21,7 +21,7 @@ REMOTE_DIR ?= projects/tiny-tapeout/ttsky26d/ttsky26d-um-lisa-ttlc
 
 SRC  = ../../src
 GEN  = gen/debug_regs.v gen/lisa_dbg.v
-CHIP = tt_um_lisa.v RAM32.v lisa_core.v lisa_div.v lisa_periph.v lisa_io_mux.v \
+CHIP = tt_um_pettit_lisa.v RAM32.v lisa_core.v lisa_div.v lisa_periph.v lisa_io_mux.v \
 	   lisa_qqspi.v lisa_qspi_controller.v lisa_rx8n.v lisa_tx8n.v lisa_i2c.v lisa_spi.v \
 	   debug_ctrl.v debug_autobaud.v debug_brg.v data_cache8.v inst_stream.v \
 	   i2c_master_byte_ctrl.v i2c_master_bit_ctrl.v lisa_uart.v \

@@ -1,5 +1,5 @@
 // The Ethernet TTLC I/O bridge with the inside chains, scanned by the
-// chip's shift_reg_io (the way tt_um_lisa drives the TTLC Pmod): the
+// chip's shift_reg_io (the way tt_um_pettit_lisa drives the TTLC Pmod): the
 // test drives the MII pins as the PHY and the scan as the TTLC.
 `timescale 1ns / 1ps
 module tb_eth

@@ -112,7 +112,7 @@ overlays (`OVERLAY=`), the trials RESPIN.md's Hardening section describes.
 Global placement is not deterministic run to run, and a build near the
 routability threshold is a lottery (RESPIN.md, the third build). The flow
 can therefore pin the registers where a good run had them: `openroad
--python harden/seq_placement.py runs/<good>/final/odb/tt_um_lisa.odb
+-python harden/seq_placement.py runs/<good>/final/odb/tt_um_pettit_lisa.odb
 harden/placements/<good>_seq.json` writes a table keyed by the RTL name on
 each register's Q net (which Yosys keeps; the instance numbers change every
 run), and with `ANCHOR_SEQ_TABLE` set to it (`trial_fix5.json`) flow.py's
@@ -170,7 +170,7 @@ cd test && make          # RTL, icarus + cocotb (2.1 in CI; 1.9 works too)
 make GATES=yes           # gate level, with gate_level_netlist.v from the harden
 ```
 
-The testbench (`test/tb.v`) wires `tt_um_lisa` to a SPI flash model loaded
+The testbench (`test/tb.v`) wires `tt_um_pettit_lisa` to a SPI flash model loaded
 from `firmware.hex`, a SPI RAM model on CE1 and a UART on the auto-detected
 debug port; `test.py` checks the debugger answers. The program-level tests
 (the SDCC suite through the flash model, the data cache through the RAM

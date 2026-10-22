@@ -6,7 +6,7 @@ icarus otherwise or with `make SIM=icarus` (what CI runs).
 
 ## `test/` - the chip
 
-`tb.v` wires `tt_um_lisa` to a SPI flash model (`spiflash.v`, the image from
+`tb.v` wires `tt_um_pettit_lisa` to a SPI flash model (`spiflash.v`, the image from
 `+FIRMWARE=<hex>`), a QSPI RAM model on CE1 (`psram.v`), a UART on the
 debug port with a fixed baud divider, and the TTLC's three 74HC595 and three
 74HC165 chains (`ttlc_chains`). `lisa.py` is the debugger over that UART:

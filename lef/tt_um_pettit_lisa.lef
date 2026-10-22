@@ -2,9 +2,9 @@ VERSION 5.7 ;
   NOWIREEXTENSIONATPIN ON ;
   DIVIDERCHAR "/" ;
   BUSBITCHARS "[]" ;
-MACRO tt_um_lisa
+MACRO tt_um_pettit_lisa
   CLASS BLOCK ;
-  FOREIGN tt_um_lisa ;
+  FOREIGN tt_um_pettit_lisa ;
   ORIGIN 0.000 0.000 ;
   SIZE 682.640 BY 511.360 ;
   PIN VGND
@@ -637,6 +637,6 @@ MACRO tt_um_lisa
       LAYER met4 ;
         RECT 646.000 460.000 678.400 507.400 ;
   END
-END tt_um_lisa
+END tt_um_pettit_lisa
 END LIBRARY
 

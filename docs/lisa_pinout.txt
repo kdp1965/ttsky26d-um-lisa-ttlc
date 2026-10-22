@@ -1,4 +1,4 @@
-              tt_um_lisa (846)                                       tt_um_lisa (846)              
+         tt_um_pettit_lisa (846)                                tt_um_pettit_lisa (846)              
           +-------------------+                                  +-------------------+           
  pa[0] ---| in[0]      out[0] |--- pb[0]                  rx2 ---| in[0]      out[0] |--- tx2    
  pa[1] ---| in[1]      out[1] |--- pb[1]                pa[1] ---| in[1]      out[1] |--- pb[1]  

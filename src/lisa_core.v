@@ -728,7 +728,7 @@ module lisa_core
    assign c_cpi = ~acc_sum[8];
 
    // lda (ix++) fetches its constant from the exec state: the instruction
-   // bus is asked for the word at IX[14:1] (tt_um_lisa.v puts the KB bank
+   // bus is asked for the word at IX[14:1] (tt_um_pettit_lisa.v puts the KB bank
    // on it, i_kfetch), the exec state waits for it (k_ok in d_ok)
    assign kfetch  = exec_state & op_ldk_r & cond[0];
    assign k_ok    = !kfetch | inst_ready;

@@ -11,11 +11,11 @@ project:
   tiles: "4x4"          # 682.64 x 511.36 um (the TT07 chip was an 8x2, 1378.16 x 225.76)
 
   # Your top module name must start with "tt_um_". Make it unique by including your github username:
-  top_module:  "tt_um_lisa"
+  top_module:  "tt_um_pettit_lisa"
 
   # List your project's source files here. Source files must be in ./src and you must list each source file separately, one per line:
   source_files:
-    - "tt_um_lisa.v"
+    - "tt_um_pettit_lisa.v"
     - "RAM32.v"
     - "lisa_core.v"
     - "lisa_dbg.v"

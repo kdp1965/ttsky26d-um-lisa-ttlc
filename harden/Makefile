@@ -1,4 +1,4 @@
-# Harden tt_um_lisa on this machine with LibreLane (the GitHub runners take
+# Harden tt_um_pettit_lisa on this machine with LibreLane (the GitHub runners take
 # an hour for what the Mac does in minutes).
 #
 #   make            # the standard Tiny Tapeout flow: the RAM synthesized from src/RAM32.v

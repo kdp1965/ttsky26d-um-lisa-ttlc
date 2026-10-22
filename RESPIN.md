@@ -1,6 +1,6 @@
 # LISA revision 2: the TT07 silicon issues and their fixes
 
-The TT07 `tt_um_lisa` chip was characterized on the Tiny Tapeout demo board
+The TT07 `tt_um_pettit_lisa` chip was characterized on the Tiny Tapeout demo board
 (2026-10-05 .. 2026-10-09) with the SDCC port's test suite run on the chip
 (`lisa-tools/sdcc_test`, `hw_test.mjs ihx=` / `spiram=`), the LISA Commander
 and lisa_ide. `lisa-tools/lisa_sim` models every item below as the silicon
@@ -30,16 +30,16 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 16 | Stack convention: SP at the top byte, `0(sp)` | `lisa_core.v` sp_adder | done: test/progs --rev2 builds, run_suite REV2=1 |
 | 17 | Debugger version: the second chip answers `lisav2.0` | `debug_ctrl.v` | done: test_debugger |
 | 18 | The Tiny Tapeout QSPI Pmod's pin order (psram_mod) | `lisa_io_mux.v`, `debug_regs.v` 0x1c bit 10 | done: the FPGA, cache on |
-| 19 | TTLC program format: 12-bit slots, four to three words; the old `jmp` never worked | `ttlc_fetch.v`, `tt_um_lisa.v`, `debug_regs.v` | done: test_ttlc, test_ttlc_jump, test_ttlc_debug |
+| 19 | TTLC program format: 12-bit slots, four to three words; the old `jmp` never worked | `ttlc_fetch.v`, `tt_um_pettit_lisa.v`, `debug_regs.v` | done: test_ttlc, test_ttlc_jump, test_ttlc_debug |
 | 20 | The autobaud and BRG count in 32-clock steps: only rates with a bit a multiple of 32 clocks | `debug_autobaud.v`, `debug_brg.v` | done: test_autobaud; the FPGA at 115200 .. 921600 |
 | 21 | Quad flash reads float the mode bits: continuous-read mode by accident | `lisa_qqspi.v` S12_MODE | done: the FPGA quad on both selects |
 | 23 | A store to the UART data register pops the receive FIFO (the core's `d_rd` pulsed on a store's exec clock); any access to 0x14 wrote UART2's baud divisor | `lisa_core.v` d_rd, `lisa_periph.v` 0x1E | fixed: test_uart_overrun |
 | 24 | `ldirq` loads nothing: a misc load (101000..) decoded by `op_ld_misc_r` first, its own case item never reached; `stirq` then wrote A back as the shadows and `rets` restored amode 0 | `lisa_core.v` acc_misc | fixed: sdcc_test/test_ldirq (lisa_sim --rev2, the testbench, the Arty) |
 | 25 | The UART interrupt enables (0x14) have no write decode - TT07 too: `uart_rx_ie` / `uart_tx_ie` read 0 and no UART interrupt ever fires; the request was an edge, latched | `lisa_periph.v` 0x14, int_req | fixed: the enables written, the UART requests levels (Ken, 2026-10-18); sdcc_test/test_uartirq (lisa_sim --rev2 --send, the testbench with SEND=, the Arty) |
-| 26 | An extension: `lda (ix++)` (0xA14C) reads byte IX[0] of the code word at {KB, IX[14:1]} and increments IX, KB the constant bank register 0x1F - constants packed two to a word in any bank (the `ldi; ret` pair per byte took 4 flash bytes and the common area) | `lisa_core.v` op_ldk, `lisa_periph.v` 0x1F, `tt_um_lisa.v` core_i_paddr | done: sdcc_test/test_ldk (lisa_sim --rev2, the testbench) |
+| 26 | An extension: `lda (ix++)` (0xA14C) reads byte IX[0] of the code word at {KB, IX[14:1]} and increments IX, KB the constant bank register 0x1F - constants packed two to a word in any bank (the `ldi; ret` pair per byte took 4 flash bytes and the common area) | `lisa_core.v` op_ldk, `lisa_periph.v` 0x1F, `tt_um_pettit_lisa.v` core_i_paddr | done: sdcc_test/test_ldk (lisa_sim --rev2, the testbench) |
 | 27 | An extension: the divider's second result and a chained step. `div` leaves the remainder in IX (`rem` the quotient; TT07 and rc10 cleared IX), and `divc` (0xA174) divides {IX, A} by the divisor of the last division, the quotient byte to A / RA and the remainder to IX - a long division of any width by a 16-bit divisor in one `divc` per byte (SDCC's 64-bit division is a 20K-instruction bit-serial loop); the divider is a restoring one now, 16 clocks | `lisa_div.v`, `lisa_core.v` op_divc | done: sdcc_test/test_divc (lisa_sim --rev2, the testbench) |
-| 22 | Bank registers (an extension): the upper 16K of the code and of the data space a window on 64 code / 16 data banks, 2 MB / 256 KB | `lisa_periph.v` 0x15-0x17, `tt_um_lisa.v`, `inst_stream.v`, `data_cache8.v`, `lisa_core.v` d_sp | done: test/progs/bank.c (make BANK=1), lisa_sim --rev2, sdcc __banked (sdcc_test/test_bank on the testbench and the Arty) |
-| 29 | An extension: a SPI master on its own pins - the core reaches a SPI flash or SD card without the QSPI bus its instructions come from (a fifth QSPI client could deadlock on the core's own fetch) - on the mux-2 pins or shared with the TTLC's pins under an interlock with the scan | `lisa_spi.v`, `lisa_periph.v` 0x28-0x2B, `lisa_io_mux.v`, `tt_um_lisa.v` ttlc_scan_pend | done: test/progs/spi.c (make SPIM=1: test_spi, test_spi_ttlc), sdcc_test/test_spiflash (lisa_sim --rev3 --spi-flash) |
+| 22 | Bank registers (an extension): the upper 16K of the code and of the data space a window on 64 code / 16 data banks, 2 MB / 256 KB | `lisa_periph.v` 0x15-0x17, `tt_um_pettit_lisa.v`, `inst_stream.v`, `data_cache8.v`, `lisa_core.v` d_sp | done: test/progs/bank.c (make BANK=1), lisa_sim --rev2, sdcc __banked (sdcc_test/test_bank on the testbench and the Arty) |
+| 29 | An extension: a SPI master on its own pins - the core reaches a SPI flash or SD card without the QSPI bus its instructions come from (a fifth QSPI client could deadlock on the core's own fetch) - on the mux-2 pins or shared with the TTLC's pins under an interlock with the scan | `lisa_spi.v`, `lisa_periph.v` 0x28-0x2B, `lisa_io_mux.v`, `tt_um_pettit_lisa.v` ttlc_scan_pend | done: test/progs/spi.c (make SPIM=1: test_spi, test_spi_ttlc), sdcc_test/test_spiflash (lisa_sim --rev3 --spi-flash) |
 
 Status: open / fixed (the test that shows it, in test/: a program of test/progs, a cocotb test of test/core or the fops bench).
 
@@ -262,7 +262,7 @@ and 48 inputs); then the Commander's 16-sample mode on the chip.
   existing emulator and Pmod, and the Pmods use the 165.
 * `ttlc_halt = !run | step` blocked the fetch whose `ttlc_i_ready` would clear
   `step`. Now (`debug_regs.v`) the step lifts the halt until one fetch
-  (`ttlc_exec`, from `tt_um_lisa.v`), then clears run; a run or step written
+  (`ttlc_exec`, from `tt_um_pettit_lisa.v`), then clears run; a run or step written
   passes a breakpoint on the current PC (`ttlc_skip`).
 * The breakpoint compare used to clear `run` a clock after the PC reached the
   address; now `ttlc_halt` is combinational on the match, so the TTLC halts
@@ -386,7 +386,7 @@ upper 12 bits a jump address that only `jmp` uses - the 6x2 elevator (847
 lines) has no `jmp` at all - behind a four-line instruction cache.
 
 **RTL** (2026-10-17, Ken's design): `src/ttlc_fetch.v` replaces
-`ttlc_inst_cache.v` and the PC / stack logic of `tt_um_lisa.v`.
+`ttlc_inst_cache.v` and the PC / stack logic of `tt_um_pettit_lisa.v`.
 Instructions are 12-bit slots, four to a group of three words; `jmp` takes
 two slots, the second its 12-bit target group; the PC is {group, slot} (14
 bits, as are the stack's entries, with a valid bit); two groups are
@@ -433,7 +433,7 @@ reaches the period, the remainder kept), so the 16 rising edges a bit the
 receiver and transmitter count land within a clock of where they belong,
 whatever the period.  The divider pins keep their meaning (32 x (b_div +
 1)); the reset default is 416 clocks as before.  `brg_div` is 14 bits
-through `debug_ctrl.v` and `tt_um_lisa.v`.
+through `debug_ctrl.v` and `tt_um_pettit_lisa.v`.
 
 **Test.** test_autobaud (test/test.py): the testbench UART's bit set to
 288, 300, 434, 109, 57 and 32 clocks in turn (tb.v's `bitclks`), the chip
@@ -501,7 +501,7 @@ CB, DB.
 
 **RTL.** `lisa_periph.v`: the registers, read back with the unused bits zero.
 `lisa_core.v`: `d_sp`, the data address is SP-relative (`sp_sum` or `sp_addr`
-in the `d_addr` mux).  `tt_um_lisa.v`: `core_i_paddr` = `{CB or 0,
+in the `d_addr` mux).  `tt_um_pettit_lisa.v`: `core_i_paddr` = `{CB or 0,
 PC[13:0]}` into the instruction stream, `d_bank_c` = 0 / `SB` / `DB`
 registered beside `d_addr_r` (and in `d_addr_good`), 20-bit words to the
 LISA1 flash address and 18-bit bytes to the LISA2 address.
@@ -654,7 +654,7 @@ switch banks.  Ken's idea: read the code memory as data.
 
 **RTL.** `lda (ix++)`, 0xA14C (the misc slot after `ldamode`): from its
 exec state the core asks the instruction bus for the word at IX[14:1]
-with `i_kfetch` up, which `tt_um_lisa.v` sends to bank KB (the constant
+with `i_kfetch` up, which `tt_um_pettit_lisa.v` sends to bank KB (the constant
 bank register, `lisa_periph.v` 0x1F, 6 bits, reset 0 = the lower half);
 the exec state waits for the stream (`k_ok` in `d_ok`), A takes the byte
 IX[0] selects, Z follows it, IX gains one with its condition bit kept.
@@ -746,7 +746,7 @@ for its heap and a stack in a bank shared with other stacks, or a bank of
 its own and then 24K less the stack as one contiguous heap; a stack in the
 data window works too (a thread's, from its group's heap).
 
-**RTL.** `tt_um_lisa.v`: `d_page_c[4:0]` = physical bits 17:13 of the
+**RTL.** `tt_um_pettit_lisa.v`: `d_page_c[4:0]` = physical bits 17:13 of the
 access (`{SB, addr[13]}`, `DB`, or 0 by address bits 14 and 13); `d_bank_c`
 is its upper four bits and `d_a13_c` bit 13, registered beside `d_addr_r`
 and in `d_addr_good`; the core's `d_sp` is no longer used.
@@ -847,7 +847,7 @@ TTLC's pins the 595 chains keep their own shift clock (uo[6]) and latch
 (uo[5]), so the SPI's clock never reaches them and they need nothing
 external; only their data lines are shared.
 
-**The interlock** (`tt_um_lisa.v`).  A scan drives uo[0..2] with the
+**The interlock** (`tt_um_pettit_lisa.v`).  A scan drives uo[0..2] with the
 outputs' bits and clocks them into the 595s, so the two cannot overlap:
 - CLAIM asks for the pins; OWNED is granted with no scan running
   (io_busy) or requested (FLAG_O, or one waiting), and kept until CLAIM is
@@ -1485,6 +1485,11 @@ Hardened as rc16 (2026-10-22, the hardening section); the Arty bitstream not reb
   (the worst path op_ldk_r -> pc[9] in the core, not the SPI).  Promoted
   2026-10-22 (Ken; the precheck left to the gds workflow): gds/, lef/,
   pnl/ are this run's; macro.json's anchor table stays rc15's.
+  The same day the top module became tt_um_pettit_lisa (the name
+  tt_um_lisa was taken on the ttsky26d shuttle): src/tt_um_pettit_lisa.v,
+  info.yaml, every reference; runs/macro-pettit re-hardened it with the
+  same recipe and came out identical (61852 instances, 70.5%, -6.8 ss,
+  clean), and gds/, lef/, pnl/ are its tt_um_pettit_lisa.* files.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
