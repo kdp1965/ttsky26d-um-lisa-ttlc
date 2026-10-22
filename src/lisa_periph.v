@@ -97,6 +97,13 @@ Address Map:
    0x25:       TX
    0x26:       CMD
 
+   SPI (RESPIN 29, lisa_spi.v)
+   ===
+   0x28:       DATA: write sends a byte, read the byte received
+   0x29:       CTRL: CS0, CS1, CPOL, CPHA, CLAIM, MISO select [6:5], IE
+   0x2A:       DIV: half an SCLK period is DIV + 1 clocks
+   0x2B:       STATUS: BUSY, DONE, OWNED, TTLC_WAIT
+
 ==========================================================================================
 */
 module lisa_periph
@@ -155,7 +162,17 @@ module lisa_periph
    output wire          scl_padoen_o,
    input  wire          sda_pad_i,
    output wire          sda_pad_o,
-   output wire          sda_padoen_o
+   output wire          sda_padoen_o,
+
+   // SPI (RESPIN 29, lisa_spi.v)
+   input  wire [3:0]    spi_miso_in,         // {ui_in[7], ui_in[2:0]}
+   output wire          spi_sclk,
+   output wire          spi_sclk_m3,         // SCLK on the TTLC's pins (moves only while owned)
+   output wire          spi_mosi,
+   output wire [1:0]    spi_cs_n,
+   input  wire          ttlc_scan_req,       // the TTLC wants a scan
+   input  wire          ttlc_scan_busy,      // a scan in progress
+   output wire          spi_owned            // the TTLC's mode-3 pins are the SPI's
 );
 
    reg   [15:0]         ms_count;
@@ -195,6 +212,8 @@ module lisa_periph
    wire                 sda_oen_n;
    wire                 scl_oen_n;
    wire                 i2c_irq;
+   wire  [7:0]          spi_d_o;
+   wire                 spi_irq;
 
 `ifdef WANT_UART2
    // UART
@@ -529,7 +548,7 @@ module lisa_periph
 
       // Int EN readback
       7'h0E:   d_o_r = int_en;
-      7'h0F:   d_o_r = {1'h0, i2c_irq, int_req};
+      7'h0F:   d_o_r = {spi_irq, i2c_irq, int_req};
 
       // UART read
       7'h10:   d_o_r = uart_rx_d;
@@ -605,7 +624,31 @@ module lisa_periph
    assign scl_padoen_o  = ~scl_oen_n;
    assign sda_padoen_o  = ~sda_oen_n;
 
-   assign d_o = d_o_r | i2c_d_o;
+   // ==============================================
+   // Instantiate the SPI master (RESPIN 29)
+   // ==============================================
+   lisa_spi i_lisa_spi
+   (
+      .clk          ( clk            ),
+      .rst_n        ( rst_n          ),
+      .d_addr       ( d_addr         ),
+      .d_i          ( d_i            ),
+      .d_periph     ( d_periph       ),
+      .d_we         ( d_we           ),
+      .d_rd         ( d_rd           ),
+      .d_o          ( spi_d_o        ),
+      .miso_in      ( spi_miso_in    ),
+      .sclk         ( spi_sclk       ),
+      .sclk_m3      ( spi_sclk_m3    ),
+      .mosi         ( spi_mosi       ),
+      .cs_n         ( spi_cs_n       ),
+      .scan_req     ( ttlc_scan_req  ),
+      .scan_busy    ( ttlc_scan_busy ),
+      .owned        ( spi_owned      ),
+      .irq          ( spi_irq        )
+   );
+
+   assign d_o = d_o_r | i2c_d_o | spi_d_o;
    // The requests to the core and INT_STATUS.  The timers' rollovers, the
    // port's edges and the TTLC's toggle are instants: latched (int_o_r) until
    // a 1 is written to their bit of INT_STATUS.  The UARTs' are states - a
@@ -623,7 +666,7 @@ module lisa_periph
    assign uart2_req = 1'b0;
 `endif
    assign int_req = {int_o_r[5:4], uart2_req, uart_req, int_o_r[1:0]};
-   assign int_o   = {1'h0, i2c_irq, int_req};
+   assign int_o   = {spi_irq, i2c_irq, int_req};
 
 `ifdef WANT_UART2
    lisa_uart i_lisa_uart_2

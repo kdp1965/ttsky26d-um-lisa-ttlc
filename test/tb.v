@@ -23,9 +23,15 @@ module tb
    output wire  [7:0]   porta_out,
    input  wire          ttlc_mode,          // ui_in[6:4] from the input chains
    input  wire  [47:0]  ttlc_in,            // the 48 inputs on the 74HC165 chains
-   output wire  [47:0]  ttlc_out            // the 48 outputs on the 74HC595 chains
+   output wire  [47:0]  ttlc_out,           // the 48 outputs on the 74HC595 chains
+   input  wire  [1:0]   spi_map,            // the SPI devices: 0 none, 1 mux-2 pins, 2 the TTLC's (mode 3)
+   output wire  [15:0]  spi_count0,         // bytes device 0 / 1 took
+   output wire  [15:0]  spi_count1,
+   output wire  [15:0]  spi_collide,        // TTLC shift clocks inside an SPI transaction
+   output wire  [31:0]  ttlc_differ         // clocks the 48 outputs differed from the inputs
 );
    wire     [2:0] ttlc_din;
+   wire           spi_miso;           // the SPI devices' MISO (ui_in[2])
 
    reg            clk = 1'b0;
    always #10 clk = ~clk;
@@ -263,7 +269,8 @@ module tb
    // Assign the port I/O; with ttlc_mode the input chains drive ui_in[6:4]
    // ==========================================================================
    assign porta_out = uo_out;
-   assign ui_in[2:0] = porta_in[2:0];
+   assign ui_in[1:0] = porta_in[1:0];
+   assign ui_in[2]   = spi_map != 2'h0 ? spi_miso : porta_in[2];
    assign ui_in[7]   = porta_in[7];
    assign ui_in[6:4] = ttlc_mode ? ttlc_din : porta_in[6:4];
 
@@ -283,6 +290,56 @@ module tb
       .outputs ( ttlc_out     )
    );
    
+   // ==========================================================================
+   // The SPI master's devices (RESPIN 29): device 0 (CPHA 0) answers each
+   // byte with the complement of the one before, device 1 (CPHA 1) with it
+   // plus one; CPOL is the clock's level when the select falls.  On the
+   // mux-2 pins SCLK uo[5], MOSI uo[6], CS0 uo[3], CS1 uo[7]; in mode 3
+   // SCLK uo[7], MOSI uo[0], CS0 uo[1], CS1 uo[2] - shared with the 595
+   // chains' data, so the selects follow the TTLC's data during its scans
+   // (no SCLK then).  MISO on ui_in[2].  spi_collide counts the TTLC's shift
+   // clocks (uo[6]) inside a transaction: the interlock keeps it 0.
+   // ==========================================================================
+   wire           spi_sck  = spi_map == 2'h2 ? uo_out[7] : uo_out[5];
+   wire           spi_mosi = spi_map == 2'h2 ? uo_out[0] : uo_out[6];
+   wire           spi_cs0  = spi_map == 2'h0 ? 1'b1 : spi_map == 2'h2 ? uo_out[1] : uo_out[3];
+   wire           spi_cs1  = spi_map == 2'h0 ? 1'b1 : spi_map == 2'h2 ? uo_out[2] : uo_out[7];
+   wire           spi_act0, spi_act1;
+   reg   [15:0]   collide = 16'h0;
+   pullup (spi_miso);
+
+   spi_dev #(.RESET(8'h96), .CPHA(0), .INC(0)) i_spi_dev0
+   (
+      .cs_n ( spi_cs0 ), .sck ( spi_sck ), .mosi ( spi_mosi ), .miso ( spi_miso ),
+      .active ( spi_act0 ), .count ( spi_count0 )
+   );
+   spi_dev #(.RESET(8'h3c), .CPHA(1), .INC(1)) i_spi_dev1
+   (
+      .cs_n ( spi_cs1 ), .sck ( spi_sck ), .mosi ( spi_mosi ), .miso ( spi_miso ),
+      .active ( spi_act1 ), .count ( spi_count1 )
+   );
+   always @(uo_out[6])
+      if (spi_map == 2'h2 && (spi_act0 || spi_act1))
+      begin
+         if (collide < 4)
+            $display("%t spi collide: uo %02x active %b%b", $time, uo_out, spi_act1, spi_act0);
+         collide = collide + 16'h1;
+      end
+   assign spi_collide = collide;
+   // switching the devices to other pins is no clock edge
+   always @(spi_map)
+   begin
+      #1;                                  // after the clock wire has switched
+      i_spi_dev0.active = 1'b0;
+      i_spi_dev1.active = 1'b0;
+   end
+
+   reg   [31:0]   differ = 32'h0;
+   always @(posedge clk)
+      if (ttlc_out != ttlc_in)
+         differ <= differ + 32'h1;
+   assign ttlc_differ = differ;
+
    // ==========================================================================
    // Instantiate a SPI flash
    // ==========================================================================
@@ -357,4 +414,87 @@ module ttlc_chains
          for (k = 0; k < 3; k = k + 1)
             sr165[k] <= {sr165[k][14:0], 1'b0};
    assign din = {sr165[2][15], sr165[1][15], sr165[0][15]};
+endmodule
+
+
+// A SPI device for the SPI master's test (RESPIN 29): it answers each byte
+// with the complement of the byte before (INC 0) or that byte plus one
+// (INC 1), the first byte of a select with RESET.  CPOL is the clock's
+// level when the select falls; CPHA 0 samples MOSI on the leading edges and
+// shifts MISO on the trailing ones, CPHA 1 the other way round.  active: the
+// select is low and the clock has moved in it (a transaction).
+module spi_dev
+#(
+   parameter [7:0] RESET = 8'h00,
+   parameter       CPHA  = 0,
+   parameter       INC   = 0
+)
+(
+   input  wire          cs_n,
+   input  wire          sck,
+   input  wire          mosi,
+   output wire          miso,
+   output reg           active,
+   output reg  [15:0]   count
+);
+   reg         cpol;
+   reg  [7:0]  sr_in;
+   reg  [7:0]  sr_out;
+   reg  [7:0]  next;
+   reg  [3:0]  n;
+   reg         first;
+
+   initial begin
+      cpol = 1'b0; count = 16'h0; active = 1'b0; next = RESET;
+      sr_out = RESET; n = 4'h0; first = 1'b1; sr_in = 8'h0;
+   end
+
+   assign miso = cs_n ? 1'bz : sr_out[7];
+
+   always @(negedge cs_n)
+   begin
+      cpol   = sck;
+      n      = 4'h0;
+      first  = 1'b1;
+      next   = RESET;
+      sr_out = RESET;
+   end
+   always @(posedge cs_n)
+      active = 1'b0;
+
+   task take;
+   begin
+      sr_in = {sr_in[6:0], mosi};
+      n = n + 4'h1;
+      if (n == 4'h8)
+      begin
+         n     = 4'h0;
+         count = count + 16'h1;
+         next  = INC ? sr_in + 8'h1 : ~sr_in;
+      end
+   end
+   endtask
+
+   // the clock's edges: leading away from CPOL, trailing back to it
+   always @(sck)
+      if (!cs_n)
+      begin
+         active = 1'b1;
+         if (sck != cpol)
+         begin
+            if (CPHA == 0)
+               take;
+            else if (first)
+               first = 1'b0;
+            else
+               sr_out = (n == 4'h0) ? next : {sr_out[6:0], 1'b0};
+         end
+         else
+         begin
+            if (CPHA == 0)
+               sr_out = (n == 4'h0) ? next : {sr_out[6:0], 1'b0};
+            else
+               take;
+         end
+      end
 endmodule

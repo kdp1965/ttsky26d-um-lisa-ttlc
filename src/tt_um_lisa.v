@@ -348,7 +348,6 @@ module tt_um_lisa
    wire                 data_in;       // Data input for writes
    wire                 data_out;      // Data output pin, continuously assigned
    wire                 rr_value;      // RR output from MC14500B
-//   wire [31:0]          temp_storage;  // Temp storage bits
    wire [47:0]          input_pins;    // External input pins
    reg  [47:0]          output_pins;   // Driven from internal registers, renumbered
 
@@ -360,13 +359,20 @@ module tt_um_lisa
    wire [2:0]           ttlc_in_data;
    wire                 psram_mod;           // 0x1c bit 10: the TT QSPI Pmod's uio[7:4] (lisa_io_mux.v)
    wire [1:0]           clk_div;             // Clock division factor control (00: /2, 01: /4, 10: /8, 11: /16)
-//   wire [1:0]           input_depth;
-//   wire [1:0]           output_depth;
    wire                 io_busy;
    reg                  io_busy_r;
    wire [7:0]           ttlc_to_lisa;
    wire [7:0]           lisa_to_ttlc;
    wire                 ttlc_int;
+
+   // The SPI master (RESPIN 29, lisa_spi.v) and its interlock with the scan
+   wire                 spi_sclk;
+   wire                 spi_sclk_m3;         // ... on the TTLC's pins
+   wire                 spi_mosi;
+   wire [1:0]           spi_cs_n;
+   wire                 spi_owned;           // the TTLC's mode-3 pins are the SPI's
+   wire                 ttlc_scan_req;       // FLAG_O, or a scan waiting for them
+   reg                  ttlc_scan_pend;
 
    // ==========================================================================
    // Processor Instruction RAM bus
@@ -664,7 +670,17 @@ module tt_um_lisa
       .scl_padoen_o              ( scl_padoen_o              ),
       .sda_pad_i                 ( sda_pad_i                 ),
       .sda_pad_o                 ( sda_pad_o                 ),
-      .sda_padoen_o              ( sda_padoen_o              )
+      .sda_padoen_o              ( sda_padoen_o              ),
+
+      // SPI master (RESPIN 29)
+      .spi_miso_in               ( {ui_in[7], ui_in[2:0]}    ),
+      .spi_sclk                  ( spi_sclk                  ),
+      .spi_sclk_m3               ( spi_sclk_m3               ),
+      .spi_mosi                  ( spi_mosi                  ),
+      .spi_cs_n                  ( spi_cs_n                  ),
+      .ttlc_scan_req             ( ttlc_scan_req             ),
+      .ttlc_scan_busy            ( io_busy                   ),
+      .spi_owned                 ( spi_owned                 )
    );
 
    // ==========================================================================
@@ -900,8 +916,6 @@ module tt_um_lisa
       .inst_cache_invalidate_ack ( inst_cache_invalidate_ack ),
       .ttlc_cache_invalidate     ( ttlc_cache_invalidate     ),
       .ttlc_cache_invalidate_ack ( ttlc_cache_invalidate_ack ),
-//      .input_depth               ( input_depth               ),
-//      .output_depth              ( output_depth              ),
       .clk_div                   ( clk_div                   ),
 
       // TTLC Debug signals
@@ -1021,6 +1035,11 @@ module tt_um_lisa
       .ttlc_io_shiftclk          ( ttlc_io_shiftclk          ),
       .ttlc_out_data             ( ttlc_out_data             ),
       .ttlc_in_data              ( ttlc_in_data              ),
+      .spi_sclk                  ( spi_sclk                  ),
+      .spi_sclk_m3               ( spi_sclk_m3               ),
+      .spi_mosi                  ( spi_mosi                  ),
+      .spi_cs_n                  ( spi_cs_n                  ),
+      .spi_owned                 ( spi_owned                 ),
       .ttlc_reset                ( ttlc_reset                ),
       .ttlc_shiftclk             ( ttlc_shiftclk             ),
 
@@ -1047,10 +1066,23 @@ module tt_um_lisa
    always @(posedge clk)
    begin
       if (~rst_n)
-         io_busy_r <= 1'b0;
+      begin
+         io_busy_r      <= 1'b0;
+         ttlc_scan_pend <= 1'b0;
+      end
       else
-         io_busy_r <= io_busy;
+      begin
+         io_busy_r      <= io_busy;
+         ttlc_scan_pend <= ttlc_scan_req & spi_owned;
+      end
    end
+
+   // The interlock with the SPI master (RESPIN 29): while it owns the mode-3
+   // pins (uo[2:0] carry its MOSI and selects) a scan the nopo requests is
+   // held - FLAG_O is a pulse, ttlc_scan_pend keeps it - and so is the ICU;
+   // the scan starts the clock the pins come back.  The SPI is granted them
+   // only with no scan running or requested.
+   assign ttlc_scan_req = FLAG_O | ttlc_scan_pend;
 
    // ==========================================================================
    // Instantiate the MC14500B core
@@ -1105,7 +1137,7 @@ module tt_um_lisa
 
    // The core takes the presented slot when nothing holds it: an I/O scan
    // (and the clock after), the debugger, or the scan a nopo just started
-   assign mc14500_run  = ttlc_i_ready && !io_busy && !io_busy_r && !ttlc_halt && !FLAG_O;
+   assign mc14500_run  = ttlc_i_ready && !io_busy && !io_busy_r && !ttlc_halt && !FLAG_O && !ttlc_scan_pend;
 
    // ==========================================================================
    // I/O for the MC14500B
@@ -1124,7 +1156,6 @@ module tt_um_lisa
       .port_out                  ( ttlc_to_lisa              ),
       .port_in                   ( lisa_to_ttlc              ),
       .ttlc_int                  ( ttlc_int                  )
-//      .temp_storage              ( temp_storage              )
    );
 
    assign rr_value  = RR;
@@ -1142,10 +1173,8 @@ module tt_um_lisa
       .rst_n                     ( rst_n_r[2]                ), // System reset
       .data_in                   ( ttlc_in_data              ), // Serial data inputs
       .output_buffer             ( output_pins               ), // Input to the module, drives the serial output
-      .clk_div                   ( clk_div                   ), // Clock division factor control                              ( 00: /2, 01: /4, 10: /8, 11: /16 )
+      .clk_div                   ( clk_div                   ), // Clock division factor control  ( 00: /2, 01: /4, 10: /8, 11: /16 )
       .start                     ( ttlc_io_start             ), // Start the I/O transfer
-//      .input_depth               ( input_depth               ),
-//      .output_depth              ( output_depth              ),
       .io_busy                   ( io_busy                   ), // Indicates I/O transfer complete
       .data_out                  ( ttlc_out_data             ), // Serial data outputs
       .latch                     ( ttlc_io_latch             ), // Latch signal for external register control
@@ -1153,7 +1182,7 @@ module tt_um_lisa
       .input_buffer              ( input_pins                )  // Output from the module, captures the serial input
    );
 
-   assign ttlc_io_start = FLAG_O;
+   assign ttlc_io_start = ttlc_scan_req & !spi_owned;
 
 endmodule // tt_um_lisa
 

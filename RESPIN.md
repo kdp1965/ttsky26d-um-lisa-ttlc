@@ -39,6 +39,7 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 26 | An extension: `lda (ix++)` (0xA14C) reads byte IX[0] of the code word at {KB, IX[14:1]} and increments IX, KB the constant bank register 0x1F - constants packed two to a word in any bank (the `ldi; ret` pair per byte took 4 flash bytes and the common area) | `lisa_core.v` op_ldk, `lisa_periph.v` 0x1F, `tt_um_lisa.v` core_i_paddr | done: sdcc_test/test_ldk (lisa_sim --rev2, the testbench) |
 | 27 | An extension: the divider's second result and a chained step. `div` leaves the remainder in IX (`rem` the quotient; TT07 and rc10 cleared IX), and `divc` (0xA174) divides {IX, A} by the divisor of the last division, the quotient byte to A / RA and the remainder to IX - a long division of any width by a 16-bit divisor in one `divc` per byte (SDCC's 64-bit division is a 20K-instruction bit-serial loop); the divider is a restoring one now, 16 clocks | `lisa_div.v`, `lisa_core.v` op_divc | done: sdcc_test/test_divc (lisa_sim --rev2, the testbench) |
 | 22 | Bank registers (an extension): the upper 16K of the code and of the data space a window on 64 code / 16 data banks, 2 MB / 256 KB | `lisa_periph.v` 0x15-0x17, `tt_um_lisa.v`, `inst_stream.v`, `data_cache8.v`, `lisa_core.v` d_sp | done: test/progs/bank.c (make BANK=1), lisa_sim --rev2, sdcc __banked (sdcc_test/test_bank on the testbench and the Arty) |
+| 29 | An extension: a SPI master on its own pins - the core reaches a SPI flash or SD card without the QSPI bus its instructions come from (a fifth QSPI client could deadlock on the core's own fetch) - on the mux-2 pins or shared with the TTLC's pins under an interlock with the scan | `lisa_spi.v`, `lisa_periph.v` 0x28-0x2B, `lisa_io_mux.v`, `tt_um_lisa.v` ttlc_scan_pend | done: test/progs/spi.c (make SPIM=1: test_spi, test_spi_ttlc), sdcc_test/test_spiflash (lisa_sim --rev3 --spi-flash) |
 
 Status: open / fixed (the test that shows it, in test/: a program of test/progs, a cocotb test of test/core or the fops bench).
 
@@ -800,6 +801,91 @@ between transactions, mode 1 on the flash); the Pmod's flash and PSRAM
 run at clk/4 with a 1-clock gap (`SPI=0x0811`, twice the memory
 throughput; clk/2 fails in either mode), the testbench at clk/2.
 
+## 29. A SPI master on its own pins
+
+**Why.** Not a silicon issue: an extension (Ken, 2026-10-21).  The core
+needs a flash (or an SD card) it can write for a file system.  A fifth
+client on the QSPI arbiter was looked at first and set aside: a transaction
+the core feeds or drains word by word holds the bus its own next
+instruction fetch waits for, and a flash busy with a program or erase
+answers no fetch from it.  A small SPI master on pins of its own has
+neither problem: the core polls a register, and the bus it fetches from is
+never involved.
+
+**Registers** (`src/lisa_spi.v`; `lisa_periph.v` 0x28-0x2B).
+
+| Address | Register | |
+|---|---|---|
+| 0x28 | DATA | a write sends the byte (ignored while BUSY); a read returns the byte received and clears DONE |
+| 0x29 | CTRL | [0] CS0, [1] CS1 asserted (the pins are active low), [2] CPOL, [3] CPHA, [4] CLAIM the TTLC's pins, [6:5] MISO from ui_in[0], [1], [2] or [7], [7] IE |
+| 0x2A | DIV | half an SCLK period is DIV + 1 clocks (reset 3): core/2 to core/512, about 98 kHz at 50 MHz for an SD card's initialization |
+| 0x2B | STATUS | [0] BUSY (a byte sending, or waiting for the pins), [1] DONE, [2] OWNED, [3] TTLC_WAIT |
+
+DONE with IE is interrupt source 7 (INT_STATUS bit 7, vector 8), a level
+like the UARTs': reading or writing DATA ends it.  A byte takes
+16 x (DIV + 1) clocks plus two.  CPHA 0 presents bit 7 before the first
+edge, samples MISO on the leading edges and shifts on the trailing ones;
+CPHA 1 shifts on the leading edges after the first and samples on the
+trailing ones.  MISO is sampled as the edge is made, half a period after
+the device's shift; ui_in[7] is the autobaud's baud_set at reset, so a
+device holding MISO high there sets the baud divider: prefer ui_in[0..2].
+
+**Pins** (`lisa_io_mux.v`; the output mux register 0x1b per pin).
+
+| Pin | mux 0 (default) | mux 2 (periph_sel1) | mux 3 (periph_sel2, the TTLC) |
+|---|---|---|---|
+| uo[0] | | | MOSI while OWNED, else the 595 chain 0's data |
+| uo[1] | | | CS0 while OWNED, else chain 1's data |
+| uo[2] | | | CS1 while OWNED, else chain 2's data |
+| uo[3] | | CS0 | |
+| uo[5] | | SCLK | |
+| uo[6] | | MOSI | |
+| uo[7] | CS1 | | SCLK |
+
+uo[7] under mux 0 was 0; it is CS1 now, high at reset.  On the
+TTLC's pins the 595 chains keep their own shift clock (uo[6]) and latch
+(uo[5]), so the SPI's clock never reaches them and they need nothing
+external; only their data lines are shared.
+
+**The interlock** (`tt_um_lisa.v`).  A scan drives uo[0..2] with the
+outputs' bits and clocks them into the 595s, so the two cannot overlap:
+- CLAIM asks for the pins; OWNED is granted with no scan running
+  (io_busy) or requested (FLAG_O, or one waiting), and kept until CLAIM is
+  cleared and the byte in flight is out.  A byte written while CLAIM is set
+  and not yet granted waits for the grant.
+- A scan the TTLC requests while the pins are owned waits:
+  `ttlc_scan_pend` keeps the request (FLAG_O is a one-clock pulse) and
+  holds the ICU (`mc14500_run`); the scan starts the clock the pins come
+  back.  TTLC_WAIT shows it, so a driver can release the pins between
+  transactions; holding them stretches the PLC's loop by that long.
+- The CS lines carry the TTLC's data while not owned, so they can select a
+  device then, with no clock: harmless to a flash or an SD card, not to a
+  part that acts on a select's falling edge.  The SCLK pin of mode 3 moves
+  only from the clock after the grant to the release (`sclk_m3`), so a
+  CPOL written before the grant does not make an edge under such a select.
+  Claim with the selects deasserted, assert them once OWNED.
+
+**Test.** `test/progs/spi.c` on the chip bench (`make SPIM=1`) against two
+devices in `tb.v` (`spi_dev`: device 0 CPHA 0 answers each byte with the
+complement of the one before, device 1 CPHA 1 with it plus one; CPOL from
+the clock's level at the select).  test_spi: the mux-2 pins, the
+dividers 0, 1 and 5, both polarities and phases, the readback, DONE and its
+request.  test_spi_ttlc: the same on the TTLC's pins with the loopback
+running, then 24 more transactions; the 48 outputs never leave the inputs,
+no TTLC shift clock falls inside a transaction (`spi_collide`), the program
+sees TTLC_WAIT (in 31 of its 61 transactions), and the loopback follows new
+inputs after.  With the interlock taken out the test fails (1287 shift
+clocks inside transactions).  Verilator and icarus.
+`lisa-tools/lisa_sim` (`spi.h`): the registers, the byte time, the
+interrupt and a SPI NOR flash on CS0 or CS1 (`--spi-flash FILE[,SIZE]`,
+the W25Q128JV's commands, written back at exit; the TTLC's pins granted at
+once, there is no TTLC); `sdcc_test/test_spiflash.c` (make check REV3=1):
+the JEDEC ID, the write enable, a 4K erase, programs that wrap in their
+page, read and fast read.
+
+**Cost.** About 47 flops and the muxes (rc15's area is 70% of the tile).
+Hardened as rc16 (2026-10-22, the hardening section); the Arty bitstream not rebuilt.
+
 ## Verification (test/, see test/README.md)
 
 * `test/core/`: tb_core.v, the core with the chip's registered data bus, the
@@ -1392,6 +1478,13 @@ throughput; clk/2 fails in either mode), the testbench at clk/2.
   the gds workflow): gds/, lef/, pnl/ are rc15's, macro.json's anchor
   table its placement (placements/macro-rc15_final_cells.json); rc12's
   table stays as the overlay trial_anchor_rc12.json.  Tag rc15.
+* rc16 (2026-10-22, runs/macro-spi-free - RESPIN 29, the SPI master on its
+  own pins with the TTLC-pin interlock; a free draw with the art): 61852
+  instances, 70.5%, 900K um of wire, routing DRC / Magic DRC / LVS /
+  antenna 0, hold +0.077, setup +5.59 nominal, -6.8 at the slow max corner
+  (the worst path op_ldk_r -> pc[9] in the core, not the SPI).  Promoted
+  2026-10-22 (Ken; the precheck left to the gds workflow): gds/, lef/,
+  pnl/ are this run's; macro.json's anchor table stays rc15's.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception

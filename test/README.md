@@ -20,6 +20,9 @@ make TTLC=1 TTLC_IMAGE=$PWD/progs/ttlc_jump_test.hex   # the loopback through jm
 make SIM=icarus TTLC=1 TTLCTRACE=6000 TESTCASE=test_ttlc_trace [TTLCIN=0x3]   # log the TTLC's fetch per clock
 make BANK=1                   # the bank registers (RESPIN 22, the data map of 28): progs/bank.c with routines in banks 1-3, the cache on
 make OVERRUN=1                # the UART receive FIFO's overrun flag (RESPIN 14): progs/uartov.c
+make SPIM=1                   # the SPI master (RESPIN 29): progs/spi.c against tb.v's two SPI
+                              # devices on the mux-2 pins, then on the TTLC's pins with the
+                              # loopback running (the interlock: no scan inside a transaction)
 make IHX=../../lisa-tools/sdcc_test/test_core.ihx [CACHE=1] [TIMEOUT=clocks]
 ./run_suite.sh chip REV2=1    # the SDCC suite's self-checking programs (the
                               # *_rev2.ihx of `make check REV2=1`: this RTL's

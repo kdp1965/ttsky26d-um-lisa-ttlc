@@ -63,6 +63,13 @@ SUCH DAMAGE.
 //    2'b10:  Peripheral select 1 (RP2040 SPI SRAM)
 //    2'b11:  Peripheral select 2 (Custom QSPI SRAM / QSPI FLASH / UART) board
 //
+//  The SPI master (RESPIN 29, lisa_spi.v):
+//    mux 2 (periph_sel1): uo[3] CS0, uo[5] SCLK, uo[6] MOSI; mux 0: uo[7] CS1
+//    mux 3 (periph_sel2, the TTLC's pins): uo[7] SCLK, and while the SPI owns them
+//               (CTRL CLAIM, granted between scans) uo[0] MOSI, uo[1] CS0,
+//               uo[2] CS1 in place of the TTLC's output data
+//    MISO: ui_in[0], [1], [2] or [7] (CTRL [6:5])
+//
 //   ui:
 //      3: Debug RX
 //
@@ -150,6 +157,13 @@ module lisa_io_mux
    input  wire [2:0]       ttlc_out_data,
    output wire [2:0]       ttlc_in_data,
 
+   // SPI master signals (RESPIN 29)
+   input  wire             spi_sclk,
+   input  wire             spi_sclk_m3,        // SCLK for uo[7] in mux 3: moves only while owned
+   input  wire             spi_mosi,
+   input  wire [1:0]       spi_cs_n,
+   input  wire             spi_owned,          // uo[2:0] are the SPI's in mux 3
+
    // UART signals
    input  wire             baud_ref,            // Baud rate reference clock
    input  wire             debug_tx,            // The UART TX data
@@ -233,7 +247,8 @@ module lisa_io_mux
    assign out_default[0] = baud_ref;
    assign out_default[3:1] = ena ? uio_in[3:1] : 3'h0;
    assign out_default[4] = rx_sel == 2'h1 ? debug_tx : 1'b1;
-   assign out_default[7:5] = 3'h0;
+   assign out_default[6:5] = 2'h0;
+   assign out_default[7]   = spi_cs_n[1];
 
    // Assign peripheral select 1 signals
 `ifdef WANT_UART2
@@ -245,21 +260,21 @@ module lisa_io_mux
    assign periph_sel1[1] = 1'b0;
    assign periph_sel1[2] = 1'b0;
 `endif
-   assign periph_sel1[3] = 1'b0;
+   assign periph_sel1[3] = spi_cs_n[0];
    assign periph_sel1[4] = rx_sel == 2'h1 ? debug_tx : 1'b1;
-   assign periph_sel1[5] = 1'b0;
-   assign periph_sel1[6] = 1'b0;
+   assign periph_sel1[5] = spi_sclk;
+   assign periph_sel1[6] = spi_mosi;
    assign periph_sel1[7] = uart2_tx;
 
    // Assign peripheral select 2 signals
-   assign periph_sel2[0] = ttlc_out_data[0];
-   assign periph_sel2[1] = ttlc_out_data[1];
-   assign periph_sel2[2] = ttlc_out_data[2];
+   assign periph_sel2[0] = spi_owned ? spi_mosi    : ttlc_out_data[0];
+   assign periph_sel2[1] = spi_owned ? spi_cs_n[0] : ttlc_out_data[1];
+   assign periph_sel2[2] = spi_owned ? spi_cs_n[1] : ttlc_out_data[2];
    assign periph_sel2[3] = ttlc_reset;
    assign periph_sel2[4] = rx_sel == 2'h1 ? debug_tx : 1'b0;
    assign periph_sel2[5] = ttlc_io_latch;
    assign periph_sel2[6] = ttlc_io_shiftclk | ttlc_shiftclk;
-   assign periph_sel2[7] = 1'b0;
+   assign periph_sel2[7] = spi_sclk_m3;
    
    assign ttlc_in_data = ui_in[6:4];
 

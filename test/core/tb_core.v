@@ -346,7 +346,15 @@ module tb_core;
       .scl_padoen_o       (                 ),
       .sda_pad_i          ( 1'b1            ),
       .sda_pad_o          (                 ),
-      .sda_padoen_o       (                 )
+      .sda_padoen_o       (                 ),
+      .spi_miso_in        ( 4'hf            ),
+      .spi_sclk           (                 ),
+      .spi_sclk_m3        (                 ),
+      .spi_mosi           (                 ),
+      .spi_cs_n           (                 ),
+      .ttlc_scan_req      ( 1'b0            ),
+      .ttlc_scan_busy     ( 1'b0            ),
+      .spi_owned          (                 )
    );
 
    // the console input: a byte stays until the program reads it

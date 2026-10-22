@@ -27,7 +27,7 @@ SRC_DIR = $(PWD)/../src
 # so only one of them can be compiled).
 PROJECT_SOURCES  = tt_um_lisa.v RAM32.v
 PROJECT_SOURCES += lisa_core.v lisa_dbg.v lisa_div.v lisa_periph.v lisa_io_mux.v
-PROJECT_SOURCES += lisa_qqspi.v lisa_qspi_controller.v lisa_rx8n.v lisa_tx8n.v lisa_i2c.v
+PROJECT_SOURCES += lisa_qqspi.v lisa_qspi_controller.v lisa_rx8n.v lisa_tx8n.v lisa_i2c.v lisa_spi.v
 PROJECT_SOURCES += debug_ctrl.v debug_autobaud.v debug_brg.v debug_regs.v
 PROJECT_SOURCES += data_cache8.v inst_stream.v
 PROJECT_SOURCES += i2c_master_byte_ctrl.v i2c_master_bit_ctrl.v lisa_uart.v
@@ -87,6 +87,11 @@ else ifneq ($(BANK),)
 # make BANK=1: the bank registers (RESPIN 22) - progs/bank.c with a routine in
 # code banks 1, 2, 3 (progs/bank_test.hex), the data cache on
 PLUSARGS += +FIRMWARE=$(PWD)/progs/bank_test.hex +PROGRAM=bank_test.hex +BANK
+else ifneq ($(SPIM),)
+# the SPI master (RESPIN 29): progs/spi.c against the testbench's two
+# devices on the mux-2 pins, then on the TTLC's pins with the TTLC
+# running its loopback (progs/spi_test.hex: spi at 0, the loopback at 0x10000)
+PLUSARGS += +FIRMWARE=$(PWD)/progs/spi_test.hex +PROGRAM=spi_test.hex +SPIM
 else ifneq ($(TTLC),)
 # TTLC_IMAGE=<hex>: another flash image (the TTLC program at byte 0x10000);
 # TTLCTRACE=<clocks> logs the TTLC's fetch (SIM=icarus)

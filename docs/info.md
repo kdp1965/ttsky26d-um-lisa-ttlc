@@ -44,6 +44,7 @@ The following is a block diagram of the design:
    - 8-bit Output port (PORTB)
    - 4-bit BIDIR port (PORTC)
    - I2C Master controller
+   - SPI Master controller (two chip selects, its own pins or shared with the TTLC's)
    - Hardware 8x8 integer multiplier
    - Hardware 16/8 or 16/16 integer divider
    - Hardware Brain Float 16 (BF16) Multiply/Divide/Add/Negate/ItoF/FtoI
@@ -556,6 +557,80 @@ opcodes for things like setting arithemetic mode, complimenting the C flag, etc.
  | txa     | acc <= IX[L]  | 1010_0000_0001_00xx | Transfer IX[7:0] to acc   |
  | txau    | acc <= IX[H]  | 1010_0000_0001_10xx | Transfer IX[14:0] to acc  |
 
+### Floating Point (BF16) Operations
+
+LISA has a small hardware floating point unit that works on Brain Float 16 (BF16) numbers.  BF16 is simply
+the upper 16 bits of an IEEE-754 32-bit float ... 1 sign bit, 8 exponent bits and 7 fraction bits.  So it
+has the same range as a regular C float (about 1e-38 to 3e38), just with fewer digits of precision (2 to 3
+decimal digits), and converting to / from a 32-bit float is just dropping / adding the lower 16 bits.
+
+The FPU has five 16-bit registers:
+
+   - facc: the floating point accumulator.  Every operation leaves its result here.
+   - f0 - f3: four floating point registers used as the 2nd operand (selected by the 'ff' bits in the opcode).
+
+There are no load / store opcodes for the floating point registers.  Instead, data gets in and out through
+the 8-bit accumulator one byte at a time using 'taf' (A to facc) and 'tfa' (facc to A), and the
+f0 - f3 registers are loaded by swapping them with facc using 'fswap'.  So to multiply two numbers
+the code loads the first one into facc, swaps it into f0, loads the second into facc and then does the
+multiply:
+
+```
+    lda    a_lo        ; First operand to f0
+    taf    0
+    lda    a_hi
+    taf    1
+    fswap  f0
+    lda    b_lo        ; Second operand to facc
+    taf    0
+    lda    b_hi
+    taf    1
+    fmul   f0          ; facc <= facc * f0
+    tfa    0           ; Read the result back
+    sta    r_lo
+    tfa    1
+    sta    r_hi
+```
+
+All of the floating point opcodes are predicated by the cond latch just like the other opcodes, and
+they all complete in a single instruction cycle except for 'fdiv', which holds the processor for the
+few clocks the divider takes.  The amode register (see 'The Control Registers') controls two things:
+
+   - amode[1]: Selects signed (1) or unsigned (0) 16-bit integers for 'itof' and 'ftoi'.
+   - amode[2]: Selects round toward zero (1) or round to nearest even (0) for 'fadd' and 'fdiv'.
+
+ | Opcode  | Operation        | Encoding            | Description                        |
+ | ------- | ---------------- | ------------------- | ---------------------------------- |
+ | taf     | facc[h] <= A     | 1010_0001_1110_001h | Load half of facc (h=1 upper) from A |
+ | tfa     | A <= facc[h]     | 1010_0001_1110_000h | Load A from half of facc (h=1 upper) |
+ | fswap   | facc <=> fx      | 1010_0001_1111_00ff | Exchange facc with f0 - f3         |
+ | fneg    | fx <= -fx        | 1010_0001_1110_11ff | Negate f0 - f3 (flips the sign bit)|
+ | fadd    | facc += fx       | 1010_0001_1110_10ff | Add fx to facc                     |
+ | fmul    | facc *= fx       | 1010_0001_1110_01ff | Multiply facc by fx                |
+ | fdiv    | facc /= fx       | 1010_0001_1111_10ff | Divide facc by fx, C=1 if valid    |
+ | fcmp    | C,Z <= facc ? fx | 1010_0001_1111_01ff | Compare facc with fx               |
+ | itof    | facc <= float(facc) | 1010_0011_0010_0000 | Convert 16-bit integer to BF16  |
+ | ftoi    | facc <= int(facc)   | 1010_0011_0010_0001 | Convert BF16 to 16-bit integer  |
+ | fclr    | facc <= 0        | 1010_0011_0010_0010 | Clear facc                         |
+
+Subtraction is done with 'fneg' followed by 'fadd'.  Note that 'fneg' works on the fx register, not facc, so
+the value being subtracted is the one in f0 - f3.  A few details of the individual operations:
+
+   - fadd: Rounds per amode[2] and handles subnormal (denormal) numbers.
+   - fmul: Truncates the product (no rounding).  Subnormal inputs and results are flushed to zero.
+   - fdiv: Uses a two-step Goldschmidt iteration from a small reciprocal table and rounds per amode[2].  The
+     result can be off by one in the last bit now and then.  The C flag is set when the result is valid and
+     cleared for the infinity / NaN / divide by zero cases.
+   - fcmp: Z is set when the two values have the same bit pattern (so -0 and +0 compare unequal).  C is set
+     when facc > fx, with the signs taken into account.  The 'if' opcode can then be used to branch on the result.
+   - itof: Converts the 16-bit integer in facc (signed or unsigned per amode[1]), rounding half up.
+   - ftoi: Converts facc to a 16-bit integer in facc, truncating toward zero.  Values that are too big
+     saturate (65535 unsigned, 32767 / -32768 signed), and a negative value gives 0 in unsigned mode.
+
+To convert an integer, put it in facc with 'taf' (low byte, then high byte), do 'itof' or 'ftoi', and read
+the result back with 'tfa'.  The facc and f0 - f3 registers can also be read through the debug interface
+(registers 0x30 - 0x34), and they are all cleared to zero at reset.
+
 ## The Tiny Tapeout Logic Controller (TTLC)
 
 The second subsystem within this design is a small PLC type circuit.  It is architected around a 1-bit processor from 1977
@@ -588,6 +663,128 @@ once using current inputs, updates internal storage and outputs, then at the end
 and jump to zero.  Then during the I/O update / busy period, the processor (ICU) core is held idle
 at address zero until the I/O transaction is complete.
 
+## The SPI Master
+
+LISA has a byte-wide SPI master for a SPI flash, an SD card or any other SPI device, separate from the
+QSPI controller the instructions come from (so a long flash erase never stalls the instruction fetch).
+It has four peripheral registers:
+
+ | ADDR | Register | Description                                                                 |
+ | ---- | -------- | --------------------------------------------------------------------------- |
+ | 0x28 | DATA     | Write: send the byte (ignored while BUSY).  Read: the byte received; clears DONE |
+ | 0x29 | CTRL     | [0] CS0, [1] CS1 asserted, [2] CPOL, [3] CPHA, [4] CLAIM, [6:5] MISO pin, [7] IE |
+ | 0x2A | DIV      | Half an SCLK period is DIV + 1 clocks (reset 3)                             |
+ | 0x2B | STATUS   | [0] BUSY, [1] DONE, [2] OWNED, [3] TTLC_WAIT                                |
+
+A byte takes 16 x (DIV + 1) clocks.  The chip selects are active low on the pins.  DONE with IE set is
+interrupt source 7 (INT_STATUS bit 7), held until DATA is read or written.  MISO comes from ui_in[0],
+ui_in[1], ui_in[2] or ui_in[7] (CTRL[6:5] = 0..3); avoid ui_in[7] if the device could hold it high at
+reset, where it enables the baud divisor capture.
+
+The output pins are chosen per pin with the uo_out mux register (debug register 0x1b):
+
+ | Pin    | Mux 0 (default) | Mux 2           | Mux 3 (TTLC)                            |
+ | ------ | --------------- | --------------- | --------------------------------------- |
+ | uo[0]  |                 |                 | MOSI while OWNED, else TTLC out data 0  |
+ | uo[1]  |                 |                 | CS0 while OWNED, else TTLC out data 1   |
+ | uo[2]  |                 |                 | CS1 while OWNED, else TTLC out data 2   |
+ | uo[3]  |                 | CS0             |                                         |
+ | uo[5]  |                 | SCLK            |                                         |
+ | uo[6]  |                 | MOSI            |                                         |
+ | uo[7]  | CS1             |                 | SCLK                                    |
+
+In mux mode 3 the SPI shares the TTLC's three output data lines; the 74HC595 / 74HC165 chains keep their
+own shift clock and latch, so they never see the SPI clock.  The two take turns: set CLAIM (with the
+chip selects deasserted) and wait for OWNED, which is granted between TTLC I/O scans, then assert a
+chip select and transfer.  A scan the TTLC asks for while the SPI owns the pins waits, and the TTLC
+waits with it (TTLC_WAIT shows this), so release the pins (clear the chip select, then CLAIM) at the end
+of each transaction.  While the SPI does not own them, the chip select lines carry the TTLC's data and
+may select a device with no clock running, which SPI flashes and SD cards ignore.
+
+## The I2C Master
+
+LISA has an I2C master for talking to I2C devices such as displays, EEPROMs, sensors, port expanders, etc.
+It is based on the OpenCores I2C master by Richard Herveille (the byte and bit controllers are the same),
+with a simplified register interface on the LISA peripheral bus.  It supports start, repeated start, stop,
+byte write, byte read with ACK or NAK, clock stretching by the slave and arbitration lost detection.  It
+has seven peripheral registers:
+
+ | ADDR | Register | Description                                                                 |
+ | ---- | -------- | --------------------------------------------------------------------------- |
+ | 0x20 | PRE_LO   | Clock prescale, low byte (reset 0)                                          |
+ | 0x21 | PRE_HI   | Clock prescale, high byte (reset 0)                                         |
+ | 0x22 | CTRL     | [0] EN: enables the core (must be set before writing CMD)                   |
+ | 0x23 | RX       | Read: the last byte received                                                |
+ | 0x24 | STATUS   | [7] RXACK, [6] BUSY, [5] AL, [1] TIP, [0] IF                                |
+ | 0x25 | TX       | The byte to send (the address + R/W bit, or the data)                       |
+ | 0x26 | CMD      | [7] STA, [6] STO, [5] RD, [4] WR, [3] ACK, [0] IACK                         |
+
+The SCL frequency is set by the prescale register and must be programmed while EN is clear:
+
+```
+    prescale = clk / (5 * SCL) - 1
+```
+
+So for a 50 MHz clock, 100 kHz SCL is a prescale of 99 (0x63) and 400 kHz SCL is a prescale of 24 (0x18).
+
+Each byte on the bus is one write to the CMD register.  The command bits are:
+
+   - STA: Generate a start (or repeated start) before the byte.
+   - STO: Generate a stop after the byte.
+   - RD: Read a byte from the slave.  ACK selects the acknowledge sent back: 0 = ACK, 1 = NAK (for the last byte).
+   - WR: Write the byte in the TX register to the slave.
+   - IACK: Clear the IF (interrupt) flag.
+
+The command bits clear themselves when the byte is done (or arbitration is lost), so a write to CMD
+does not need to be cleared by software.  The STATUS bits are:
+
+   - RXACK: The acknowledge received from the slave on the last write: 0 = ACK, 1 = no ACK.
+   - BUSY: The bus is busy (set by a start condition, cleared by a stop).
+   - AL: Arbitration lost (another master on the bus, or a stop / start in the wrong place).
+   - TIP: Transfer in progress.  Cleared when the byte is done.
+   - IF: The byte is done (or arbitration was lost).  Stays set until IACK is written.
+
+IF is interrupt source 6 (INT_STATUS bit 6), so enabling bit 6 in the Interrupt Enable Register (0x0E)
+lets the I2C interrupt the processor at the end of each byte.  The interrupt handler writes CMD with
+IACK to clear the request.  Without interrupts, the code simply polls TIP after each CMD write.  A
+typical write to a device (such as a PCF8574 I2C backpack on a character LCD at address 0x27) is:
+
+```
+    PRE_LO = 99;  PRE_HI = 0;          // 100 kHz at 50 MHz
+    CTRL   = 0x01;                     // Enable the core
+
+    TX  = (0x27 << 1) | 0;             // Slave address, W
+    CMD = STA | WR;                    // Start + address
+    while (STATUS & TIP) ;
+    if (STATUS & RXACK) ... no device  // No ACK from the slave
+
+    TX  = data;
+    CMD = WR | STO;                    // Last byte + stop
+    while (STATUS & TIP) ;
+```
+
+A read is the same, but with the R/W bit set in the address byte, then CMD = RD for each byte received
+(RD | ACK | STO for the last one) and the data read from RX after TIP clears.  A write followed by a read
+(such as setting an EEPROM address and then reading it) uses STA again on the read address byte to make a
+repeated start without a stop in between.
+
+The SCL and SDA pins are open drain (the core drives the pin low or tri-states it), so external pull-up
+resistors are needed on both (typically 4.7K for 100 kHz).  They can be routed to either of two pairs of
+uio pins via the uio mux bits in debug register 0x1C:
+
+ | Pin    | 0x1C mux bits    | Notes                                                 |
+ | ------ | ---------------- | ----------------------------------------------------- |
+ | uio[4] | [1:0] = 2'h2     | SCL (QSPI DQ2 instead when psram_mod is set)          |
+ | uio[5] | [3:2] = 2'h2     | SDA (QSPI DQ3 instead when psram_mod is set)          |
+ | uio[6] | [5:4] = 2'h0     | SCL (the reset default; not available in QUAD mode)   |
+ | uio[7] | [7:6] = 2'h0     | SDA (the reset default; not available in QUAD mode)   |
+
+If both pairs are selected, the inputs are taken from uio[4] / uio[5].  So with a QUAD SPI Flash / SRAM on
+the uio PMOD (DQ2 / DQ3 on uio[6] / uio[7]), the I2C uses uio[4] / uio[5], which also means CE1 cannot be
+on uio[4] at the same time.  Also note that when the Debug UART autobaud detects the UART on the uio
+PMOD, its pins are taken by the UART and are not available to the I2C: TX on uio[5] in both cases, and RX
+on uio[6] (PMOD UART) or uio[4] (the custom QSPI / UART PMOD).
+
 ## How to test
 
 You will need to download and compile the C-based assembler, linker and C compiler I wrote (will make available)
@@ -613,5 +810,8 @@ Also need to download the Python based debugger.
   - ce1_latch: CE1 output during Special Mux Mode 3 
   - DQ1/2/3/4: QUAD SPI bidirection data I/O
   - pc_io: LISA GPIO Port C I/O (direction controllable by LISA)
+  - spi_sclk / spi_mosi / spi_cs0 / spi_cs1: the SPI master on its own pins; miso its input
+  - m3_sclk / m3_mosi / m3_cs0 / m3_cs1: the SPI master on the TTLC's pins (mux mode 3)
+  - ttlc_d0/1/2: TTLC shift register output data
 
 ![](lisa_pinout.png)

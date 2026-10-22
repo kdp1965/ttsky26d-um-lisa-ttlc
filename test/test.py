@@ -17,6 +17,7 @@ def plusarg(name, default=None):
 async def start(dut):
     dut.ttlc_mode.value = 0
     dut.ttlc_in.value = 0
+    dut.spi_map.value = 0
     lisa = Lisa(dut)
     await lisa.reset()
     return lisa
@@ -178,7 +179,8 @@ async def test_ttlc_debug(dut):
     assert int(dut.ttlc_out.value) == 0x0f0f0f0f0f0f, 'the loopback did not resume'
 
 
-@cocotb.test(skip=plusarg('DEFAULT') is not None or plusarg('TTLC') is not None or plusarg('BANK') is not None or plusarg('OVERRUN') is not None)
+@cocotb.test(skip=plusarg('DEFAULT') is not None or plusarg('TTLC') is not None or plusarg('BANK') is not None or plusarg('OVERRUN') is not None
+             or plusarg('SPIM') is not None)
 async def test_program(dut):
     """+FIRMWARE=<hex>: run it (the data cache on with +CACHE) and expect ALL PASSED;
     +STATS counts the fetch clocks"""
@@ -206,6 +208,64 @@ async def test_program(dut):
                           % (clocks, insts, clocks / max(1, insts), wait, 100.0 * wait / max(1, clocks),
                              xfers, words, words / max(1, xfers)))
     assert 'ALL PASSED' in text, 'the program did not pass: %r' % text[-200:]
+
+
+@cocotb.test(skip=plusarg('SPIM') is None)
+async def test_spi(dut):
+    """+SPIM (make SPIM=1): the SPI master (RESPIN 29) on the mux-2 pins -
+    SCLK uo[5], MOSI uo[6], CS0 uo[3] (all mux 2) and CS1 uo[7] (mux 0),
+    MISO ui_in[2]: progs/spi.c against the two devices in tb.v, every
+    divider it tries, both polarities, both phases, DONE and its request"""
+    lisa = await start(dut)
+    await lisa.setup(cache=False, quad=True)
+    await lisa.write_reg(0x1b, 0x2880)                              # uo[3], [5], [6] to mux 2
+    dut.spi_map.value = 1
+    dut.porta_in.value = 0
+    b0, b1 = int(dut.spi_count0.value), int(dut.spi_count1.value)
+    text = await lisa.run(timeout=400_000)
+    c0, c1 = int(dut.spi_count0.value) - b0, int(dut.spi_count1.value) - b1
+    dut._log.info('device 0 took %d bytes, device 1 %d' % (c0, c1))
+    assert 'ALL PASSED' in text, 'the SPI test did not pass: %r' % text[-300:]
+    assert (c0, c1) == (19, 18), 'bytes taken %d / %d, expected 19 / 18' % (c0, c1)
+
+
+@cocotb.test(skip=plusarg('SPIM') is None)
+async def test_spi_ttlc(dut):
+    """+SPIM: the SPI master on the TTLC's pins (mux mode 3: SCLK uo[7],
+    MOSI / CS0 / CS1 on the 595 chains' data uo[0..2]) while the TTLC runs
+    its loopback: every transaction claims the pins.  The outputs never
+    leave the pattern (a scan inside a transaction would shift the SPI's
+    levels into the chains), no TTLC shift clock falls inside a transaction,
+    the program saw the TTLC wait, and the loopback still follows its
+    inputs after"""
+    lisa = await start(dut)
+    await lisa.setup(cache=False, quad=True)
+    for a, v in ((0x1f, 0x0100), (0x1b, 0xfcff), (0x1c, 0x00a3)):   # TTLC base, uo[0-3], [5-7] to select 3, shift clk/4
+        await lisa.write_reg(a, v)
+    pat = 0x123456789abc
+    dut.ttlc_in.value = pat
+    dut.ttlc_mode.value = 1
+    dut.spi_map.value = 2
+    dut.porta_in.value = 1
+    await lisa.write_reg(0x40, 1)                                    # the TTLC runs
+    await ClockCycles(dut.clk, 20000)
+    assert int(dut.ttlc_out.value) == pat, 'the loopback is not running'
+    differ = int(dut.ttlc_differ.value)
+    b0, b1 = int(dut.spi_count0.value), int(dut.spi_count1.value)   # the device models count from the start
+    text = await lisa.run(timeout=400_000)
+    differ = int(dut.ttlc_differ.value) - differ
+    c0, c1 = int(dut.spi_count0.value) - b0, int(dut.spi_count1.value) - b1
+    col = int(dut.spi_collide.value)
+    dut._log.info('device 0 took %d bytes, device 1 %d; %d TTLC clocks inside transactions' % (c0, c1, col))
+    assert 'ALL PASSED' in text, 'the SPI test did not pass: %r' % text[-300:]
+    assert differ == 0, 'the TTLC outputs left the inputs for %d clocks during the SPI transfers' % differ
+    assert col == 0, '%d TTLC shift clocks inside SPI transactions' % col
+    assert (c0, c1) == (91, 90), 'bytes taken %d / %d, expected 91 / 90' % (c0, c1)
+    # the TTLC still scans (the program has the UART now: no debugger reads)
+    for p in (0xaaaaaaaaaaaa, 0x5a5a5a5a5a5a):
+        dut.ttlc_in.value = p
+        await ClockCycles(dut.clk, 40000)
+        assert int(dut.ttlc_out.value) == p, 'outputs %012x for inputs %012x after the SPI' % (int(dut.ttlc_out.value), p)
 
 
 @cocotb.test(skip=plusarg('OVERRUN') is None)

@@ -39,4 +39,11 @@ suite, the LISA Commander and lisa_ide; this revision fixes what was found
   high), its breakpoints halt before their instruction, its step bit runs
   one instruction, and a stepped `jmp`/`rtn`/`nopf` keeps its PC change.
 
+# Revision 3 additions
 
+* A SPI master (peripheral registers 0x28-0x2B) with two chip selects, a
+  clock of core/2 to core/512, all four SPI modes and an interrupt on
+  source 7: on its own uo_out pins (mux 2: CS0 uo[3], SCLK uo[5], MOSI
+  uo[6]; CS1 uo[7] by default) or sharing the TTLC's pins in mux mode 3
+  (SCLK uo[7], MOSI and the selects on the shift registers' data lines),
+  taking turns with the TTLC's I/O scans.  MISO on ui_in[0], [1], [2] or [7].
