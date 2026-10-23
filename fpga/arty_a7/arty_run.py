@@ -25,13 +25,15 @@ lisa_monitor and asks for its help; arty_term.py is the live terminal).
 The capture ends at the first of STOP's markers ("ALL PASSED|SOME FAILED"
 unless set; STOP= for none) or after the seconds, and the program's time
 from the UART hand-over is printed.
+REGS=0x1b=0x2880[,..] writes more debug registers just before the run
+(0x1b = 0x2880: the SPI master's CS0 / SCLK / MOSI on uo[3] / [5] / [6]).
 SPI=0x.... sets register 0x1e after the load (bits 3:0 SCLK = clk / (2 (n + 1)),
 10:4 the gap between transactions in clocks, 12:11 the SPI mode per select):
 0x0811 unless given - clk/4, a 1-clock gap, mode 1 on the flash, the fastest the
 Pmod's flash and PSRAM take (clk/2 fails in either mode; 2026-10-19).  The load
 leaves 0x08d3 - clk/8, a 13-clock gap - the emulated RAM's settings, which the
 TT07 board still needs (lisa_pydb keeps them); the testbench runs 0x0010.
-usage: [CACHE=1] [ETH=1] [QUAD=0] [DUMMY=0x66] [SPI=0x..] [SEND=..] [STOP=..] arty_run.py <file.ihx> [seconds] [baud]   (any rate; 460800 as the demo board)"""
+usage: [CACHE=1] [ETH=1] [QUAD=0] [DUMMY=0x66] [SPI=0x..] [REGS=a=v,..] [SEND=..] [STOP=..] arty_run.py <file.ihx> [seconds] [baud]   (any rate; 460800 as the demo board)"""
 import os, sys, time
 img = sys.argv[1]
 secs = float(sys.argv[2]) if len(sys.argv) > 2 else 5
@@ -77,6 +79,11 @@ if cache:
 else:
     d.writeReg(0x1d, 7)
 print("data cache", "on (PSRAM A on CS1, quad)" if cache else "off", flush=True)
+for rv in os.environ.get("REGS", "").split(","):  # REGS=0x1b=0x2880,...: more debug registers (e.g. the uo_out mux)
+    if rv:
+        a, v = rv.split("=")
+        d.writeReg(int(a, 0), int(v, 0))
+        print("debug register %02x = %04x" % (int(a, 0), int(v, 0)), flush=True)
 d.writePC(0); d.resume()
 time.sleep(0.1); d.ser.read(256)
 d.ser.write(b"l")
