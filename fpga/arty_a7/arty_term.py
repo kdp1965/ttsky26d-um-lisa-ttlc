@@ -6,7 +6,7 @@ at 0 and hands it the UART, and this terminal stays on the port - the
 port must not be reopened, since opening it resets the design.  Keys go
 straight through (ctrl-] quits, as pyserial's miniterm).  For lisa_monitor
 press Enter for the banner and 'lisa> ', then 'help'.
-usage: [CACHE=0] [QUAD=0] arty_term.py <file.ihx> [baud]     (on andromeda, the board's host)"""
+usage: [CACHE=0] [QUAD=0] [REGS=0x1b=0x2880,..] arty_term.py <file.ihx> [baud]     (on andromeda, the board's host)"""
 import os
 import sys
 import time
@@ -51,6 +51,10 @@ if cache:
 else:
     d.writeReg(0x1d, 7)
     print("data cache off (the 128-byte RAM), flash %s" % ("quad" if quad else "single SPI"), flush=True)
+for rv in os.environ.get("REGS", "").split(","):  # REGS=0x1b=0x2880,...: more debug registers (e.g. the uo_out mux)
+    if rv:
+        a, v = rv.split("=")
+        d.writeReg(int(a, 0), int(v, 0))
 d.writePC(0); d.resume()
 time.sleep(0.1); d.ser.read(256)
 d.ser.write(b"l")                                 # the program has the UART from here
