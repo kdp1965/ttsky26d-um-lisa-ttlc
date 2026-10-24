@@ -12,7 +12,13 @@
  *  4 the interrupt: with IE a free half requests source 5 (vector 6); the
  *    handler drops IE
  *  5 frame 3 on uo[1]: a pixel, then the second only after the line has
- *    gone low - UNDERRUN; a 1 written clears it */
+ *    gone low - UNDERRUN; a 1 written clears it
+ *
+ * The pixels go in through ws_put, a 16-instruction assembly loader: in C
+ * a pixel took 1300-2000 clocks on the Arty (instruction fetch from its
+ * flash Pmod), as long as sending one, so the line went low between pixels
+ * (UNDERRUN).  The bit is 75 clocks (WS_TBIT 74, 1.5 us at 50 MHz: within
+ * the WS2812B's 1.25 +- 0.6 us), a pixel 1800 clocks. */
 #include "harness.h"
 #include <tt07.h>
 
@@ -43,22 +49,61 @@ void ws_isr(void) __interrupt(LISA_INT_TTLC)
   WS_CTRL = EN | PIN(1);        /* drop IE: the request is a level */
 }
 
-static unsigned char half;      /* the half filled next */
+unsigned char ws_half;          /* the half filled next: 0 A, 1 B */
 
-/* a pixel into the next free half */
+/* ws_put(g, r, b): a pixel into the next half once it is free.  g comes
+   in A, r and b at 0(sp) / 1(sp) (sdcc's convention); after the push of g
+   they are g 0(sp), r 1(sp), b 2(sp).  A leaf: RA untouched, ret. */
+static void ws_put(unsigned char g, unsigned char r, unsigned char b) __naked
+{
+  (void) g; (void) r; (void) b;
+  __asm
+    push  a
+    lda   _ws_half
+    bnz   00002$
+00001$:
+    lda   _WS_STAT              ; half A: wait for FULL_A clear
+    andi  #0x01
+    bnz   00001$
+    ldi   #0x00
+    sta   _TIDX
+    ldax  0(sp)
+    sta   _TDATA
+    ldax  1(sp)
+    sta   _TDATA
+    ldax  2(sp)
+    sta   _TDATA
+    ldi   #0x01
+    sta   _WS_STAT              ; FULL_A
+    sta   _ws_half              ; B next
+    ads   #1
+    ret
+00002$:
+    lda   _WS_STAT              ; half B: wait for FULL_B clear
+    andi  #0x02
+    bnz   00002$
+    ldi   #0x03
+    sta   _TIDX
+    ldax  0(sp)
+    sta   _TDATA
+    ldax  1(sp)
+    sta   _TDATA
+    ldax  2(sp)
+    sta   _TDATA
+    ldi   #0x02
+    sta   _WS_STAT              ; FULL_B
+    ldi   #0x00
+    sta   _ws_half              ; A next
+    ads   #1
+    ret
+  __endasm;
+}
+
+/* a pixel, and 1 (the C version's timeout is gone: ws_put waits) */
 static unsigned char put(unsigned char g, unsigned char r, unsigned char b)
 {
-  unsigned int n;
-  unsigned char f = half ? FULL_B : FULL_A;
-  for (n = 0; n < 20000 && (WS_STAT & f); n++)
-    ;
-  TIDX = half ? 3 : 0;
-  TDATA = g;
-  TDATA = r;
-  TDATA = b;
-  WS_STAT = f;
-  half ^= 1;
-  return n < 20000;
+  ws_put(g, r, b);
+  return 1;
 }
 
 static unsigned char wait_done(void)
@@ -80,9 +125,11 @@ void main(void)
   CHECK(1, WS_CTRL == 0 && WS_T0H == 20 && WS_T1H == 40 && WS_TBIT == 62 && WS_TRST == 219 &&
            (WS_STAT & (DONE_F | FULL_A | FULL_B | BUSY)) == DONE_F);
 
+  WS_TBIT = 74;                 /* a 1.5 us bit: 1800 clocks a pixel */
+
   /* frame 1: 8 pixels on uo[1] */
   WS_CTRL = EN | PIN(1);
-  half = 0;
+  ws_half = 0;
   ok = 1;
   for (i = 0; i < 8; i++)
     ok &= put((unsigned char)((i << 4) | 1), (unsigned char)(0x80 ^ i), (unsigned char)(0xC3 + i));
@@ -94,7 +141,7 @@ void main(void)
      the pins are the TTLC's again and show its data: a glitch on the
      string); every frame starts at half A */
   WS_CTRL = EN | PIN(2);
-  half = 0;
+  ws_half = 0;
   ok = 1;
   for (i = 0; i < 3; i++)
     ok &= put((unsigned char)(0x10 + i), (unsigned char)(0x20 + i), (unsigned char)(0x30 + i));
@@ -116,7 +163,7 @@ void main(void)
 
   /* frame 3: a late second pixel */
   WS_TRST = 255;                /* the longest reset: the gap stays inside it */
-  half = 0;
+  ws_half = 0;
   ok = put(0x5A, 0xA5, 0x0F);
   for (n = 0; n < 20000 && !(WS_STAT & BUSY); n++)
     ;
