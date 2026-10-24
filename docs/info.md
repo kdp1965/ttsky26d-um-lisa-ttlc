@@ -40,6 +40,8 @@ The following is a block diagram of the design:
    - Streaming QSPI instruction fetch controller
    - Instruction CACHE with a single 8-instruction CACHE line for small loops
    - Two 16-bit programmable timers (with pre-divide)
+   - Timer 3: a 16-bit timer with two PWM outputs and two input captures
+   - WS2812B (NeoPixel) LED string driver on up to five pins, using the TTLC's output flops as its pixel buffer
    - Debug UART available to LISA core also
    - Dedicated UART2 that is not shared with the debug interface
    - 8-bit Input port (PORTA)
@@ -52,7 +54,7 @@ The following is a block diagram of the design:
    - Hardware Brain Float 16 (BF16) Multiply/Divide/Add/Negate/ItoF/FtoI
    - Programmable I/O mux for maximum flexibility of I/O usage.
    - TTLC 48-Outputs plus 48-Inputs via external 74HC595 / 74HC165 chips
-   - TTLC 32-Bit internal storage plus 16 bit I/O to LISA (8 each direction)
+   - TTLC 64-Bit internal storage plus 16 bit I/O to LISA (8 each direction)
    - TTLC I/O readable / writable by LISA as bytes, with LISA-started I/O scans
 
 A 32x32 1RW [DFFRAM](https://github.com/AUCOHL/DFFRAM) macro implements a 128 byte RAM module.
@@ -652,10 +654,25 @@ takes care of this.
 The I/O subsystem uses an 8-bit address and supports the following:
 
    - 48-Outputs plus 48-Inputs via external 74HC595 / 74HC165 chips
-   - 32-Bit internal storage
+   - 64-Bit internal storage
    - 16 bit I/O to/from LISA (8 each direction)
    - Ability to send interrupt to LISA
    - Constant zero / one bits 
+
+The 8-bit address selects one bit of the I/O space:
+
+ | Address | Contents                                                   |
+ | ------- | ---------------------------------------------------------- |
+ | 0-47    | Outputs (to the 74HC595 chains)                            |
+ | 48-95   | Inputs (from the 74HC165 chains)                           |
+ | 96-127  | Internal storage bits 0-31 (bits 0-7 are Port D to LISA, bit 8 interrupts LISA) |
+ | 128-135 | The 8 bits from LISA (Port E)                              |
+ | 136     | RR (the result register)                                   |
+ | 137     | Constant 0                                                 |
+ | 138     | Constant 1                                                 |
+ | 160-191 | Internal storage bits 32-63                                |
+
+The rest (139-159 and 192-255) read as 0.
 
 The 48-outputs and 48-inputs are managed by a shift-register state machine that interfaces to the external
 world using ui_in and uo_out pins.  It implement three parallel 16-bit serial shift busses to external
@@ -671,22 +688,24 @@ at address zero until the I/O transaction is complete.
 LISA can also read and write the TTLC's I/O directly, so it can either monitor the PLC while it runs, or use the
 48 inputs and 48 outputs of the 74HC165 / 74HC595 chains as its own peripheral when the MC14500B isn't running
 (it is halted at reset until the Debug interface starts it).  The TTLC's whole I/O space (the 48 outputs, 48
-inputs, 32 internal storage bits, the 8 bits from LISA, RR and the constants) is presented to LISA as 18 bytes
+inputs, 64 internal storage bits, the 8 bits from LISA, RR and the constants) is presented to LISA as 24 bytes
 through three peripheral registers:
 
  | ADDR | Register | Description                                                                      |
  | ---- | -------- | -------------------------------------------------------------------------------- |
- | 0x2C | TIDX     | Byte index, 0-17                                                                 |
- | 0x2D | TDATA    | Read: byte TIDX.  Write: byte TIDX of the outputs (0-5) or storage (12-15).  TIDX auto-increments |
+ | 0x2C | TIDX     | Byte index, 0-23                                                                 |
+ | 0x2D | TDATA    | Read: byte TIDX.  Write: byte TIDX of the outputs (0-5) or storage (12-15, 20-23).  TIDX auto-increments |
  | 0x2E | TCTRL    | Write: [0] START a scan.  Read: [0] BUSY, [1] DONE, [2] PEND, [3] TTLC_WAIT, [4] OWNED |
 
  | Byte  | TTLC Addresses | Contents                           |
  | ----- | -------------- | ---------------------------------- |
  | 0-5   | 0-47           | Outputs (to the 74HC595 chains)    |
  | 6-11  | 48-95          | Inputs (from the 74HC165 chains)   |
- | 12-15 | 96-127         | Internal storage (byte 12 = Port D) |
+ | 12-15 | 96-127         | Internal storage bits 0-31 (byte 12 = Port D) |
  | 16    | 128-135        | The 8 bits from LISA (Port E)       |
  | 17    | 136-138        | RR, constant 0, constant 1          |
+ | 18-19 | 144-159        | Always 0                            |
+ | 20-23 | 160-191        | Internal storage bits 32-63         |
 
 Reading never disturbs the MC14500B ... LISA has its own read path to the I/O.  The inputs only change at the end
 of an I/O scan, and the DONE bit (set when a scan ends, cleared when TCTRL is read) lets the code tell if a scan
@@ -830,6 +849,79 @@ on uio[4] at the same time.  Also note that when the Debug UART autobaud detects
 PMOD, its pins are taken by the UART and are not available to the I2C: TX on uio[5] in both cases, and RX
 on uio[6] (PMOD UART) or uio[4] (the custom QSPI / UART PMOD).
 
+## Timer 3
+
+Timer 3 is a 16-bit timer with an 8-bit prescaler, two compare registers that drive two PWM outputs, and two input
+captures.  The counter counts from 0 up to TOP and then wraps back to 0, so with the PWM outputs turned off it is
+simply a periodic timer with an overflow interrupt.  It uses 16 peripheral registers:
+
+ | ADDR      | Register  | Description                                                                 |
+ | --------- | --------- | --------------------------------------------------------------------------- |
+ | 0x30      | PRE       | The counter advances every PRE + 1 clocks                                   |
+ | 0x31-0x32 | TOP       | The period: the counter runs 0 .. TOP (reset 0xFFFF)                        |
+ | 0x33-0x34 | CNT       | The counter.  Reading CNT_L latches CNT_H; writing CNT_L loads {CNT_H written before, CNT_L} |
+ | 0x35-0x36 | CMP0      | PWM0 is high while CNT < CMP0                                               |
+ | 0x37-0x38 | CMP1      | PWM1 is high while CNT < CMP1                                               |
+ | 0x39-0x3A | CAP0      | CNT at the last selected edge of ui_in[4] (read only)                       |
+ | 0x3B-0x3C | CAP1      | CNT at the last selected edge of ui_in[5] (read only)                       |
+ | 0x3D      | CTRL      | [0] EN, [1] PWM0 out, [2] PWM1 out, [5:4] CAP0 edge, [7:6] CAP1 edge        |
+ | 0x3E      | IE        | [0] OVF, [1] CMP0, [2] CMP1, [3] CAP0, [4] CAP1 interrupt enables           |
+ | 0x3F      | STATUS    | The same five events; writing a 1 clears a bit                              |
+
+The capture edge selects are 0 = off, 1 = rising, 2 = falling and 3 = both edges.  The PWM duty cycle is
+CMP / (TOP + 1): a CMP of 0 keeps the output low and a CMP above TOP keeps it high.  So for example with PRE = 0 and
+TOP = 99 at a 50 MHz clock, the PWM frequency is 500 kHz in 1% steps.  The compare flags are set when the counter
+reaches CMP0 / CMP1, and the overflow flag when it wraps from TOP to 0.
+
+Any event that is enabled in IE requests interrupt vector 9 (with sdcc, `__interrupt(9)`).  Timer 3's interrupt is
+not in INT_STATUS / INT_ENABLE (0x0E / 0x0F, which are full) ... it is enabled and acknowledged in its own IE and
+STATUS registers.
+
+The PWM outputs are on uo[1] (PWM0) and uo[2] (PWM1) in uo_out mux mode 2, but only while their CTRL bits are set;
+otherwise those pins carry UART2's transmit in mux 2 as before.  Since the TTLC's I/O uses the same pins in mux mode
+3, the PWM outputs are only available when the TTLC's I/O isn't in use.  The capture inputs are ui_in[4] and
+ui_in[5] (also Port A bits 4 and 5, and the TTLC's chain inputs in mux mode 3).
+
+## The WS2812B LED Driver
+
+LISA can drive strings of WS2812B ("NeoPixel") LEDs.  A WS2812B takes its data on a single wire at 800 kHz: each
+bit is a 1.25 us period whose high time says 0 (about 0.4 us) or 1 (about 0.8 us), each LED takes 24 bits (green,
+red, blue, MSB first) and passes the rest on, and the string shows the new colors once the line has stayed low for
+the reset time (280 us on the current WS2812B, 50 us on older parts).
+
+The driver is meant for designs that don't use the TTLC's I/O, and it borrows the TTLC's resources for its
+buffering and its pins.  The pixels are held in the TTLC's 48 output flops, which LISA already writes through the
+TTLC I/O window (TIDX / TDATA at 0x2C / 0x2D): bytes 0-2 are pixel buffer half A and bytes 3-5 half B, each in
+G, R, B order.  The driver sends one half while LISA fills the other, so LISA has a whole pixel time (30 us, about
+1500 clocks at 50 MHz) to load the next pixel.  The line goes out on one of the TTLC's mux 3 pins, so up to five
+strings can be connected and sent one after another:
+
+ | ADDR | Register | Description                                                                         |
+ | ---- | -------- | ----------------------------------------------------------------------------------- |
+ | 0x40 | WS_CTRL  | [0] EN (WS mode), [3:1] PIN: 0 uo[0], 1 uo[1], 2 uo[2], 3 uo[5], 4 uo[6], [4] IE     |
+ | 0x41 | WS_STAT  | Read: [0] FULL_A, [1] FULL_B, [2] BUSY, [3] DONE, [4] UNDERRUN, [5] NEXT.  Write: [0] / [1] set FULL_A / FULL_B, [4] clears UNDERRUN |
+ | 0x42 | WS_T0H   | High time of a 0 bit in clocks (reset 20: 0.4 us at 50 MHz)                         |
+ | 0x43 | WS_T1H   | High time of a 1 bit in clocks (reset 40: 0.8 us)                                   |
+ | 0x44 | WS_TBIT  | A bit is TBIT + 1 clocks (reset 62: 1.26 us)                                        |
+ | 0x45 | WS_TRST  | The reset time is (TRST + 1) x 64 clocks (reset 219: 282 us)                        |
+
+To send a frame:
+
+   1. Set WS_CTRL to EN plus the pin (uo[0..2], uo[5], uo[6] must be in uo_out mux mode 3).
+   2. For each pixel, wait until its half is free (FULL_A / FULL_B clear), write G, R, B to it through TIDX /
+      TDATA (TIDX = 0 for half A, 3 for half B) and set its FULL bit.  Every frame starts with half A, then B, A ...
+   3. After the last pixel, DONE is set once the line has been low for the reset time: the string has latched.
+
+With IE set, a free half requests the TTLC's interrupt source (INT_STATUS bit 5, vector 6) instead of the TTLC's
+own interrupt, so the pixels can be fed from an interrupt handler (clear IE after the last pixel: the request
+stays up while a half is free).  If the next pixel isn't loaded before the current one finishes, the line stays
+low and UNDERRUN is set when it finally arrives (a string may have latched in the gap).  The timing registers let
+the driver work at other clock frequencies.
+
+While EN is set, the other four of the five pins are held low.  Keep EN set while LED strings are connected:
+with EN clear the pins go back to the TTLC (whose latch output, uo[5], idles high).  The MC14500B must not be
+running, since it writes the same output flops (it is halted at reset until the Debug interface starts it).
+
 ## How to test
 
 You will need to download and compile the C-based assembler, linker and C compiler I wrote (will make available)
@@ -858,5 +950,8 @@ Also need to download the Python based debugger.
   - spi_sclk / spi_mosi / spi_cs0 / spi_cs1: the SPI master on its own pins; miso its input
   - m3_sclk / m3_mosi / m3_cs0 / m3_cs1: the SPI master on the TTLC's pins (mux mode 3)
   - ttlc_d0/1/2: TTLC shift register output data
+  - pwm0 / pwm1: Timer 3's PWM outputs (mux 2, when enabled in T3 CTRL; else tx2)
+  - t3_cap0 / t3_cap1: Timer 3's input capture pins
+  - ws: the WS2812B driver's line (mux 3, the one selected in WS_CTRL; the others held low)
 
 ![](lisa_pinout.png)

@@ -50,7 +50,7 @@ module tb_core;
    wire [3:0]     portc;
    wire [3:0]     portc_dir;
    wire [7:0]     porte;
-   wire [7:0]     int_vec;
+   wire [8:0]     int_vec;
    wire [7:0]     int_en_vec;
 
    initial begin
@@ -146,7 +146,7 @@ module tb_core;
       .d_valid      ( d_valid_c     ),
       .d_ready      ( d_ready & d_addr_good ),
       .int_i        ( int_vec       ),
-      .int_en       ( int_en_vec    ),
+      .int_en       ( {1'b1, int_en_vec} ),
       .dbg_a        ( dbg_a         ),
       .dbg_di       ( dbg_di        ),
       .dbg_do       ( dbg_do        ),
@@ -359,7 +359,13 @@ module tb_core;
       .ttlc_wdata         (                 ),
       .ttlc_we            (                 ),
       .ttlc_rdata         ( 8'h0            ),
-      .ttlc_lisa_start    (                 )
+      .ttlc_lisa_start    (                 ),
+      .t3_cap_in          ( 2'b00           ),
+      .t3_pwm             (                 ),
+      .t3_pwm_oe          (                 ),
+      .ws_pixels          ( 48'h0           ),
+      .ws_en              (                 ),
+      .ws_pins            (                 )
    );
 
    // the console input: a byte stays until the program reads it

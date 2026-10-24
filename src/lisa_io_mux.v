@@ -69,6 +69,12 @@ SUCH DAMAGE.
 //               (CTRL CLAIM, granted between scans) uo[0] MOSI, uo[1] CS0,
 //               uo[2] CS1 in place of the TTLC's output data
 //    MISO: ui_in[0], [1], [2] or [7] (CTRL [6:5])
+//  Timer 3 (RESPIN 32, lisa_timer3.v): mux 2 uo[1] PWM0, uo[2] PWM1 while
+//    its CTRL enables them (else UART2's transmit there as before); the
+//    captures watch ui_in[4] / ui_in[5]
+//  WS2812B driver (RESPIN 33, lisa_ws2812.v): in WS mode mux 3's uo[0], [1],
+//    [2], [5], [6] carry the line on the selected one and low on the rest
+//    (the SPI master's claim still comes first on uo[0..2])
 //
 //   ui:
 //      3: Debug RX
@@ -163,6 +169,10 @@ module lisa_io_mux
    input  wire             spi_mosi,
    input  wire [1:0]       spi_cs_n,
    input  wire             spi_owned,          // uo[2:0] are the SPI's in mux 3 (not during a scan)
+   input  wire [1:0]       t3_pwm,             // Timer 3's PWM (RESPIN 32): uo[1] / uo[2] in mux 2 ...
+   input  wire [1:0]       t3_pwm_oe,          // ... while its CTRL enables them, else UART2's transmit
+   input  wire             ws_en,              // the WS2812B driver (RESPIN 33): mux 3's TTLC pins ...
+   input  wire [4:0]       ws_pins,            // ... uo[6], uo[5], uo[2], uo[1], uo[0]: the line or low
 
    // UART signals
    input  wire             baud_ref,            // Baud rate reference clock
@@ -253,12 +263,12 @@ module lisa_io_mux
    // Assign peripheral select 1 signals
 `ifdef WANT_UART2
    assign periph_sel1[0] = uart2_tx;
-   assign periph_sel1[1] = uart2_tx;
-   assign periph_sel1[2] = uart2_tx;
+   assign periph_sel1[1] = t3_pwm_oe[0] ? t3_pwm[0] : uart2_tx;
+   assign periph_sel1[2] = t3_pwm_oe[1] ? t3_pwm[1] : uart2_tx;
 `else
    assign periph_sel1[0] = 1'b0;
-   assign periph_sel1[1] = 1'b0;
-   assign periph_sel1[2] = 1'b0;
+   assign periph_sel1[1] = t3_pwm_oe[0] & t3_pwm[0];
+   assign periph_sel1[2] = t3_pwm_oe[1] & t3_pwm[1];
 `endif
    assign periph_sel1[3] = spi_cs_n[0];
    assign periph_sel1[4] = rx_sel == 2'h1 ? debug_tx : 1'b1;
@@ -267,13 +277,13 @@ module lisa_io_mux
    assign periph_sel1[7] = uart2_tx;
 
    // Assign peripheral select 2 signals
-   assign periph_sel2[0] = spi_owned ? spi_mosi    : ttlc_out_data[0];
-   assign periph_sel2[1] = spi_owned ? spi_cs_n[0] : ttlc_out_data[1];
-   assign periph_sel2[2] = spi_owned ? spi_cs_n[1] : ttlc_out_data[2];
+   assign periph_sel2[0] = spi_owned ? spi_mosi    : ws_en ? ws_pins[0] : ttlc_out_data[0];
+   assign periph_sel2[1] = spi_owned ? spi_cs_n[0] : ws_en ? ws_pins[1] : ttlc_out_data[1];
+   assign periph_sel2[2] = spi_owned ? spi_cs_n[1] : ws_en ? ws_pins[2] : ttlc_out_data[2];
    assign periph_sel2[3] = ttlc_reset;
    assign periph_sel2[4] = rx_sel == 2'h1 ? debug_tx : 1'b0;
-   assign periph_sel2[5] = ttlc_io_latch;
-   assign periph_sel2[6] = ttlc_io_shiftclk | ttlc_shiftclk;
+   assign periph_sel2[5] = ws_en ? ws_pins[3] : ttlc_io_latch;
+   assign periph_sel2[6] = ws_en ? ws_pins[4] : ttlc_io_shiftclk | ttlc_shiftclk;
    assign periph_sel2[7] = spi_sclk_m3;
    
    assign ttlc_in_data = ui_in[6:4];

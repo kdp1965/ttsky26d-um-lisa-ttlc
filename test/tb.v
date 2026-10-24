@@ -30,7 +30,20 @@ module tb
    output wire  [15:0]  spi_collide,        // TTLC shift clocks inside an SPI transaction
    output wire  [31:0]  ttlc_differ,        // clocks the 48 outputs differed from the inputs
    input  wire  [47:0]  ttlc_watch,         // a value for the outputs ...
-   output wire  [31:0]  ttlc_match          // ... and the clocks they held it
+   output wire  [31:0]  ttlc_match,         // ... and the clocks they held it
+   input  wire  [15:0]  cap_period,         // Timer 3 (RESPIN 32): a square wave on ui_in[5:4], half-period clocks (0: off)
+   output wire  [31:0]  pwm_high0,          // clocks uo_out[1] (PWM0 in mux 2) was high
+   output wire  [31:0]  pwm_high1,          // clocks uo_out[2] (PWM1) was high
+   output wire  [31:0]  clocks,             // clocks since reset ended
+   input  wire          ws_arm,             // WS2812B (RESPIN 33): check from the first pixel decoded after this
+   output wire  [15:0]  ws_count1,          // pixels received on uo[1] ...
+   output wire  [31:0]  ws_hash1,           // ... their hash (h = h * 33 ^ pixel)
+   output wire  [15:0]  ws_frames1,         // ... frames ended by a reset
+   output wire  [15:0]  ws_count2,          // the same on uo[2]
+   output wire  [31:0]  ws_hash2,
+   output wire  [15:0]  ws_frames2,
+   output wire  [15:0]  ws_bad,             // high pulses neither a 0 nor a 1, on either
+   output wire  [15:0]  ws_other            // rising edges on uo[0], uo[5], uo[6] since ws_arm
 );
    wire     [2:0] ttlc_din;
    wire           spi_miso;           // the SPI devices' MISO (ui_in[2])
@@ -274,7 +287,58 @@ module tb
    assign ui_in[1:0] = porta_in[1:0];
    assign ui_in[2]   = spi_map != 2'h0 ? spi_miso : porta_in[2];
    assign ui_in[7]   = porta_in[7];
-   assign ui_in[6:4] = ttlc_mode ? ttlc_din : porta_in[6:4];
+   assign ui_in[6]   = ttlc_mode ? ttlc_din[2] : porta_in[6];
+
+   // Timer 3's capture inputs: a square wave of 2 x cap_period clocks
+   reg   [15:0]   cap_cnt = 16'h0;
+   reg            cap_wave = 1'b0;
+   always @(posedge clk)
+      if (cap_period == 16'h0)
+      begin
+         cap_cnt  <= 16'h0;
+         cap_wave <= 1'b0;
+      end
+      else if (cap_cnt == cap_period - 16'h1)
+      begin
+         cap_cnt  <= 16'h0;
+         cap_wave <= ~cap_wave;
+      end
+      else
+         cap_cnt <= cap_cnt + 16'h1;
+   assign ui_in[5:4] = ttlc_mode ? ttlc_din[1:0] : cap_period != 16'h0 ? {2{cap_wave}} : porta_in[5:4];
+
+   // the PWM pins' high time
+   reg   [31:0]   hi0 = 32'h0, hi1 = 32'h0, clk_n = 32'h0;
+   always @(posedge clk)
+   begin
+      clk_n <= clk_n + 32'h1;
+      if (uo_out[1]) hi0 <= hi0 + 32'h1;
+      if (uo_out[2]) hi1 <= hi1 + 32'h1;
+   end
+   // WS2812B receivers on uo[1] and uo[2] (RESPIN 33)
+   // before the program turns WS mode on the pins are the TTLC's and the
+   // debugger's: malformed pulses and the idle pins count only once a pixel
+   // has been decoded (ws_live)
+   wire  [15:0]   bad1, bad2;
+   wire           ws_live = ws_arm && (ws_count1 != 16'h0 || ws_count2 != 16'h0);
+   ws2812_rx i_ws1 ( .clk(clk), .din(uo_out[1]), .live(ws_live), .count(ws_count1), .hash(ws_hash1), .frames(ws_frames1), .bad(bad1) );
+   ws2812_rx i_ws2 ( .clk(clk), .din(uo_out[2]), .live(ws_live), .count(ws_count2), .hash(ws_hash2), .frames(ws_frames2), .bad(bad2) );
+   assign ws_bad = bad1 + bad2;
+   reg   [2:0]    other_last = 3'h0;
+   reg   [15:0]   other = 16'h0;
+   always @(posedge clk)
+   begin
+      other_last <= {uo_out[6], uo_out[5], uo_out[0]};
+      if (!ws_live)
+         other <= 16'h0;
+      else if (|({uo_out[6], uo_out[5], uo_out[0]} & ~other_last))
+         other <= other + 16'h1;
+   end
+   assign ws_other = other;
+
+   assign pwm_high0 = hi0;
+   assign pwm_high1 = hi1;
+   assign clocks    = clk_n;
 
    // ==========================================================================
    // The TTLC's I/O Pmod: three 74HC595 chains (16 outputs each: data on
@@ -505,4 +569,63 @@ module spi_dev
                take;
          end
       end
+endmodule
+
+// A WS2812B's input as the testbench sees it (RESPIN 33): a high pulse of
+// 12-28 clocks is a 0, 32-48 a 1 (the driver's 20 / 40 at 50 MHz), any
+// other a bad one; 24 bits MSB first are a pixel (G, R, B); the line low
+// for 10000 clocks ends a frame (the part latches) and drops a partial pixel.
+module ws2812_rx
+(
+   input  wire          clk,
+   input  wire          din,
+   input  wire          live,              // count malformed pulses
+   output reg  [15:0]   count = 16'h0,
+   output reg  [31:0]   hash = 32'h0,
+   output reg  [15:0]   frames = 16'h0,
+   output reg  [15:0]   bad = 16'h0
+);
+   reg            last = 1'b0;
+   reg   [15:0]   width = 16'h0;
+   reg   [15:0]   low = 16'h0;
+   reg   [23:0]   pix = 24'h0;
+   reg   [4:0]    nbits = 5'h0;
+   reg            inframe = 1'b0;
+   always @(posedge clk)
+   begin
+      last <= din;
+      if (din)
+      begin
+         width <= last ? width + 16'h1 : 16'h1;
+         low   <= 16'h0;
+      end
+      else
+      begin
+         if (low != 16'hFFFF) low <= low + 16'h1;
+         if (low == 16'd10000)
+         begin
+            if (inframe) frames <= frames + 16'h1;
+            inframe <= 1'b0;
+            nbits   <= 5'h0;
+         end
+      end
+      if (last && !din)
+      begin
+         if ((width >= 12 && width <= 28) || (width >= 32 && width <= 48))
+         begin
+            if (nbits == 5'd23)
+            begin
+               count   <= count + 16'h1;
+               hash    <= ({hash[26:0], 5'b0} + hash) ^ {8'h0, pix[22:0], width >= 32};
+               nbits   <= 5'h0;
+               inframe <= 1'b1;
+            end
+            else
+               nbits <= nbits + 5'h1;
+            pix <= {pix[22:0], width >= 32};
+         end
+         else if (live)
+            bad <= bad + 16'h1;
+      end
+   end
 endmodule

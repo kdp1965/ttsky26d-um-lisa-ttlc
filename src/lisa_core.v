@@ -207,8 +207,8 @@ module lisa_core
    (* keep = "true" *)
    input  wire                d_ready,
 
-   input  wire [7:0]          int_i,      // NEW Interrupt inputs
-   input  wire [7:0]          int_en,     // NEW Interrupt inputs
+   input  wire [8:0]          int_i,      // NEW Interrupt inputs (bit 8: Timer 3, vector 9 - RESPIN 32)
+   input  wire [8:0]          int_en,     // NEW Interrupt inputs
 
    input  wire [7:0]          dbg_a,
    input  wire [15:0]         dbg_di,
@@ -1350,15 +1350,15 @@ module lisa_core
                         signed_inv_live_isr <= cflag_load ? signed_inv_val : signed_inversion;
                         amode_isr <= (op_amode_r & cond[0]) ? inst[2:0] : amode;
                         casez (int_i & int_en)
-                        8'b???????1: pc <= PC_BITS'(1);
-                        8'b??????10: pc <= PC_BITS'(2);
-                        8'b?????100: pc <= PC_BITS'(3);
-                        8'b????1000: pc <= PC_BITS'(4);
-                        8'b???10000: pc <= PC_BITS'(5);
-                        8'b??100000: pc <= PC_BITS'(6);
-                        8'b?1000000: pc <= PC_BITS'(7);
-                        8'b10000000: pc <= PC_BITS'(8);
-                        default:     pc <= PC_BITS'(9);
+                        9'b????????1: pc <= PC_BITS'(1);
+                        9'b???????10: pc <= PC_BITS'(2);
+                        9'b??????100: pc <= PC_BITS'(3);
+                        9'b?????1000: pc <= PC_BITS'(4);
+                        9'b????10000: pc <= PC_BITS'(5);
+                        9'b???100000: pc <= PC_BITS'(6);
+                        9'b??1000000: pc <= PC_BITS'(7);
+                        9'b?10000000: pc <= PC_BITS'(8);
+                        default:     pc <= PC_BITS'(9);    // Timer 3 (bit 8, RESPIN 32), or no source
                         endcase
                      end
                      else

@@ -27,7 +27,7 @@ SRC_DIR = $(PWD)/../src
 # so only one of them can be compiled).
 PROJECT_SOURCES  = tt_um_pettit_lisa.v RAM32.v
 PROJECT_SOURCES += lisa_core.v lisa_dbg.v lisa_div.v lisa_periph.v lisa_io_mux.v
-PROJECT_SOURCES += lisa_qqspi.v lisa_qspi_controller.v lisa_rx8n.v lisa_tx8n.v lisa_i2c.v lisa_spi.v lisa_ttlcio.v
+PROJECT_SOURCES += lisa_qqspi.v lisa_qspi_controller.v lisa_rx8n.v lisa_tx8n.v lisa_i2c.v lisa_spi.v lisa_ttlcio.v lisa_timer3.v lisa_ws2812.v
 PROJECT_SOURCES += debug_ctrl.v debug_autobaud.v debug_brg.v debug_regs.v
 PROJECT_SOURCES += data_cache8.v inst_stream.v
 PROJECT_SOURCES += i2c_master_byte_ctrl.v i2c_master_bit_ctrl.v lisa_uart.v
@@ -97,6 +97,14 @@ else ifneq ($(TTLCIO),)
 # halted (the chains are the core's), then with the ICU running its
 # loopback (progs/ttlcio_test.hex: ttlcio at 0, the loopback at 0x10000)
 PLUSARGS += +FIRMWARE=$(PWD)/progs/ttlcio_test.hex +PROGRAM=ttlcio_test.hex +TTLCIO
+else ifneq ($(TIMER3),)
+# Timer 3 (RESPIN 32): progs/timer3.c - the plain timer, compare, the
+# captures of tb.v's square wave, the vector-9 interrupt, PWM on uo[1] / uo[2]
+PLUSARGS += +FIRMWARE=$(PWD)/progs/timer3.hex +PROGRAM=timer3.hex +TIMER3
+else ifneq ($(WS2812),)
+# the WS2812B driver (RESPIN 33): progs/ws2812.c - frames on uo[1] and
+# uo[2] decoded by tb.v's ws2812_rx, the vector-6 request, an underrun
+PLUSARGS += +FIRMWARE=$(PWD)/progs/ws2812.hex +PROGRAM=ws2812.hex +WS2812
 else ifneq ($(TTLC),)
 # TTLC_IMAGE=<hex>: another flash image (the TTLC program at byte 0x10000);
 # TTLCTRACE=<clocks> logs the TTLC's fetch (SIM=icarus)

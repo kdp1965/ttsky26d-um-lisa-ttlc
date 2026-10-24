@@ -54,3 +54,15 @@ suite, the LISA Commander and lisa_ide; this revision fixes what was found
   itself, so the shift-register chains are LISA's 48 outputs and 48 inputs
   when the TTLC isn't running.  Holding the SPI master's claim stops the
   TTLC at its next scan, for updates it must not see half done.
+* The TTLC's internal storage doubled to 64 bits: bits 32-63 at I/O
+  addresses 160-191 (bits 0-31 stay at 96-127), and as bytes 20-23 of
+  LISA's view of the TTLC's I/O.
+* Timer 3 (peripheral registers 0x30-0x3F): a 16-bit timer with a
+  prescaler, two PWM outputs (uo[1] / uo[2] in mux 2, when enabled) and
+  two input captures (ui_in[4] / ui_in[5]), on its own interrupt vector 9.
+* A WS2812B LED string driver (peripheral registers 0x40-0x45): the pixels
+  in the TTLC's output flops (two halves, sent while LISA fills the
+  other), the line on one of five of the TTLC's mux-3 pins, programmable
+  timing, a free-half interrupt in place of the TTLC's.
+* A 5x4 tile (856.52 x 511.36 um) with room to grow, and Calvin drawn into
+  the standard-cell rows as placement blockages.

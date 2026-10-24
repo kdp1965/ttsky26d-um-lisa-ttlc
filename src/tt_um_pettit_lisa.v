@@ -143,8 +143,12 @@ module tt_um_pettit_lisa
    // ==========================================================================
    // Processor Interrupts
    // ==========================================================================
-   wire   [7:0]         int_vec;
+   wire   [8:0]         int_vec;             // bit 8: Timer 3 (RESPIN 32)
    wire   [7:0]         int_en_vec;
+   wire   [1:0]         t3_pwm;
+   wire                 ws_en;               // RESPIN 33: the WS2812B driver
+   wire   [4:0]         ws_pins;
+   wire   [1:0]         t3_pwm_oe;
 
    // ==========================================================================
    // Debug signals
@@ -471,7 +475,7 @@ module tt_um_pettit_lisa
       .d_ready                   ( d_ready & d_addr_good     ),
 
       .int_i                     ( int_vec                   ),
-      .int_en                    ( int_en_vec                ),
+      .int_en                    ( {1'b1, int_en_vec}        ),   // Timer 3 gates its request with its own IE
                                                              
       // Debug bus                                           
       .dbg_a                     ( dbg_a                     ),
@@ -690,7 +694,13 @@ module tt_um_pettit_lisa
       .ttlc_wdata                ( ttlcio_wdata              ),
       .ttlc_we                   ( ttlcio_we                 ),
       .ttlc_rdata                ( ttlcio_rdata              ),
-      .ttlc_lisa_start           ( ttlc_lisa_start           )
+      .ttlc_lisa_start           ( ttlc_lisa_start           ),
+      .t3_cap_in                 ( ui_in[5:4]                ),
+      .t3_pwm                    ( t3_pwm                    ),
+      .t3_pwm_oe                 ( t3_pwm_oe                 ),
+      .ws_pixels                 ( output_pins               ),
+      .ws_en                     ( ws_en                     ),
+      .ws_pins                   ( ws_pins                   )
    );
 
    // ==========================================================================
@@ -1050,6 +1060,10 @@ module tt_um_pettit_lisa
       .spi_mosi                  ( spi_mosi                  ),
       .spi_cs_n                  ( spi_cs_n                  ),
       .spi_owned                 ( spi_owned & !io_busy      ),   // a scan has the data pins (RESPIN 30)
+      .t3_pwm                    ( t3_pwm                    ),
+      .t3_pwm_oe                 ( t3_pwm_oe                 ),
+      .ws_en                     ( ws_en                     ),
+      .ws_pins                   ( ws_pins                   ),
       .ttlc_reset                ( ttlc_reset                ),
       .ttlc_shiftclk             ( ttlc_shiftclk             ),
 

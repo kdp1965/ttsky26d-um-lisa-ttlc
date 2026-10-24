@@ -104,11 +104,30 @@ Address Map:
    0x2A:       DIV: half an SCLK period is DIV + 1 clocks
    0x2B:       STATUS: BUSY, DONE, OWNED, TTLC_WAIT
 
+   TIMER3 (RESPIN 32, lisa_timer3.v): interrupt source 8, vector 9
+   ======
+   0x30:       PRE: a tick every PRE + 1 clocks
+   0x31-0x32:  TOP: the counter runs 0..TOP (reset 0xFFFF)
+   0x33-0x34:  CNT (reading the low byte latches the high; a write to the
+               low byte loads {the high byte written before, it})
+   0x35-0x38:  CMP0, CMP1: PWM0 / PWM1 high while CNT < CMPn
+   0x39-0x3C:  CAP0, CAP1: CNT at an edge of ui_in[4] / ui_in[5]
+   0x3D:       CTRL: [0] EN, [2:1] PWM1 / PWM0 out, [5:4] CAP0 edge, [7:6] CAP1 edge
+   0x3E:       IE: OVF, CMP0, CMP1, CAP0, CAP1
+   0x3F:       STATUS: the same, a 1 written clears
+
+   WS2812B (RESPIN 33, lisa_ws2812.v): the pixels in the TTLC's output flops
+   =======
+   0x40:       WS_CTRL: [0] EN, [3:1] PIN (uo[0], [1], [2], [5], [6]), [4] IE
+   0x41:       WS_STAT: FULL_A, FULL_B, BUSY, DONE, UNDERRUN, NEXT; write sets FULL
+   0x42-0x45:  WS_T0H, WS_T1H, WS_TBIT, WS_TRST: the timing in clocks
+
    TTLC I/O (RESPIN 30, lisa_ttlcio.v)
    ========
-   0x2C:       TIDX: the byte of the TTLC's I/O vector, 0-17
+   0x2C:       TIDX: the byte of the TTLC's I/O vector, 0-23
    0x2D:       TDATA: byte TIDX (outputs 0-5, inputs 6-11, storage 12-15,
-               port_in 16, {RR, 0, 1} 17); writes to 0-5 and 12-15; TIDX + 1
+               port_in 16, {RR, 0, 1} 17, 0 18-19, storage 20-23 - RESPIN 31);
+               writes to 0-5, 12-15 and 20-23; TIDX + 1
    0x2E:       TCTRL: write [0] START a scan; read BUSY, DONE, PEND, TTLC_WAIT, OWNED
 
 ==========================================================================================
@@ -144,7 +163,7 @@ module lisa_periph
    input  wire          cb_we,
    input  wire [6:0]    cb_val,
 
-   output wire [7:0]    int_o,
+   output wire [8:0]    int_o,               // bit 8: Timer 3 (RESPIN 32), gated by its own IE
    output reg  [7:0]    int_en,
    input  wire          ttlc_int,
 
@@ -186,7 +205,17 @@ module lisa_periph
    output wire [7:0]    ttlc_wdata,
    output wire          ttlc_we,
    input  wire [7:0]    ttlc_rdata,
-   output wire          ttlc_lisa_start      // a scan the core started
+   output wire          ttlc_lisa_start,     // a scan the core started
+
+   // Timer 3 (RESPIN 32, lisa_timer3.v)
+   input  wire [1:0]    t3_cap_in,           // ui_in[5:4]
+   output wire [1:0]    t3_pwm,
+   output wire [1:0]    t3_pwm_oe,
+
+   // WS2812B driver (RESPIN 33, lisa_ws2812.v)
+   input  wire [47:0]   ws_pixels,           // the TTLC's output_pins: two pixels
+   output wire          ws_en,               // WS mode: mux 3's TTLC pins
+   output wire [4:0]    ws_pins              // uo[6], uo[5], uo[2], uo[1], uo[0]
 );
 
    reg   [15:0]         ms_count;
@@ -228,6 +257,11 @@ module lisa_periph
    wire                 i2c_irq;
    wire  [7:0]          spi_d_o;
    wire  [7:0]          ttlcio_d_o;
+   wire  [7:0]          t3_d_o;
+   wire  [7:0]          ws_d_o;
+   wire                 ws_ie;
+   wire                 ws_irq;
+   wire                 t3_irq;
    wire                 spi_xfer_busy;
    wire                 spi_irq;
 
@@ -689,7 +723,45 @@ module lisa_periph
       .start        ( ttlc_lisa_start )
    );
 
-   assign d_o = d_o_r | i2c_d_o | spi_d_o | ttlcio_d_o;
+   // ==============================================
+   // Timer 3: PWM and input capture (RESPIN 32)
+   // ==============================================
+   lisa_timer3 i_lisa_timer3
+   (
+      .clk          ( clk             ),
+      .rst_n        ( rst_n           ),
+      .d_addr       ( d_addr          ),
+      .d_i          ( d_i             ),
+      .d_periph     ( d_periph        ),
+      .d_we         ( d_we            ),
+      .d_rd         ( d_rd            ),
+      .d_o          ( t3_d_o          ),
+      .cap_in       ( t3_cap_in       ),
+      .pwm          ( t3_pwm          ),
+      .pwm_oe       ( t3_pwm_oe       ),
+      .irq          ( t3_irq          )
+   );
+
+   // ==============================================
+   // WS2812B driver (RESPIN 33)
+   // ==============================================
+   lisa_ws2812 i_lisa_ws2812
+   (
+      .clk          ( clk             ),
+      .rst_n        ( rst_n           ),
+      .d_addr       ( d_addr          ),
+      .d_i          ( d_i             ),
+      .d_periph     ( d_periph        ),
+      .d_we         ( d_we            ),
+      .d_o          ( ws_d_o          ),
+      .pixels       ( ws_pixels       ),
+      .en           ( ws_en           ),
+      .pins         ( ws_pins         ),
+      .ie           ( ws_ie           ),
+      .irq          ( ws_irq          )
+   );
+
+   assign d_o = d_o_r | i2c_d_o | spi_d_o | ttlcio_d_o | t3_d_o | ws_d_o;
    // The requests to the core and INT_STATUS.  The timers' rollovers, the
    // port's edges and the TTLC's toggle are instants: latched (int_o_r) until
    // a 1 is written to their bit of INT_STATUS.  The UARTs' are states - a
@@ -706,8 +778,10 @@ module lisa_periph
 `else
    assign uart2_req = 1'b0;
 `endif
-   assign int_req = {int_o_r[5:4], uart2_req, uart_req, int_o_r[1:0]};
-   assign int_o   = {spi_irq, i2c_irq, int_req};
+   // source 5 is the TTLC's toggle, or the WS2812B driver's free half while
+   // its IE is set (RESPIN 33: the TTLC's I/O is not in use then)
+   assign int_req = {ws_ie ? ws_irq : int_o_r[5], int_o_r[4], uart2_req, uart_req, int_o_r[1:0]};
+   assign int_o   = {t3_irq, spi_irq, i2c_irq, int_req};
 
 `ifdef WANT_UART2
    lisa_uart i_lisa_uart_2

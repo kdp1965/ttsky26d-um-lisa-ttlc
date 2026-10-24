@@ -4,7 +4,9 @@
 #   make            # the standard Tiny Tapeout flow: the RAM synthesized from src/RAM32.v
 #   make macro      # with the RAM32 DFFRAM macro (macro.json, the stripe step of flow.py)
 #   make synth      # synthesis only (runs/synth-<tag>/*-yosys-synthesis/reports): area, cell types
-#   chip_art.py     # the met4 picture (art/calvin): see its header and macro.json's "//art"
+#   make calvin     # Calvin's placement-blockage pixels (art/calvin_nocircle/pixels.json) from
+#                   # source.png, when the PNG is newer; make macro does it first by itself
+#   chip_art.py     # the met4 picture (art/calvin, dropped since rc18): see its header
 #   make clean
 #
 # LibreLane and the tools come from the dev shell of a LibreLane checkout
@@ -34,7 +36,16 @@ endif
 standard:
 	$(NIX_RUN) "python3 configure.py $(CONF_TILES) && python3 flow.py $(FLOW_TO) standard-$(TAG)"
 
-macro:
+# Calvin's pixels (macro.json's CHIP_ART_PIXELS_JSON) from his two-colour
+# picture: png2pixels.py (black = blocked, diagonal-only corners filled for
+# Magic's nwell.1) needs PIL, so it runs in the dev shell too
+CALVIN_DIR = art/calvin_nocircle
+$(CALVIN_DIR)/pixels.json: $(CALVIN_DIR)/source.png $(CALVIN_DIR)/png2pixels.py
+	$(NIX_RUN) "python3 $(CALVIN_DIR)/png2pixels.py $(CALVIN_DIR)/source.png $@"
+
+calvin: $(CALVIN_DIR)/pixels.json
+
+macro: calvin
 	$(NIX_RUN) "python3 configure.py --macro $(CONF_TILES) && python3 flow.py --macro $(FLOW_TO) macro-$(TAG)"
 
 synth:
@@ -58,4 +69,4 @@ shell:
 clean:
 	rm -rf runs config_merged.json config_merged_macro.json
 
-.PHONY: standard macro status harden-stop shell clean
+.PHONY: standard macro calvin status harden-stop shell clean

@@ -8,9 +8,9 @@ SDCC      ?= ../../../lisa-tools/sdcc-lisa/build/bin/sdcc
 SDCC_TEST ?= ../../../lisa-tools/sdcc_test
 CFLAGS    ?= -mlisa --rev3 --debug -I$(SDCC_TEST)
 
-PROGS = hello alu2 reti div16 cache14 dbg swap bank uartov spi ttlcio
+PROGS = hello alu2 reti div16 cache14 dbg swap bank uartov spi ttlcio timer3 ws2812
 
-all: $(PROGS:%=%.hex) ttlc_test.hex ttlc_jump_test.hex bank_test.hex spi_test.hex ttlcio_test.hex
+all: $(PROGS:%=%.hex) ttlc_test.hex ttlc_jump_test.hex ttlc_storage_test.hex bank_test.hex spi_test.hex ttlcio_test.hex
 
 # the TTLC programs (ttlc/*.asm, assembled by ttlc/mc14500_as.py into the
 # slot format of ttlc_fetch.v) at byte 0x10000 of the flash, behind hello:
@@ -24,6 +24,10 @@ ttlc_test.hex: hello.hex ttlc/ttlc_loopback.hex ../hexcat.py
 
 ttlc_jump_test.hex: hello.hex ttlc/ttlc_jump.hex ../hexcat.py
 	python3 ../hexcat.py $@ 0 hello.hex 10000 ttlc/ttlc_jump.hex
+
+# the loopback through the 64-bit storage (RESPIN 31): both storage ranges
+ttlc_storage_test.hex: hello.hex ttlc/ttlc_storage.hex ../hexcat.py
+	python3 ../hexcat.py $@ 0 hello.hex 10000 ttlc/ttlc_storage.hex
 
 # the SPI master's test (RESPIN 29): spi.c, with the loopback for its run
 # on the TTLC's pins

@@ -26,15 +26,16 @@ OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 SUCH DAMAGE.
 
 
-The TTLC's I/O vector (ttlc_io.v: the 48 outputs, the 48 inputs, the 32
-storage bits, port_in, RR and the constants - 139 bits) as 18 bytes to the
-LISA core, byte n = bits 8n+7..8n, through an index and a data register,
+The TTLC's I/O vector (ttlc_io.v: the 48 outputs, the 48 inputs, the 64
+storage bits, port_in, RR and the constants) as 24 bytes to the LISA core,
+byte n = bits 8n+7..8n, through an index and a data register,
 and a scan of the 74HC595 / 74HC165 chains the core can start itself:
 
-   0x2C  TIDX    the byte index, 0-17 (r/w)
+   0x2C  TIDX    the byte index, 0-23 (r/w)
    0x2D  TDATA   read: byte TIDX; write: byte TIDX of the outputs (0-5)
-                 or of the storage bits (12-15), others ignored; a read or
-                 a write moves TIDX to the next byte (17 wraps to 0)
+                 or of the storage bits (12-15: bits 0-31, 20-23: bits
+                 32-63, RESPIN 31), others ignored; a read or a write moves
+                 TIDX to the next byte (23 wraps to 0)
    0x2E  TCTRL   write: [0] START a scan (and clear DONE)
                  read:  [0] BUSY, [1] DONE (a scan has ended since the
                  last read: cleared by the read), [2] START pending,
@@ -108,7 +109,7 @@ module lisa_ttlcio
          if (d_periph && d_we && d_addr == 7'h2C)
             idx <= d_i[4:0];
          else if (acc)
-            idx <= idx == 5'd17 ? 5'h0 : idx + 5'h1;
+            idx <= idx == 5'd23 ? 5'h0 : idx + 5'h1;
 
          // shift_reg_io takes a start only while idle: the START waits
          // until the scan it asks for begins

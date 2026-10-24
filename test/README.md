@@ -17,12 +17,17 @@ setup (`setup()`), `run()` of a program with its console text.
 make                          # test_autobaud (the debug UART trained at six bit periods), test_debugger, test_bringup (progs/hello.hex), test_uart_burst
 make TTLC=1                   # the TTLC loopback through the chains, its breakpoints and step
 make TTLC=1 TTLC_IMAGE=$PWD/progs/ttlc_jump_test.hex   # the loopback through jmp / rtn / skz / nopf
+make TTLC=1 TTLC_IMAGE=$PWD/progs/ttlc_storage_test.hex   # the loopback through both storage ranges (RESPIN 31)
 make SIM=icarus TTLC=1 TTLCTRACE=6000 TESTCASE=test_ttlc_trace [TTLCIN=0x3]   # log the TTLC's fetch per clock
 make BANK=1                   # the bank registers (RESPIN 22, the data map of 28): progs/bank.c with routines in banks 1-3, the cache on
 make OVERRUN=1                # the UART receive FIFO's overrun flag (RESPIN 14): progs/uartov.c
 make SPIM=1                   # the SPI master (RESPIN 29): progs/spi.c against tb.v's two SPI
                               # devices on the mux-2 pins, then on the TTLC's pins with the
                               # loopback running (the interlock: no scan inside a transaction)
+make WS2812=1                 # the WS2812B driver (RESPIN 33): progs/ws2812.c - frames on uo[1] / uo[2]
+                              # decoded by tb.v's ws2812_rx, the vector-6 request, an underrun
+make TIMER3=1                 # Timer 3 (RESPIN 32): progs/timer3.c - the timer, captures of tb.v's
+                              # square wave, the vector-9 interrupt, PWM duty measured on uo[1] / uo[2]
 make TTLCIO=1                 # the TTLC's I/O from the core (RESPIN 30): progs/ttlcio.c with the ICU
                               # halted (the chains are the core's), then running its loopback
                               # (watching it, holding it with the claim, a scan of the core's own)

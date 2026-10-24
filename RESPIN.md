@@ -41,6 +41,9 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 22 | Bank registers (an extension): the upper 16K of the code and of the data space a window on 64 code / 16 data banks, 2 MB / 256 KB | `lisa_periph.v` 0x15-0x17, `tt_um_pettit_lisa.v`, `inst_stream.v`, `data_cache8.v`, `lisa_core.v` d_sp | done: test/progs/bank.c (make BANK=1), lisa_sim --rev2, sdcc __banked (sdcc_test/test_bank on the testbench and the Arty) |
 | 29 | An extension: a SPI master on its own pins - the core reaches a SPI flash or SD card without the QSPI bus its instructions come from (a fifth QSPI client could deadlock on the core's own fetch) - on the mux-2 pins or shared with the TTLC's pins under an interlock with the scan | `lisa_spi.v`, `lisa_periph.v` 0x28-0x2B, `lisa_io_mux.v`, `tt_um_pettit_lisa.v` ttlc_scan_pend | done: test/progs/spi.c (make SPIM=1: test_spi, test_spi_ttlc), sdcc_test/test_spiflash (lisa_sim --rev3 --spi-flash) |
 | 30 | An extension: the TTLC's I/O from the core - the 139-bit I/O vector as 18 bytes (read any time, the outputs and storage writable), scans the core starts, and atomic updates under the SPI master's claim | `lisa_ttlcio.v`, `lisa_periph.v` 0x2C-0x2E, `ttlc_io.v` byte port, `tt_um_pettit_lisa.v` ttlc_io_start, `lisa_io_mux.v`, `lisa_spi.v` go | done: test/progs/ttlcio.c (make TTLCIO=1: test_ttlcio, test_ttlcio_run) |
+| 31 | An extension: the TTLC's storage doubled to 64 bits - bits 32-63 at I/O addresses 160-191, bytes 20-23 of the core's view | `ttlc_io.v` temp_storage, read_values; `lisa_ttlcio.v` TIDX to 23 | done: test/progs/ttlc/ttlc_storage.asm (make TTLC=1 TTLC_IMAGE=progs/ttlc_storage_test.hex), test/progs/ttlcio.c checks 1, 0x0d, 0x0e |
+| 32 | An extension: Timer 3 - 16 bits with a prescaler, two PWM outputs (uo[1] / uo[2] in mux 2, when enabled; UART2's transmit otherwise) and two input captures (ui_in[4] / ui_in[5]), interrupt source 8 on vector 9 | `lisa_timer3.v`, `lisa_periph.v` 0x30-0x3F, `lisa_core.v` int_i 9 bits, `lisa_io_mux.v` periph_sel1[2:1], `tt_um_pettit_lisa.v` | done: test/progs/timer3.c (make TIMER3=1), sdcc_test/test_timer3.c (lisa_sim --cap-wave) |
+| 33 | An extension: a WS2812B LED string driver - the pixels in the TTLC's 48 output flops (two halves), the line on one of mux 3's uo[0], [1], [2], [5], [6], programmable timing, the free-half request on the TTLC's interrupt source | `lisa_ws2812.v`, `lisa_periph.v` 0x40-0x45 and int_req[5], `lisa_io_mux.v` periph_sel2, `tt_um_pettit_lisa.v` | done: test/progs/ws2812.c (make WS2812=1), sdcc_test/test_ws2812.c |
 
 Status: open / fixed (the test that shows it, in test/: a program of test/progs, a cocotb test of test/core or the fops bench).
 
@@ -964,6 +967,165 @@ routing / Magic DRC, LVS and antenna 0, hold +0.074, setup +5.74 nominal
 inside the core (ix -> the data address -> inst -> sp, no net of the TTLC
 I/O, the peripherals or the SPI master on it), the address chain of rc13
 (-8.2) and rc14 (-7.1), which moves from draw to draw.  Promoted as rc17 (2026-10-23).
+
+## 31. The TTLC's storage: 64 bits
+
+**Why.** Not a silicon issue: an extension (Ken, 2026-10-24), with the
+room the 5x4 tile gave (rc18).  The TTLC's 32 storage bits (its internal
+relays) are doubled.
+
+**RTL** (`src/ttlc_io.v`).  `temp_storage` is 64 bits.  Bits 0-31 stay at
+I/O addresses 96-127, so existing TTLC programs are unchanged; bits 32-63
+are at 160-191, a block of 32 above the constants (138), so one compare of
+address[7:5] decodes each range.  The read vector is 192 bits (139-159 read
+0), padded to 256 so every 8-bit address reads a defined bit (above 191:
+0).  The write decode was address[6] & address[5], which also took
+224-255 as aliases of 96-127; it is now address[7:5] == 011 or 101 - a
+program writing 224-255 now writes nothing (none of ours did).  The core's
+byte view (item 30) grows to 24 bytes: 18-19 read 0, 20-23 are bits 32-63
+and writable like 12-15; TIDX wraps after 23 (`lisa_ttlcio.v`).
+
+**Test.** `test/progs/ttlc/ttlc_storage.asm`: the loopback through the
+storage - inputs 0-31 to storage 32-63 (160-191), inputs 32-47 to storage
+0-15 (96-111), and the storage to the outputs - with test_ttlc / test_ttlc_
+debug / test_ttlc_jump's checks (`make TTLC=1
+TTLC_IMAGE=progs/ttlc_storage_test.hex`): the outputs follow the inputs
+only if the ICU writes and reads both ranges.  test_ttlc_debug steps round
+the loop: its bound went from 120 to 300 steps (this loop is 194).
+`test/progs/ttlcio.c`: check 1 the index wrap (17 to 18, 23 to 0), 0x0d
+bytes 18-19 read 0 and ignore writes while 20-23 are written and read
+back, 0x0e the low storage untouched by them.  Verilator and icarus.
+
+**Cost.** 32 flops, the second write decode and the wider read muxes (the
+ICU's bit mux 139 -> 192 inputs, the core's byte mux 18 -> 24).  Hardened
+2026-10-24 on rc18's recipe (runs/macro-storage64, a free draw on the 5x4
+tile with the pixel Calvin): 218416 um2 of standard cells against rc18's
+216010 (+2406, +1.1%), utilization 59.4% (rc18 58.9%), 82325 instances,
+1123K um of wire, routing / Magic DRC, LVS and antenna 0, hold +0.065,
+setup +5.69 nominal and -8.8 at the slow max corner (rc18 -7.5) - a path
+wholly inside the core (ix -> inst -> the data address), the address
+chain that moves from draw to draw; no net of the TTLC on it.  Not
+promoted.
+
+## 32. Timer 3: PWM and input capture
+
+**Why.** Not a silicon issue: an extension (Ken, 2026-10-24) with the room
+of the 5x4 tile - a timer with two PWM outputs and two input captures,
+usable as a plain timer with its outputs off; the PWM is only for designs
+that do not use the TTLC's I/O (it shares mux 3's pins otherwise).
+
+**Registers** (`src/lisa_timer3.v`; `lisa_periph.v` 0x30-0x3F): PRE (a
+tick every PRE + 1 clocks), TOP (the counter runs 0..TOP, reset 0xFFFF),
+CNT (reading the low byte latches the high one; a low-byte write loads the
+count with the high byte written before), CMP0 / CMP1 (PWMn high while CNT
+< CMPn: duty CMP / (TOP + 1)), CAP0 / CAP1 (read only), CTRL ([0] EN,
+[2:1] the PWM outputs, [5:4] / [7:6] the capture edges: off, rising,
+falling, both), IE and STATUS (OVF, CMP0, CMP1, CAP0, CAP1; a 1 written
+clears).  The capture inputs are synchronised by two flops; the PWM
+outputs are flops.
+
+**Interrupt.** INT_STATUS / INT_ENABLE are full (8 sources), so Timer 3 is
+a ninth source: the core's request input is 9 bits (`lisa_core.v`), bit 8
+vectors to 9 - the slot its casez already gave the default and that
+sdcc's vector table (`__interrupt(9)`) and NuttX's lisa_head.asm
+(_lisa_irq8) already have.  Its enable is Timer 3's own IE (the core's
+enable bit 8 is tied to 1).
+
+**Pins** (`lisa_io_mux.v`).  Mux 2 had UART2's transmit on four pins (uo[0],
+[1], [2], [7]); PWM0 takes uo[1] and PWM1 uo[2] while CTRL enables them,
+else they stay UART2's: the SPI pins (uo[3], [5], [6]), the debug UART
+(uo[4]) and UART2's uo[0] / uo[7] are untouched.  The captures watch
+ui_in[4] / ui_in[5] (Port A 4-5, the TTLC's chain inputs in mux 3).
+
+**Test.** `test/progs/timer3.c` (`make TIMER3=1`; `tb.v` cap_period drives a
+square wave on ui_in[5:4], pwm_high0 / pwm_high1 count the PWM pins' high
+clocks): the reset values and readback, a 16-bit count written and read,
+the plain timer's OVF and its clear, the compare flag, the captures (a
+rising edge 6000 clocks after the last and a falling one 3000 after it,
+exact), the interrupt on vector 9 and none with IE clear; after the run the
+testbench measures PWM0 at 25.0% and PWM1 at 75.0% of a 100-clock period
+(5000 / 15000 of 20000 clocks).  Verilator and icarus; the chip bench's
+interrupt programs (test_irq, test_irq2, test_uartirq, test_ldirq) still
+pass with the 9-bit request.  lisa_sim (`timer3.h`): the registers, the
+counter, the flags, the captures from port A bits 4-5 (`--cap-wave N`: a
+square wave there) and source 8 on vector 9; sdcc_test/test_timer3.c is
+the same program (make check REV3=1).  sdcc's lisa/tt07.h names the
+registers and LISA_INT_TIMER3.
+
+**Cost.** About 150 flops (the counter, prescaler, TOP, two compares, two
+captures, the CNT latch and buffer, CTRL, IE, STATUS, the synchronisers,
+the PWM flops) and the 16-bit comparisons (two less-than for the PWM, three
+equalities for the flags).  Hardened 2026-10-24 with item 31 (runs/
+macro-timer3, rc18's recipe on the 5x4 tile): 226036 um2 of standard cells
+against item 31's 218416 (+7620, +3.5%; my estimate of 2-3K was low: the
+comparators and the 16-bit registers' write muxes cost more than the
+flops), utilization 61.2%, 81216 instances, 1179K um of wire, routing /
+Magic DRC, LVS and antenna 0, hold +0.076, setup +5.44 nominal and -6.4 at
+the slow max corner (the core's ix -> inst chain; no net of Timer 3 on
+it).  Not promoted.
+
+## 33. A WS2812B LED string driver
+
+**Why.** Not a silicon issue: an extension (Ken, 2026-10-24), like item 32
+for designs that do not use the TTLC's I/O: it borrows the TTLC's flops
+for its buffer and the TTLC's mux-3 pins for its outputs.
+
+**Design** (`src/lisa_ws2812.v`; Ken's idea: the TTLC's flops as the
+holding registers, only the timed engine new).  The pixels are the TTLC's
+48 output flops (`ttlc_io.v` output_pins), which the core writes through
+item 30's window: half A bytes 0-2, half B bytes 3-5, each G, R, B.  The
+engine walks the half being sent bit by bit (MSB first) through a 48:1
+mux - no 24-bit holding or shift register - the bit's high time T0H or
+T1H clocks of a TBIT + 1 period, then frees the half (FULL clear) and goes
+on with the other if it is full.  With nothing full the line stays low;
+after (TRST + 1) x 64 clocks DONE is set and the next frame starts at half
+A; a pixel arriving after a gap but before the reset sets UNDERRUN (a
+FULL written in the clock the last pixel ended does not).  Registers
+0x40 WS_CTRL (EN, PIN, IE), 0x41 WS_STAT (FULL_A, FULL_B, BUSY, DONE,
+UNDERRUN, NEXT; a write sets FULL, clears UNDERRUN), 0x42-0x45 WS_T0H /
+T1H / TBIT / TRST (reset 20 / 40 / 62 / 219: 0.4 / 0.8 / 1.26 us, 282 us at
+50 MHz).  The MC14500B must be halted (it writes the same flops).
+
+**Pins** (`lisa_io_mux.v`).  In WS mode mux 3's uo[0], uo[1], uo[2] (the
+chains' data), uo[5] (latch) and uo[6] (shift clock) carry the line on the
+selected one and low on the other four; the SPI master's claim still
+comes first on uo[0..2].  EN off gives the pins back to the TTLC - its
+data shows on them, and the latch idles high - so EN stays on while
+strings are attached (the first test switched pins with EN toggled off
+and put a spurious bit on the string: the pin is now switched with EN on).
+
+**Interrupt.** No new source: with IE set the free-half request (EN, IE
+and a half not full: a level) takes the TTLC's source 5 (vector 6) in
+place of the TTLC's toggle (`lisa_periph.v` int_req).
+
+**Test.** `test/progs/ws2812.c` (`make WS2812=1`; uo[0-2], [5], [6] in mux
+3; `tb.v` ws2812_rx decodes uo[1] and uo[2] - 12-28 clock highs are 0s,
+32-48 1s, 10000 clocks low ends a frame - and counts edges on the three
+idle pins once a pixel has been decoded): the reset values, frame 1 of 8
+pixels on uo[1] through the ping-pong halves, frame 2 of 3 on uo[2], the
+vector-6 request and its handler dropping IE, frame 3 of 2 with the second
+late (UNDERRUN, cleared by a 1); the testbench checks every pixel and its
+order (a hash: uo[1] 10 pixels in 2 frames, uo[2] 3 in 1), no malformed
+pulse and no edge on the idle pins.  The first version of the design
+continued a frame's half parity into the next: frame 3 waited on half B
+- every frame starts at A now.  Verilator and icarus; the TTLC, SPIM and
+TTLCIO suites still pass.  lisa_sim (`ws2812.h`): the registers, the
+pixel timing, BUSY / DONE / UNDERRUN / NEXT and the request on source 5
+(not the pixels or pins: it has no TTLC); sdcc_test/test_ws2812.c (make
+check REV3=1).  sdcc's lisa/tt07.h names the registers.
+
+**Cost.** About 60 flops (CTRL, the four timing registers, FULL, NEXT,
+BUSY, DONE, UNDERRUN, the 5-bit bit counter, the 8-bit bit timer, the
+14-bit reset counter, the line) and the 48:1 bit mux.  Hardened
+2026-10-24 with items 31 and 32 (runs/macro-ws2812, rc18's recipe on the
+5x4 tile): 231040 um2 of standard cells against item 32's 226036 (+5004,
++2.2%), utilization 62.4%, 80536 instances, 1198K um of wire, routing /
+Magic DRC and LVS 0, hold +0.075, setup +5.37 nominal and -8.8 at the slow
+max corner (the core's ix -> inst chain; no net of the driver or Timer 3
+on it), and one antenna violation left after repair_antennas: a clock
+leaf (clknet_leaf_24_clk_regs) at one flop's CLK pin, met1 partial ratio
+434 against 400 (1.09x) - a property of this draw (rc18, items 31 and 32
+alone had none); a release candidate is re-hardened.  Not promoted.
 
 ## Verification (test/, see test/README.md)
 

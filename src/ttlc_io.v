@@ -54,25 +54,31 @@ module ttlc_io
    output wire [7:0]    lisa_rdata
 );
 
-   // Internal memory for temporary storage and output register
-   reg  [31:0]   temp_storage;
+   // Internal memory for temporary storage and output register: 64 bits
+   // since RESPIN 31 - bits 0-31 at addresses 96-127 as before, bits 32-63
+   // at 160-191 (a block of 32 above the constants: one compare decodes it)
+   reg  [63:0]   temp_storage;
 
-   // A large vector that contains all read back values
-   wire [138:0] read_values;
+   // A large vector that contains all read back values: 0-47 the outputs,
+   // 48-95 the inputs, 96-127 storage 0-31, 128-135 port_in, 136 RR, 137 0,
+   // 138 1, 139-159 0, 160-191 storage 32-63; above 191 reads 0
+   wire [191:0] read_values;
+   wire [255:0] read_all;
 
    // Assign values to the large vector
-   assign read_values = {1'b1, 1'b0, rr_value, port_in, temp_storage, input_pins, output_pins};
+   assign read_values = {temp_storage[63:32], 21'h0, 1'b1, 1'b0, rr_value, port_in,
+                         temp_storage[31:0], input_pins, output_pins};
+   assign read_all    = {64'h0, read_values};
    assign port_out = temp_storage[7:0];
    assign ttlc_int = temp_storage[8];
 
-   // The core's view: read_values a byte at a time, 18 bytes (an index
-   // written past 17 reads 0)
-   wire [255:0] read_bytes = {117'h0, read_values};
-   assign lisa_rdata = read_bytes[{lisa_idx, 3'b000} +: 8];
+   // The core's view: read_values a byte at a time, 24 bytes (18-19 read 0,
+   // 20-23 the storage's bits 32-63; an index written past 23 reads 0)
+   assign lisa_rdata = read_all[{lisa_idx, 3'b000} +: 8];
 
    // Continuous assignment to data_out using bit slicing
    //assign data_out = address < 192 ? read_values[address[7:0]] : 1'b0;
-   assign data_out = read_values[address];
+   assign data_out = read_all[address];
 
    // Handle writing operations
    always @(posedge clk)
@@ -80,7 +86,7 @@ module ttlc_io
       if (rst)
       begin
          // Reset temporary storage and output registers when RST is high
-         temp_storage <= 32'h0;
+         temp_storage <= 64'h0;
          output_pins <= 48'h0;
       end
       else
@@ -89,8 +95,10 @@ module ttlc_io
          // write overrides its one bit of the byte
          if (lisa_we && lisa_idx < 5'd6)
             output_pins[{lisa_idx[2:0], 3'b000} +: 8] <= lisa_wdata;
-         if (lisa_we && lisa_idx[4:2] == 3'b011)       // 12-15
-            temp_storage[{lisa_idx[1:0], 3'b000} +: 8] <= lisa_wdata;
+         if (lisa_we && lisa_idx[4:2] == 3'b011)       // 12-15: storage 0-31
+            temp_storage[{1'b0, lisa_idx[1:0], 3'b000} +: 8] <= lisa_wdata;
+         if (lisa_we && lisa_idx[4:2] == 3'b101)       // 20-23: storage 32-63
+            temp_storage[{1'b1, lisa_idx[1:0], 3'b000} +: 8] <= lisa_wdata;
 
          if (mem_write)
          begin
@@ -98,10 +106,13 @@ module ttlc_io
             if (address < 48)
                output_pins[address[5:0]] <= data_in;
 
-            // Writing to temp_storage
-            //else if (address >= 128 && address < 192)
-            else if (address[6] & address[5])
-               temp_storage[address[4:0]] <= data_in;
+            // Writing to temp_storage: 96-127 bits 0-31, 160-191 bits
+            // 32-63 (until RESPIN 31 address[6] & address[5], which also
+            // took 224-255 as aliases of 96-127)
+            else if (address[7:5] == 3'b011)
+               temp_storage[{1'b0, address[4:0]}] <= data_in;
+            else if (address[7:5] == 3'b101)
+               temp_storage[{1'b1, address[4:0]}] <= data_in;
          end
       end
    end

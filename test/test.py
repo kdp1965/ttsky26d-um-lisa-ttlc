@@ -19,6 +19,8 @@ async def start(dut):
     dut.ttlc_in.value = 0
     dut.spi_map.value = 0
     dut.ttlc_watch.value = 0
+    dut.cap_period.value = 0
+    dut.ws_arm.value = 0
     lisa = Lisa(dut)
     await lisa.reset()
     return lisa
@@ -164,7 +166,7 @@ async def test_ttlc_debug(dut):
     # (TT07 lost the PC change of a stepped jmp / rtn / nopf)
     last = 8
     wrapped = False
-    for _ in range(120):
+    for _ in range(300):                 # the loopback is 98 steps, the storage loopback 194
         await lisa.write_reg(0x40, 2)
         await ClockCycles(dut.clk, 2000)
         pc = await lisa.read_reg(0x41)
@@ -174,14 +176,15 @@ async def test_ttlc_debug(dut):
             break
         assert pc == last + 1, 'pc %d after a step from %d' % (pc, last)
         last = pc
-    assert wrapped, 'no return to 0 within 120 steps'
+    assert wrapped, 'no return to 0 within 300 steps'
     await lisa.write_reg(0x40, 1)
     await ClockCycles(dut.clk, 40000)
     assert int(dut.ttlc_out.value) == 0x0f0f0f0f0f0f, 'the loopback did not resume'
 
 
 @cocotb.test(skip=plusarg('DEFAULT') is not None or plusarg('TTLC') is not None or plusarg('BANK') is not None or plusarg('OVERRUN') is not None
-             or plusarg('SPIM') is not None or plusarg('TTLCIO') is not None)
+             or plusarg('SPIM') is not None or plusarg('TTLCIO') is not None or plusarg('TIMER3') is not None
+             or plusarg('WS2812') is not None)
 async def test_program(dut):
     """+FIRMWARE=<hex>: run it (the data cache on with +CACHE) and expect ALL PASSED;
     +STATS counts the fetch clocks"""
@@ -327,6 +330,59 @@ async def test_ttlcio_run(dut):
         'the outputs left the inputs for %d clocks, %d of them with the core\'s %012x' % (differ, match, TTLCIO_OUT1)
     await ClockCycles(dut.clk, 20000)
     assert int(dut.ttlc_out.value) == TTLCIO_INPUTS, 'the loopback did not resume: %012x' % int(dut.ttlc_out.value)
+
+
+@cocotb.test(skip=plusarg('TIMER3') is None)
+async def test_timer3(dut):
+    """+TIMER3 (make TIMER3=1): progs/timer3.c - Timer 3 (RESPIN 32) with a
+    square wave of 2 x 3000 clocks on its capture inputs (ui_in[5:4]); after
+    the run the program leaves PWM0 at 25% and PWM1 at 75% of a 100-clock
+    period on uo[1] / uo[2] (mux 2), measured here over 20000 clocks"""
+    lisa = await start(dut)
+    await lisa.setup(cache=False, quad=True)
+    await lisa.write_reg(0x1b, 0x0028)                               # uo[1], uo[2] to mux 2
+    dut.cap_period.value = 3000
+    text = await lisa.run(timeout=600_000)
+    assert 'ALL PASSED' in text, 'the Timer 3 test did not pass: %r' % text[-300:]
+    h0, h1, c0 = int(dut.pwm_high0.value), int(dut.pwm_high1.value), int(dut.clocks.value)
+    await ClockCycles(dut.clk, 20000)
+    h0, h1 = int(dut.pwm_high0.value) - h0, int(dut.pwm_high1.value) - h1
+    n = int(dut.clocks.value) - c0
+    dut._log.info('PWM0 high %d of %d clocks (%.1f%%), PWM1 %d (%.1f%%)' % (h0, n, 100.0 * h0 / n, h1, 100.0 * h1 / n))
+    assert abs(h0 / n - 0.25) < 0.01 and abs(h1 / n - 0.75) < 0.01, 'PWM duty %.3f / %.3f, expected 0.25 / 0.75' % (h0 / n, h1 / n)
+
+
+def ws_hash(pixels):
+    h = 0
+    for g, r, b in pixels:
+        h = ((h * 33) ^ ((g << 16) | (r << 8) | b)) & 0xFFFFFFFF
+    return h
+
+
+@cocotb.test(skip=plusarg('WS2812') is None)
+async def test_ws2812(dut):
+    """+WS2812 (make WS2812=1): progs/ws2812.c - the WS2812B driver (RESPIN
+    33) on mux 3's TTLC pins, the TTLC halted: frame 1 (8 pixels) and frame
+    3 (2 pixels, the second late) on uo[1], frame 2 (3 pixels) on uo[2],
+    decoded by tb.v's receivers - every pixel and its order (the hash), the
+    frames, no malformed pulse, and no edge on the pins not selected"""
+    lisa = await start(dut)
+    await lisa.setup(cache=False, quad=True)
+    await lisa.write_reg(0x1b, 0x3c3f)                               # uo[0-2], [5], [6] to mux 3
+    dut.ws_arm.value = 1
+    text = await lisa.run(timeout=1_200_000)
+    assert 'ALL PASSED' in text, 'the WS2812B test did not pass: %r' % text[-300:]
+    await ClockCycles(dut.clk, 20000)                                # the last frame's reset
+    f1 = [((i << 4) | 1, 0x80 ^ i, (0xC3 + i) & 0xFF) for i in range(8)]
+    f2 = [(0x10 + i, 0x20 + i, 0x30 + i) for i in range(3)]
+    f3 = [(0x5A, 0xA5, 0x0F), (0xF0, 0x3C, 0xC3)]
+    got = (int(dut.ws_count1.value), int(dut.ws_hash1.value), int(dut.ws_frames1.value),
+           int(dut.ws_count2.value), int(dut.ws_hash2.value), int(dut.ws_frames2.value),
+           int(dut.ws_bad.value), int(dut.ws_other.value))
+    dut._log.info('uo[1]: %d pixels, hash %08x, %d frames; uo[2]: %d pixels, hash %08x, %d frames; '
+                  '%d bad pulses, %d edges on idle pins' % got)
+    assert got == (10, ws_hash(f1 + f3), 2, 3, ws_hash(f2), 1, 0, 0), \
+        'expected uo[1] 10 pixels %08x 2 frames, uo[2] 3 pixels %08x 1 frame, none bad or stray' % (ws_hash(f1 + f3), ws_hash(f2))
 
 
 @cocotb.test(skip=plusarg('OVERRUN') is None)
