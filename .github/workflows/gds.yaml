@@ -1,7 +1,7 @@
 name: gds
 
 # The project's GDS is hardened locally (harden/, the DFFRAM-macro flow on
-# the 4x4 tile; RESPIN.md's hardening section) and committed to gds/, lef/
+# the 5x4 tile (4x4 until rc17); RESPIN.md's hardening section) and committed to gds/, lef/
 # and pnl/: this workflow publishes that as the submission's GDS artifact,
 # runs the Tiny Tapeout precheck on it and deploys the 2D / 3D viewer to
 # the repo's GitHub Pages (https://kdp1965.github.io/ttsky26d-um-lisa-ttlc/).

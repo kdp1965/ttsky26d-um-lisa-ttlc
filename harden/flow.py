@@ -209,12 +209,70 @@ class ArtKeepout(OdbpyStep):
         return super().run(state_in, **kwargs)
 
 
+@Step.factory.register()
+class ArtPixels(OdbpyStep):
+    """Chip art as placement blockages (Ken's experiment, 2026-10-23): the
+    blocked pixels of CHIP_ART_PIXELS_JSON (odb_art_pixels.py), each two
+    rows tall and as wide, as hard placement blockages after the rows are
+    cut and before the taps and placement - no cell of any kind on them,
+    the routing free above them."""
+    id = "Project.ArtPixels"
+    name = "Chip Art as Placement Blockages"
+    config_vars = [
+        Variable("CHIP_ART_PIXELS_JSON", Optional[Path], "pixels.json (w, h, rows bottom-up, 1 = blocked); unset = none.", default=None),
+        Variable("CHIP_ART_PIXELS_ORIGIN", Optional[List[float]], "The picture's lower-left in um (snapped to the row and site grid).", default=None),
+        Variable("CHIP_ART_PIXEL_SITES", int, "A pixel's width in sites.", default=12),
+        Variable("CHIP_ART_PIXEL_ROWS", int, "A pixel's height in rows.", default=2),
+    ]
+
+    def get_script_path(self):
+        return os.path.join(HERE, "odb_art_pixels.py")
+
+    def get_command(self) -> List[str]:
+        return super().get_command() + [
+            "--pixels", str(self.config["CHIP_ART_PIXELS_JSON"]),
+            "--origin"] + [str(v) for v in self.config["CHIP_ART_PIXELS_ORIGIN"]] + [
+            "--sites", str(self.config["CHIP_ART_PIXEL_SITES"]),
+            "--rows", str(self.config["CHIP_ART_PIXEL_ROWS"])]
+
+    def run(self, state_in, **kwargs):
+        if self.config["CHIP_ART_PIXELS_JSON"] is None:
+            return {}, {}
+        return super().run(state_in, **kwargs)
+
+
+@Step.factory.register()
+class ArtPixelTaps(OdbpyStep):
+    """After OpenROAD.TapEndcapInsertion, which does not look at placement
+    blockages: the rows Project.ArtPixels's picture crosses re-tapped - the
+    taps on pixels removed, and taps added until every free segment of such
+    a row has one within 7 um of every point (odb_art_pixels.py
+    --move-taps): the pixels cut the rows' n-well into islands, and Magic's
+    nwell.4 / LU.2 / LU.3 want a tap in each, within 15 um."""
+    id = "Project.ArtPixelTaps"
+    name = "Re-tap the Chip Art Pixels' rows"
+    config_vars = ArtPixels.config_vars
+
+    def get_script_path(self):
+        return os.path.join(HERE, "odb_art_pixels.py")
+
+    def get_command(self) -> List[str]:
+        return super().get_command() + ["--move-taps"]
+
+    def run(self, state_in, **kwargs):
+        if self.config["CHIP_ART_PIXELS_JSON"] is None:
+            return {}, {}
+        return super().run(state_in, **kwargs)
+
+
 def with_anchors(steps):
     steps = list(steps)
     steps.insert(steps.index(Odb.AddRoutingObstructions) + 1, AnchorSequential)
     steps.insert(steps.index(OpenROAD.GlobalPlacement) + 1, ReleaseAnchors)
     steps.insert(steps.index(Magic.WriteLEF) + 1, ChipArt)
     steps.insert(steps.index(OpenROAD.CutRows) + 1, ArtKeepout)
+    steps.insert(steps.index(ArtKeepout) + 1, ArtPixels)
+    steps.insert(steps.index(OpenROAD.TapEndcapInsertion) + 1, ArtPixelTaps)
     return steps
 
 

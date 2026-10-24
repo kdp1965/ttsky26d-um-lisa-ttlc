@@ -45,7 +45,7 @@ test/           cocotb testbench: the DUT with a SPI flash model (firmware.hex),
 docs/           datasheet (info.md and its figures)
 macros/         the RAM32 DFFRAM macro (GDS, LEF, libs, netlist) of the TT07 chip
 harden/         the local LibreLane flow: configure.py, flow.py (+ the macro's stripe step),
-                macro.json, the 4x4 floorplan template
+                macro.json, the 5x4 floorplan template (4x4 until rc17)
 ```
 
 ## Building

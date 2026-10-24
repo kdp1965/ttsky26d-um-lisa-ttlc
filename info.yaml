@@ -8,7 +8,7 @@ project:
   clock_hz:     50000000       # Clock frequency in Hz (or 0 if not applicable)
 
   # How many tiles your design occupies? A single tile is about 167x108 uM.
-  tiles: "4x4"          # 682.64 x 511.36 um (the TT07 chip was an 8x2, 1378.16 x 225.76)
+  tiles: "5x4"          # 856.52 x 511.36 um since 2026-10-24 (rc17 and before: 4x4, 682.64 x 511.36; the TT07 chip was an 8x2, 1378.16 x 225.76)
 
   # Your top module name must start with "tt_um_". Make it unique by including your github username:
   top_module:  "tt_um_pettit_lisa"

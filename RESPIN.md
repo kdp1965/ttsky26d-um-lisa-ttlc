@@ -1580,6 +1580,24 @@ I/O, the peripherals or the SPI master on it), the address chain of rc13
   TTLC jump, OVERRUN, TTLCIO) and the core bench pass.  Promoted
   2026-10-23 (Ken; the precheck left to the gds workflow): gds/, lef/,
   pnl/ are this run's; macro.json's anchor table stays rc15's.  Tag rc17.
+* rc18 (2026-10-24, runs/macro-rc18 - the 5x4 tile and Calvin as placement
+  blockages; the RTL is rc17's): Ken moved to a 5x4 tile (856.52 x 511.36
+  um, info.yaml) for room to grow, with the RAM32 two stripe pitches right
+  (x 427.57) and his two-colour Calvin (art/calvin_nocircle/source.png,
+  73 x 74) as 1016 placement-blockage pixels of two rows by 12 sites, 403 x
+  403 um at (12.42, 97.92): no cell of any kind on a pixel (flow.py
+  Project.ArtPixels; Project.ArtPixelTaps re-taps the rows it crosses - 447
+  taps removed, 4761 added, every free segment within 7 um of a tap, for
+  Magic's nwell.4 / LU.2 / LU.3; png2pixels.py fills a pixel where two
+  touched only at a corner, Magic nwell.1).  The met4 Calvin is dropped.
+  A free draw (the 4x4 anchor tables do not apply): 82404 instances, 58.9%,
+  216010 um2 of standard cells, 1119K um of wire, global-route overflow 185
+  (rc17 93), routing DRC / Magic DRC / LVS / antenna 0, hold +0.078, setup
+  +5.60 nominal and -7.5 at the slow max corner (rc17 -8.0).  The trials
+  that led here: on 4x4 two-row pixels of the met4 Calvin did not place
+  (GPL-0301, 100.5%) and one-row pixels did not converge; on 5x4 the met4
+  Calvin's lines (runs/macro-artpix-5x4), Ken's circled Calvin and Calvin
+  without the circle routed clean.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception

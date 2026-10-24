@@ -1,5 +1,5 @@
 {
-  "//": "The RAM32 DFFRAM macro (macros/, the AND-OR read path built in DFFRAM.librelane models/ram_ao, 320.16 x 116.96) instead of the synthesized src/RAM32.v: on the core's bottom row at the right (x 349.83 = 9 x 38.87, the tile's stripe pitch, so its power pin columns lie on tile stripes; y 2.72, the row grid), halos 2 x 1 um (the macro keeps its own 2.72 / 1.38 um margins; cut_rows cuts the row overlapping the halo, a touching one survives) and FP_PRUNE_THRESHOLD dropping the 17-site row stubs between the macro and the core edge that pdngen could not power (PDN-0179; RESPIN.md, the halo trial). The tile's stripes are run over its met4 power pins by flow.py's Tile.ExtendPowerStripes, so pdngen's own connectivity check is not the verdict; src/RAM32.v stays as a model for lint (EXTRA_VERILOG_MODELS), the macro's netlist has no power pins",
+  "//": "The RAM32 DFFRAM macro (macros/, the AND-OR read path built in DFFRAM.librelane models/ram_ao, 320.16 x 116.96) instead of the synthesized src/RAM32.v: on the core's bottom row (x 427.57 = 11 x 38.87, the tile's stripe pitch, so its power pin columns lie on tile stripes; y 2.72, the row grid; on the 4x4 tile until rc17 it was at 349.83, at the right - the 5x4 tile, 2026-10-24, moved it two pitches right to leave 423 um clear at the left for the pixel Calvin), halos 2 x 1 um (the macro keeps its own 2.72 / 1.38 um margins; cut_rows cuts the row overlapping the halo, a touching one survives) and FP_PRUNE_THRESHOLD dropping the 17-site row stubs between the macro and the core edge that pdngen could not power (PDN-0179; RESPIN.md, the halo trial). The tile's stripes are run over its met4 power pins by flow.py's Tile.ExtendPowerStripes, so pdngen's own connectivity check is not the verdict; src/RAM32.v stays as a model for lint (EXTRA_VERILOG_MODELS), the macro's netlist has no power pins",
   "REMOVE_SOURCES": [
     "RAM32.v"
   ],
@@ -23,7 +23,7 @@
       "instances": {
         "ram1": {
           "location": [
-            349.83,
+            427.57,
             2.72
           ],
           "orientation": "N"
@@ -62,15 +62,15 @@
       }
     }
   },
-  "//": "ANCHOR_CELLS_TABLE: the placement replayed from the release candidate, rc15 (placements/macro-rc15_final_cells.json, an odb_anchor_cells.py --dump of runs/macro-rc15's final ODB, 2026-10-20; the third chip's RTL with the inst_r and ldx_stage_two_r fixes): a FREE draw of the netlist with the art's keep-out; the registers matched by RTL name and the logic by structure, so a rebuild of the same netlist reproduces it and a rebuild after an RTL change reuses what still matches - but judge a changed design at global routing, and consider a free draw (trial_anchor_free.json) first: the anchored replays (rc3 of rc2, rc5 of rc4) routed 15% heavier than fresh draws. The older tables are overlays: trial_anchor_rc12.json (the second chip's release), trial_anchor_rc11.json, trial_anchor_rc10.json, trial_anchor_rc8.json, trial_anchor_rc7.json, trial_anchor_rc6.json, trial_anchor_rc4.json, trial_anchor_rc3.json, trial_anchor_rc2.json.",
-  "ANCHOR_CELLS_TABLE": "dir::placements/macro-rc15_final_cells.json",
+  "//": "ANCHOR_CELLS_TABLE: none - a free draw (2026-10-24, the 5x4 tile): the tables in placements/ were placed on the 4x4 tile (rc15's was the default until rc17) and free draws have been the release recipe since rc12 (the anchored replays, rc3 of rc2 and rc5 of rc4, routed 15% heavier than fresh draws). The 4x4 tables stay as overlays: trial_anchor_rc12.json (the second chip's release), trial_anchor_rc11.json, trial_anchor_rc10.json, trial_anchor_rc8.json, trial_anchor_rc7.json, trial_anchor_rc6.json, trial_anchor_rc4.json, trial_anchor_rc3.json, trial_anchor_rc2.json; placements/macro-rc15_final_cells.json is rc15's.",
+  "ANCHOR_CELLS_TABLE": null,
+  "ANCHOR_SEQ_TABLE": null,
   "EXTRA_VERILOG_MODELS": [
     "dir::../src/RAM32.v"
   ],
-  "//art": "The chip art (art/calvin, chip_art.py 2026-10-18, Ken's calvin from prism's hand-edited cell): met4 only, 32.4 x 47.4 um, on bare oxide as in prism (Ken: that is what makes it visible): Project.ArtKeepout cuts the rows under the box and ROUTING_OBSTRUCTIONS keeps the router off it on met1-met4, Project.ChipArt merges the cell into the GDS after stream-out and adds the box to the LEF. The box is the upper-right corner, in the channel between the last PDN stripe pair (x 641/644) and the right edge's stripe (679.9): Ken's choice - in a corner nothing routes around the keep-out, the cells just move inward - and the best of three free-draw trials to the global route (corner 1.133M um of wire, met3 41.4% / overflow 3; mid right edge 1.151M, 45.4% / 9; a met4-only box in the centre 1.139M).",
-  "ROUTING_OBSTRUCTIONS": [["met1", 646.0, 460.0, 679.88, 507.4], ["met2", 646.0, 460.0, 679.88, 507.4], ["met3", 646.0, 460.0, 679.88, 507.4], ["met4", 646.0, 460.0, 678.4, 507.4]],
-  "CHIP_ART_JSON": "dir::art/calvin/art.json",
-  "CHIP_ART_CUT_ROWS": true,
-  "CHIP_ART_KEEPOUT_BOX": [646.0, 460.0, 679.88, 507.4],
-  "//art-keepout": "The rows are cut, and met1-met3 kept out, to the rows' end at x 679.88, not the art's 678.4: the 3-site stubs beyond the art were a channel pdngen could not strap (PDN-0179). The met4 stripe at 679.87 runs on through the keep-out."
+  "//art": "The chip art (Ken, 2026-10-24): Calvin as placement blockages, not metal - his two-colour 73 x 74 drawing (art/calvin_nocircle/source.png, png2pixels.py: black = blocked, 1016 pixels, with 7 filled where two blocked pixels touched only at a corner - Magic nwell.1) as hard placement blockages, each pixel two rows (5.44 um) by 12 sites (5.52 um), the picture 403 x 403 um at (12.42, 97.92), left of the RAM32 with Calvin's bottom about level with the RAM32's top: no cell of any kind on a pixel, the rows, rails and routing go on over them. Project.ArtPixels makes the blockages after the rows are cut; Project.ArtPixelTaps, after tapcell (which ignores blockages), re-taps the rows the picture crosses - the taps on pixels removed and taps added until every free segment of such a row has one within 7 um of every point (Magic nwell.4, LU.2 / LU.3). Tried on the 5x4 tile: runs/macro-calvin-nocircle-5x4 (at y 54.40) routed clean. The met4 Calvin (art/calvin, chip_art.py, on the 4x4 tile from rc4 to rc17) is dropped: on 5x4 its keep-out sat mid-tile, and one draw left 4 VGND shorts against its corner.",
+  "CHIP_ART_PIXELS_JSON": "dir::art/calvin_nocircle/pixels.json",
+  "CHIP_ART_PIXELS_ORIGIN": [12.42, 97.92],
+  "CHIP_ART_PIXEL_SITES": 12,
+  "CHIP_ART_PIXEL_ROWS": 2
 }
