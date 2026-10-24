@@ -1,5 +1,5 @@
 {
-  "//": "The RAM32 DFFRAM macro (macros/, the AND-OR read path built in DFFRAM.librelane models/ram_ao, 320.16 x 116.96) instead of the synthesized src/RAM32.v: on the core's bottom row (x 427.57 = 11 x 38.87, the tile's stripe pitch, so its power pin columns lie on tile stripes; y 2.72, the row grid; on the 4x4 tile until rc17 it was at 349.83, at the right - the 5x4 tile, 2026-10-24, moved it two pitches right to leave 423 um clear at the left for the pixel Calvin), halos 2 x 1 um (the macro keeps its own 2.72 / 1.38 um margins; cut_rows cuts the row overlapping the halo, a touching one survives) and FP_PRUNE_THRESHOLD dropping the 17-site row stubs between the macro and the core edge that pdngen could not power (PDN-0179; RESPIN.md, the halo trial). The tile's stripes are run over its met4 power pins by flow.py's Tile.ExtendPowerStripes, so pdngen's own connectivity check is not the verdict; src/RAM32.v stays as a model for lint (EXTRA_VERILOG_MODELS), the macro's netlist has no power pins",
+  "//": "The RAM32 DFFRAM macro (macros/, the AND-OR read path built in DFFRAM.librelane models/ram_ao, 320.16 x 116.96) instead of the synthesized src/RAM32.v: on the core's bottom row at the right (x 505.31 = 13 x 38.87, the tile's stripe pitch, so its power pin columns lie on tile stripes; y 2.72, the row grid; its right edge 825.47 + the 2 um halo, short of the core's 853.76 - a pitch more would not fit). On the 4x4 tile until rc17 it was at 349.83, at the right; on the 5x4 tile rc18 had it at 427.57 (two pitches right, 423 um clear at the left for the pixel Calvin), and rc19 (2026-10-24, Ken: the draw at 427.57 did not route well) two more, as far right as it goes, halos 2 x 1 um (the macro keeps its own 2.72 / 1.38 um margins; cut_rows cuts the row overlapping the halo, a touching one survives) and FP_PRUNE_THRESHOLD dropping the 17-site row stubs between the macro and the core edge that pdngen could not power (PDN-0179; RESPIN.md, the halo trial). The tile's stripes are run over its met4 power pins by flow.py's Tile.ExtendPowerStripes, so pdngen's own connectivity check is not the verdict; src/RAM32.v stays as a model for lint (EXTRA_VERILOG_MODELS), the macro's netlist has no power pins",
   "REMOVE_SOURCES": [
     "RAM32.v"
   ],
@@ -23,7 +23,7 @@
       "instances": {
         "ram1": {
           "location": [
-            427.57,
+            505.31,
             2.72
           ],
           "orientation": "N"

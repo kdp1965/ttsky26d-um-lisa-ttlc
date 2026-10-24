@@ -1760,6 +1760,18 @@ alone had none); a release candidate is re-hardened.  Not promoted.
   (GPL-0301, 100.5%) and one-row pixels did not converge; on 5x4 the met4
   Calvin's lines (runs/macro-artpix-5x4), Ken's circled Calvin and Calvin
   without the circle routed clean.
+* rc19 (2026-10-24, runs/macro-rc19 - RESPIN 31-33: the TTLC's storage
+  to 64 bits, Timer 3, the WS2812B driver; Ken's updated Calvin, 997
+  pixels; the RAM32 moved to x 505.31, as far right as the 5x4 tile allows,
+  after the draw at 427.57 did not route well - runs/macro-rc19-ram427,
+  stopped - and runs/macro-ws2812 left an antenna violation): 80612
+  instances, 62.3%, 230804 um2 of standard cells, 1200K um of wire,
+  global-route overflow 412 (macro-ws2812 1074), routing DRC / Magic DRC /
+  LVS / antenna 0, hold +0.073, setup +4.96 nominal and -8.3 at the slow
+  max corner (exec_state -> inst -> the data address, in the core).  The
+  re-tap step removed 435 taps and added 4765; no cell on a pixel
+  (art/calvin_nocircle/placement_rc19.png).  Promoted 2026-10-24 (Ken; the
+  precheck left to the gds workflow): gds/, lef/, pnl/ are this run's.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
