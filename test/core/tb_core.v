@@ -282,6 +282,7 @@ module tb_core;
       .sio_oe            ( sio_oe        ),
       .ce_ctrl           ( 2'b10         ),       // the data RAM on CE1
       .spi_mode          ( 2'b00         ),
+      .spi_rd_late        ( 2'b00           ),
       .ce                ( ce            ),
       .dummy_read_cycles ( 8'h66         ),
       .spi_clk_div       ( 4'h0          ),

@@ -262,6 +262,10 @@ be programmed to indicate the nature of the external device(s).  This is accompi
          * [3:0] spi_clk_div: Number of clocks SCLK HIGH and LOW
          * [10:4] ce_delay: Number clocks between CE activations
          * [12:11] spi_mode: Per-CE FALLING SCLK edge data update
+         * [14:13] spi_rd_late: Per-CE read data captured on the FALLING SCLK edge
+           after the rising one (outgoing data unchanged) - for clk/2 (div 0), where
+           the round trip through the pads and the part leaves too little of the
+           half period; 0x6010 = clk/2 with it on both CEs
    6. Set the number of DUMMY ready required for each CE:
       -  0x18: {8'h0, dummy1[3:0], dummy0[3:0]
    7. For QSPI FLASH, set the QSPI Write opcode (it is different for various Flashes):

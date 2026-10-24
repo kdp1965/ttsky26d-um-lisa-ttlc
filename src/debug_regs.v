@@ -78,6 +78,7 @@ module debug_regs
    output wire [3:0]          spi_clk_div,
    output wire [6:0]          spi_ce_delay,
    output wire [1:0]          spi_mode,
+   output wire [1:0]          spi_rd_late,     // 0x1E [14:13]: a read bit captured on SCLK's falling edge (RESPIN 34)
 
    output wire [15:0]         output_mux_bits,
    output wire [7:0]          io_mux_bits,
@@ -145,7 +146,7 @@ module debug_regs
    (* keep = "true" *)
    wire        dbg_we_4a;
    wire [10:0] addr_1c_bits;
-   wire [12:0] addr_1e_bits;
+   wire [14:0] addr_1e_bits;
 
    // We transfer a single 16-bit value on the debug interface
    assign debug_qspi_write = (dbg_a == 8'h20 || dbg_a == 8'h21) && dbg_we;
@@ -175,6 +176,7 @@ module debug_regs
    assign spi_clk_div = addr_1e_bits[3:0];
    assign spi_ce_delay= addr_1e_bits[10:4];
    assign spi_mode    = addr_1e_bits[12:11];
+   assign spi_rd_late = addr_1e_bits[14:13];
 
    sky130_fd_sc_hd__and2_4 and_12(
       `ifdef USE_POWER_PINS
@@ -327,7 +329,7 @@ module debug_regs
       end
       for (b = 0; b < 15; b = b + 1)
       begin : BREAK_BITS
-         if (b < 13)
+         if (b < 15)
          begin : ADDR_1E
          sky130_fd_sc_hd__dlrtp_1   addr_1e_latch
          (
@@ -527,7 +529,7 @@ module debug_regs
          4'hc: dbg_do = {5'h0, psram_mod, clk_div, io_mux_bits};
          4'hd: dbg_do = {9'h0, ttlc_cache_invalidate, inst_cache_invalidate, data_cache_invalidate,
                          data_cache_flush, cache_disabled, cache_map_sel};
-         4'he: dbg_do = {3'h0, spi_mode, spi_ce_delay, spi_clk_div};
+         4'he: dbg_do = {1'h0, spi_rd_late, spi_mode, spi_ce_delay, spi_clk_div};
          4'hf: dbg_do = ttlc_base_addr;
          default dbg_do = 16'h0;
          endcase

@@ -63,6 +63,7 @@ module lisa_qqspi
    output reg [3:0]                 sio_oe,
    input wire [CHIP_SELECTS -1:0]   ce_ctrl,
    input wire [CHIP_SELECTS -1:0]   spi_mode,
+   input wire [CHIP_SELECTS -1:0]   spi_rd_late,  // RESPIN 34: capture read data on SCLK's falling edge
    output reg [CHIP_SELECTS -1:0]   ce,
    input wire [CHIP_SELECTS*4-1:0]  dummy_read_cycles,
    input wire [3:0]                 spi_clk_div,
@@ -113,6 +114,8 @@ module lisa_qqspi
    reg  [3:0]                 len_count_next;
    reg                        is_stream;        // This transfer is such a burst
    reg                        is_stream_next;
+   reg                        late_pend;        // RESPIN 34: the last rising edge shifted a bit in
+   reg                        late_pend_next;
    wire                       byte_offset;
    wire [4:0]                 wr_cycles;
    wire [15:0]                wr_buffer;
@@ -125,6 +128,7 @@ module lisa_qqspi
    wire                       custom_cmd_addr;
    wire                       custom_cmd_read;
    wire                       spi_mode1;
+   wire                       rd_late;
    reg  [3:0]                 clk_div_r;
    reg  [3:0]                 clk_div_next;
    reg  [6:0]                 ce_delay_r;
@@ -137,6 +141,20 @@ module lisa_qqspi
    assign is_flash_c = |(ce_ctrl & is_flash);
    assign quad_mode_c = |(ce_ctrl & quad_mode);
    assign spi_mode1   = |(ce_ctrl & spi_mode );
+   // RESPIN 34: a read bit is shifted in on SCLK's rising edge as always,
+   // and with rd_late taken again from the pins on the falling edge that
+   // follows - nearly a whole SCLK period after the device changed it (on
+   // the previous falling edge) instead of half of one, for clk/2 and the
+   // round trip through the pads, the board and the part's clock-to-output
+   // time; what goes out still shifts on the rising edge (spi_mode moves
+   // both, which at clk/2 changes the outgoing bit on the edge the part
+   // samples it).  late_pend says the bottom bits are the ones the last
+   // rising edge shifted in: a phase that ends on a rising edge has the next
+   // one's command or address loaded while SCLK is still high, and that
+   // falling edge must not overwrite it.  The bits re-taken in a command,
+   // address or write phase are the bottom ones nothing sends; the last
+   // bit's falling edge is the clock S7 runs, so S7 takes it there.
+   assign rd_late     = |(ce_ctrl & spi_rd_late) & !spi_mode1;
    assign custom_cmd_val = write ? wdata[7:0] : cmd_quad_write;
    assign custom_cmd_addr = wdata[8];
    assign custom_cmd_read = custom_spi_cmd && !write;
@@ -202,6 +220,7 @@ module lisa_qqspi
          xfer_done    <= 1'b0;
          clk_div_r    <= 4'h0;
          is_stream    <= 1'b0;
+         late_pend    <= 1'b0;
       end else begin
          state         <= next_state;
          ce            <= ce_next;
@@ -215,6 +234,7 @@ module lisa_qqspi
          ready         <= ready_next;
          len_count     <= len_count_next;
          is_stream     <= is_stream_next;
+         late_pend     <= late_pend_next;
          xfer_done     <= xfer_done_next;
          clk_div_r     <= clk_div_next;
       end
@@ -234,6 +254,7 @@ module lisa_qqspi
       xfer_cycles_next = xfer_cycles;
       len_count_next   = len_count;
       is_stream_next   = is_stream;
+      late_pend_next   = 1'b0;
       xfer_done_next   = xfer_done;
       clk_div_next     = clk_div_r;
       
@@ -260,6 +281,13 @@ module lisa_qqspi
             begin
                sclk_next = 1'b0;
                clk_div_next = spi_clk_div;
+               if (rd_late && late_pend)
+               begin
+                  if (is_quad)
+                     spi_buf_next[3:0] = sio_in[3:0];
+                  else
+                     spi_buf_next[0] = sio_in[1];
+               end
                if (spi_mode1)
                begin
                   spi_buf_next = is_quad ? {spi_buf[19:0], sio_in[3:0]} : {spi_buf[22:0], sio_in[1]};
@@ -267,7 +295,10 @@ module lisa_qqspi
                end
             end
             else
+            begin
                clk_div_next = clk_div_r - 4'h1;
+               late_pend_next = late_pend;
+            end
          end else begin
             if (clk_div_r == 4'h0)
             begin
@@ -277,6 +308,7 @@ module lisa_qqspi
                begin
                   spi_buf_next = is_quad ? {spi_buf[19:0], sio_in[3:0]} : {spi_buf[22:0], sio_in[1]};
                   xfer_cycles_next = is_quad ? xfer_cycles - 4 : xfer_cycles - 1;
+                  late_pend_next = 1'b1;
                end
             end
             else
@@ -381,6 +413,12 @@ module lisa_qqspi
                if (write) begin
                  sio_oe_next  = quad_mode_c ? 4'b1111 : 4'b0001;
                  spi_buf_next[23:8] = wr_buffer;
+                 // the word's first bit on the pins now (RESPIN 34): after
+                 // S7 SCLK is low, and the transfer's first clock is its
+                 // rising edge - at clk/2 the bit changed on the edge the
+                 // part samples it (the Arty's PSRAM took a mix of it and
+                 // the last bit of the word before)
+                 sio_out_next[3:0] = quad_mode_c ? wr_buffer[15:12] : {3'b0, wr_buffer[15]};
                end else begin
                  sio_oe_next = quad_mode_c ? 4'b0000 : 4'b0001;
                end
@@ -390,8 +428,17 @@ module lisa_qqspi
             end
           
             S7_WAIT_FOR_XFER_DONE: begin
-               // transform from little to big endian
-               rdata_next = {spi_buf[7:0], spi_buf[15:8]};
+               // transform from little to big endian; with rd_late the last
+               // bit's falling edge is now (late_pend from its rising edge):
+               // the buffer takes it (S7 rebuilds rdata every clock it waits)
+               if (rd_late && late_pend)
+               begin
+                  if (is_quad)
+                     spi_buf_next[3:0] = sio_in[3:0];
+                  else
+                     spi_buf_next[0] = sio_in[1];
+               end
+               rdata_next = {spi_buf_next[7:0], spi_buf_next[15:8]};
                ready_next = 1'b1;
                sclk_next = 1'b0;
                if (is_stream)

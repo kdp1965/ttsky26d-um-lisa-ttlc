@@ -64,6 +64,14 @@ endif
 
 # Allow sharing configuration between design and testbench via `include`:
 COMPILE_ARGS    += -I$(SRC_DIR)
+# SPI_TCO=<ns>: the flash's and PSRAM's data reach the chip that much later
+ifneq ($(SPI_TCO),)
+COMPILE_ARGS    += -DSPI_TCO=$(SPI_TCO)
+endif
+# SPI_DOUT_DLY=<ns>: the flash and PSRAM see the chip's data lines that much after SCLK
+ifneq ($(SPI_DOUT_DLY),)
+COMPILE_ARGS    += -DSPI_DOUT_DLY=$(SPI_DOUT_DLY)
+endif
 
 # The testbench: the DUT with a SPI flash (firmware.hex) on CE0, a SPI RAM on
 # CE1 and a UART on the debug port.

@@ -202,17 +202,40 @@ module tb
    // Connect the QSPI signals to the SPI flash
    // ==========================================================================
    //assign ce0  = uio_out[0];
+   // SPI_DOUT_DLY=<ns> (make SPI_DOUT_DLY=..., RESPIN 34): the flash and
+   // PSRAM see the data lines the chip drives that much after SCLK - skew in
+   // the pads and on the board; a bit the chip changes on SCLK's rising edge
+   // is then sampled old (the first nibble of each later word of a write
+   // burst was: the Arty's PSRAM at clk/2)
    assign sclk = uio_out[3];
-   assign dq0  = uio_oe[1] ? uio_out[1] : 1'bz;
-   assign dq1  = uio_oe[2] ? uio_out[2] : 1'bz;
-   assign dq2  = uio_oe[6] ? uio_out[6] : 1'bz;
-   assign dq3  = uio_oe[7] ? uio_out[7] : 1'bz;
+`ifdef SPI_DOUT_DLY
+   wire     [7:0] uio_out_d, uio_oe_d;
+   assign #(`SPI_DOUT_DLY) uio_out_d = uio_out;
+   assign #(`SPI_DOUT_DLY) uio_oe_d  = uio_oe;
+`else
+   wire     [7:0] uio_out_d = uio_out;
+   wire     [7:0] uio_oe_d  = uio_oe;
+`endif
+   assign dq0  = uio_oe_d[1] ? uio_out_d[1] : 1'bz;
+   assign dq1  = uio_oe_d[2] ? uio_out_d[2] : 1'bz;
+   assign dq2  = uio_oe_d[6] ? uio_out_d[6] : 1'bz;
+   assign dq3  = uio_oe_d[7] ? uio_out_d[7] : 1'bz;
+   // SPI_TCO=<ns> (make SPI_TCO=..., RESPIN 34): what the flash and PSRAM
+   // drive reaches the chip that much later - the pads, the board and the
+   // parts' clock-to-output time; at clk/2 a bit is sampled 20 ns after the
+   // falling edge that launched it, unless 0x1E's late read capture is set
+`ifdef SPI_TCO
+   wire     [3:0] dq_in;
+   assign #(`SPI_TCO) dq_in = {dq3, dq2, dq1, dq0};
+`else
+   wire     [3:0] dq_in = {dq3, dq2, dq1, dq0};
+`endif
    assign uio_in[0] = 1'b0;
-   assign uio_in[1] = dq0;
-   assign uio_in[2] = dq1;
+   assign uio_in[1] = dq_in[0];
+   assign uio_in[2] = dq_in[1];
    assign uio_in[5:3] = 3'b0;
-   assign uio_in[6] = uart_port_sel == 2'h2 ? txd : dq2;
-   assign uio_in[7] = dq3;
+   assign uio_in[6] = uart_port_sel == 2'h2 ? txd : dq_in[2];
+   assign uio_in[7] = dq_in[3];
 
    pullup (dq0);
    pullup (dq1);

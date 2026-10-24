@@ -5,6 +5,7 @@ Commander writes, and running a program from the flash model.
 Everything waits on signal edges, not on clock polls, so the simulation runs
 at the simulator's own speed between events.
 """
+import os
 import cocotb
 from cocotb.triggers import RisingEdge, First, ClockCycles
 
@@ -168,7 +169,8 @@ class Lisa:
             (REG_OUT_MUX,    0x0000),
             (REG_CS_CFG,     0x0007 if quad else 0x0004),   # {addr16, is_flash, quad} per CS
             (REG_DUMMY,      0x0066),                       # 6 dummy clocks after an EB address
-            (REG_SPI,        0x0010),                       # mode 0, CE delay 1, SCLK clk/2
+            (REG_SPI,        int(os.environ.get('SPI_REG', '0x0010'), 0)),  # mode 0, CE delay 1, SCLK clk/2;
+                                                            # SPI_REG=0x6010 adds the late read capture (RESPIN 34)
             (REG_DBG_ADDR_L, 0x0000),
             (REG_DBG_ADDR_H, 0x0000),
             (REG_LISA1_BASE, 0x0000),

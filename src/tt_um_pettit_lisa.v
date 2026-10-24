@@ -306,6 +306,7 @@ module tt_um_pettit_lisa
    wire [3:0]           spi_clk_div;
    wire [6:0]           spi_ce_delay;
    wire [1:0]           spi_mode;
+   wire [1:0]           spi_rd_late;         // RESPIN 34: late read capture per select
 
    // ==========================================================================
    // The QSPI I/O signals
@@ -806,6 +807,7 @@ module tt_um_pettit_lisa
       .spi_clk_div               ( spi_clk_div               ),
       .spi_ce_delay              ( spi_ce_delay              ),
       .spi_mode                  ( spi_mode                  ),
+      .spi_rd_late               ( spi_rd_late               ),
      
       // The QSPI Pin interface
       .sclk                      ( sclk                      ),
@@ -918,6 +920,7 @@ module tt_um_pettit_lisa
       .spi_clk_div               ( spi_clk_div               ),
       .spi_ce_delay              ( spi_ce_delay              ),
       .spi_mode                  ( spi_mode                  ),
+      .spi_rd_late               ( spi_rd_late               ),
                                                              
       // I/O Mux Bits                                        
       .output_mux_bits           ( output_mux_bits           ),

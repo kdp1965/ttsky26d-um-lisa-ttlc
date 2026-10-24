@@ -44,6 +44,7 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 31 | An extension: the TTLC's storage doubled to 64 bits - bits 32-63 at I/O addresses 160-191, bytes 20-23 of the core's view | `ttlc_io.v` temp_storage, read_values; `lisa_ttlcio.v` TIDX to 23 | done: test/progs/ttlc/ttlc_storage.asm (make TTLC=1 TTLC_IMAGE=progs/ttlc_storage_test.hex), test/progs/ttlcio.c checks 1, 0x0d, 0x0e |
 | 32 | An extension: Timer 3 - 16 bits with a prescaler, two PWM outputs (uo[1] / uo[2] in mux 2, when enabled; UART2's transmit otherwise) and two input captures (ui_in[4] / ui_in[5]), interrupt source 8 on vector 9 | `lisa_timer3.v`, `lisa_periph.v` 0x30-0x3F, `lisa_core.v` int_i 9 bits, `lisa_io_mux.v` periph_sel1[2:1], `tt_um_pettit_lisa.v` | done: test/progs/timer3.c (make TIMER3=1), sdcc_test/test_timer3.c (lisa_sim --cap-wave) |
 | 33 | An extension: a WS2812B LED string driver - the pixels in the TTLC's 48 output flops (two halves), the line on one of mux 3's uo[0], [1], [2], [5], [6], programmable timing, the free-half request on the TTLC's interrupt source | `lisa_ws2812.v`, `lisa_periph.v` 0x40-0x45 and int_req[5], `lisa_io_mux.v` periph_sel2, `tt_um_pettit_lisa.v` | done: test/progs/ws2812.c (make WS2812=1), sdcc_test/test_ws2812.c |
+| 34 | QSPI at clk/2: in a write burst the first nibble of every later word changed on SCLK's rising edge, the one the part samples (the Arty's PSRAM at clk/2: the cache on failed); and a late read capture, 0x1E [14:13] per select: a read bit taken again on the following falling edge, for the round trip through the pads and the part | `lisa_qqspi.v` S6, rd_late / late_pend, `debug_regs.v` 0x1E, `tt_um_pettit_lisa.v` | done: tb.v SPI_DOUT_DLY / SPI_TCO, SPI_REG=0x6010 |
 
 Status: open / fixed (the test that shows it, in test/: a program of test/progs, a cocotb test of test/core or the fops bench).
 
@@ -1126,6 +1127,72 @@ on it), and one antenna violation left after repair_antennas: a clock
 leaf (clknet_leaf_24_clk_regs) at one flop's CLK pin, met1 partial ratio
 434 against 400 (1.09x) - a property of this draw (rc18, items 31 and 32
 alone had none); a release candidate is re-hardened.  Not promoted.
+
+## 34. QSPI at clk/2: a write burst's word boundaries, and a late read capture
+
+**Why.** The Arty's WS2812 run (item 33) underran on fetch speed: the
+QSPI at clk/4 (0x1E = 0x0811) has been the board's limit, and clk/2
+(0x0010) failed with the data cache on (Ken: "I'm still surprised the
+QSPI won't run with clk/2, especially at 50MHz").  Flash-only programs
+run at clk/2.  The suspicion was the read sample: `lisa_qqspi.v` shifts a
+read bit in on SCLK's rising edge, one clock (20 ns at 50 MHz) after the
+falling edge on which the part changes it, and the round trip through the
+pads, the board and the part's clock-to-output is close to that.
+
+**What it was: the writes.**  The PSRAM written and read from the
+debugger with the core halted (1 KB through the cache, a pattern written
+at one 0x1E and read back at another): reads at clk/2 of what was
+written at clk/4 are right; what is written at clk/2 has the high nibble
+of even bytes wrong - the first nibble of every word after the first in a
+burst - as a bit-by-bit mix of that nibble and the last one of the word
+before (0x36 read 0x76: 3 = 0011 and 5 = 0101).  After a word S7 drops
+SCLK; S6 loads the next word into spi_buf but left sio_out alone, so the
+first nibble reached the pins in the transfer's first clock - which at
+clk/2 is the rising edge itself: the data changed on the edge the part
+samples it.  At clk/4 the divider's clock in between hid it; the first
+word after the address is safe (SCLK is still high there, a falling edge
+comes first).  The testbench could not see it: the models sample in the
+same time step, before the data changes.  **Fix**: S6 drives the word's
+first bit (nibble) on a write.
+
+**And a late read capture** (0x1E [14:13], one bit per select:
+`rd_late`): a read bit is still shifted in on the rising edge and taken
+again from the pins on the falling edge that follows, nearly a whole SCLK
+period after the part changed it; what goes out still changes on the
+rising edge (spi_mode, [12:11], moves both, and at clk/2 the outgoing bits
+then change on the edge the part samples them: 0x1810 / 0x1010 hung on
+the Arty).  `late_pend` says the bottom bits are the ones the last rising
+edge shifted in: a phase that ends on a rising edge has the next one's
+command or address loaded while SCLK is still high, and that falling edge
+must not overwrite it (the first version did, and nothing ran even with
+no delay).  The last bit's falling edge is the clock S7 runs: S7 takes it
+there and builds rdata from it.  Ignored on a select with spi_mode set.
+`debug_regs.v`: the register's latches to 15 bits, read back.  The Arty
+does not need it (its reads at clk/2 are right); the chip's pads and a
+slower part may.
+
+**Test.** `tb.v`: SPI_DOUT_DLY=<ns> (`make SPI_DOUT_DLY=3`) has the
+flash and PSRAM see the chip's data lines that much after SCLK - with 3 ns
+test_core (CACHE=1) fails at clk/2 and passes at clk/4 before the fix, and
+passes at clk/2 after it; SPI_TCO=<ns> delays what the parts drive on the
+way back - at SPI_TCO=24 the default suite and test_core fail at clk/2
+without the late capture and pass with it (SPI_REG=0x6010; lisa.py's setup
+writes 0x1E from SPI_REG, default 0x0010), as do 0 and 36 ns.  With
+SPI_DOUT_DLY=8 SPI_TCO=24 SPI_REG=0x6010 the default suite, test_core and
+test_divc (CACHE=1), the TTLC, SPIM, TTLCIO, TIMER3, WS2812 and OVERRUN
+suites pass, and everything as before without them; Verilator and icarus.
+(`make BANK=1` fails at HEAD as well: progs/bank.c is the rev-2 bank test,
+which rev 3's bank registers no longer match.)  sdcc_test/hw_psram.c: the
+pattern test as a program (on the Arty at clk/2 before the fix its own
+stack in the PSRAM went first).
+
+**On the Arty** (2026-10-24, 50 MHz, setup +0.189 / hold +0.040 ns,
+build/lisa_arty_r3_50_respin34.bit on andromeda): the debugger's pattern
+test clean in every combination of clk/4, clk/2 and clk/2 with the late
+capture; test_core, test_divc and hw_psram pass at 0x0010 and 0x6010 as
+at 0x0811 (hw_psram 1.71 s against 3.22 s at clk/4); item 33's
+test_ws2812 (the asm ws_put, TBIT 74), which underran at clk/4, passes at
+clk/2 (five runs of five).  arty_run.py's default SPI is 0x0010 now.
 
 ## Verification (test/, see test/README.md)
 

@@ -32,6 +32,10 @@ make TTLCIO=1                 # the TTLC's I/O from the core (RESPIN 30): progs/
                               # halted (the chains are the core's), then running its loopback
                               # (watching it, holding it with the claim, a scan of the core's own)
 make IHX=../../lisa-tools/sdcc_test/test_core.ihx [CACHE=1] [TIMEOUT=clocks]
+make SPI_TCO=24 SPI_REG=0x6010  # any of these with the flash's and PSRAM's data 24 ns late into the
+                              # chip and 0x1E's late read capture on (RESPIN 34); SPI_DOUT_DLY=<ns>:
+                              # the parts see the chip's data lines that much after SCLK; a new
+                              # SIM_BUILD (or make clean) when either changes: they are compile defines
 ./run_suite.sh chip REV2=1    # the SDCC suite's self-checking programs (the
                               # *_rev2.ihx of `make check REV2=1`: this RTL's
                               # stack convention; without REV2=1 the TT07 build)
