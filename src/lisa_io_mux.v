@@ -162,7 +162,7 @@ module lisa_io_mux
    input  wire             spi_sclk_m3,        // SCLK for uo[7] in mux 3: moves only while owned
    input  wire             spi_mosi,
    input  wire [1:0]       spi_cs_n,
-   input  wire             spi_owned,          // uo[2:0] are the SPI's in mux 3
+   input  wire             spi_owned,          // uo[2:0] are the SPI's in mux 3 (not during a scan)
 
    // UART signals
    input  wire             baud_ref,            // Baud rate reference clock

@@ -28,7 +28,9 @@ module tb
    output wire  [15:0]  spi_count0,         // bytes device 0 / 1 took
    output wire  [15:0]  spi_count1,
    output wire  [15:0]  spi_collide,        // TTLC shift clocks inside an SPI transaction
-   output wire  [31:0]  ttlc_differ         // clocks the 48 outputs differed from the inputs
+   output wire  [31:0]  ttlc_differ,        // clocks the 48 outputs differed from the inputs
+   input  wire  [47:0]  ttlc_watch,         // a value for the outputs ...
+   output wire  [31:0]  ttlc_match          // ... and the clocks they held it
 );
    wire     [2:0] ttlc_din;
    wire           spi_miso;           // the SPI devices' MISO (ui_in[2])
@@ -339,6 +341,12 @@ module tb
       if (ttlc_out != ttlc_in)
          differ <= differ + 32'h1;
    assign ttlc_differ = differ;
+
+   reg   [31:0]   match = 32'h0;
+   always @(posedge clk)
+      if (ttlc_out == ttlc_watch)
+         match <= match + 32'h1;
+   assign ttlc_match = match;
 
    // ==========================================================================
    // Instantiate a SPI flash

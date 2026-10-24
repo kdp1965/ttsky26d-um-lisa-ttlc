@@ -23,6 +23,9 @@ make OVERRUN=1                # the UART receive FIFO's overrun flag (RESPIN 14)
 make SPIM=1                   # the SPI master (RESPIN 29): progs/spi.c against tb.v's two SPI
                               # devices on the mux-2 pins, then on the TTLC's pins with the
                               # loopback running (the interlock: no scan inside a transaction)
+make TTLCIO=1                 # the TTLC's I/O from the core (RESPIN 30): progs/ttlcio.c with the ICU
+                              # halted (the chains are the core's), then running its loopback
+                              # (watching it, holding it with the claim, a scan of the core's own)
 make IHX=../../lisa-tools/sdcc_test/test_core.ihx [CACHE=1] [TIMEOUT=clocks]
 ./run_suite.sh chip REV2=1    # the SDCC suite's self-checking programs (the
                               # *_rev2.ihx of `make check REV2=1`: this RTL's

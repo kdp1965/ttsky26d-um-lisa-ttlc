@@ -104,6 +104,13 @@ Address Map:
    0x2A:       DIV: half an SCLK period is DIV + 1 clocks
    0x2B:       STATUS: BUSY, DONE, OWNED, TTLC_WAIT
 
+   TTLC I/O (RESPIN 30, lisa_ttlcio.v)
+   ========
+   0x2C:       TIDX: the byte of the TTLC's I/O vector, 0-17
+   0x2D:       TDATA: byte TIDX (outputs 0-5, inputs 6-11, storage 12-15,
+               port_in 16, {RR, 0, 1} 17); writes to 0-5 and 12-15; TIDX + 1
+   0x2E:       TCTRL: write [0] START a scan; read BUSY, DONE, PEND, TTLC_WAIT, OWNED
+
 ==========================================================================================
 */
 module lisa_periph
@@ -172,7 +179,14 @@ module lisa_periph
    output wire [1:0]    spi_cs_n,
    input  wire          ttlc_scan_req,       // the TTLC wants a scan
    input  wire          ttlc_scan_busy,      // a scan in progress
-   output wire          spi_owned            // the TTLC's mode-3 pins are the SPI's
+   output wire          spi_owned,           // the TTLC's mode-3 pins are the SPI's
+
+   // The TTLC's I/O as bytes (RESPIN 30, lisa_ttlcio.v)
+   output wire [4:0]    ttlc_idx,
+   output wire [7:0]    ttlc_wdata,
+   output wire          ttlc_we,
+   input  wire [7:0]    ttlc_rdata,
+   output wire          ttlc_lisa_start      // a scan the core started
 );
 
    reg   [15:0]         ms_count;
@@ -213,6 +227,8 @@ module lisa_periph
    wire                 scl_oen_n;
    wire                 i2c_irq;
    wire  [7:0]          spi_d_o;
+   wire  [7:0]          ttlcio_d_o;
+   wire                 spi_xfer_busy;
    wire                 spi_irq;
 
 `ifdef WANT_UART2
@@ -645,10 +661,35 @@ module lisa_periph
       .scan_req     ( ttlc_scan_req  ),
       .scan_busy    ( ttlc_scan_busy ),
       .owned        ( spi_owned      ),
+      .xfer_busy    ( spi_xfer_busy  ),
       .irq          ( spi_irq        )
    );
 
-   assign d_o = d_o_r | i2c_d_o | spi_d_o;
+   // ==============================================
+   // The TTLC's I/O for the core (RESPIN 30)
+   // ==============================================
+   lisa_ttlcio i_lisa_ttlcio
+   (
+      .clk          ( clk             ),
+      .rst_n        ( rst_n           ),
+      .d_addr       ( d_addr          ),
+      .d_i          ( d_i             ),
+      .d_periph     ( d_periph        ),
+      .d_we         ( d_we            ),
+      .d_rd         ( d_rd            ),
+      .d_o          ( ttlcio_d_o      ),
+      .idx          ( ttlc_idx        ),
+      .wdata        ( ttlc_wdata      ),
+      .we           ( ttlc_we         ),
+      .rdata        ( ttlc_rdata      ),
+      .scan_busy    ( ttlc_scan_busy  ),
+      .spi_busy     ( spi_xfer_busy   ),
+      .ttlc_wait    ( ttlc_scan_req & spi_owned ),
+      .owned        ( spi_owned       ),
+      .start        ( ttlc_lisa_start )
+   );
+
+   assign d_o = d_o_r | i2c_d_o | spi_d_o | ttlcio_d_o;
    // The requests to the core and INT_STATUS.  The timers' rollovers, the
    // port's edges and the TTLC's toggle are instants: latched (int_o_r) until
    // a 1 is written to their bit of INT_STATUS.  The UARTs' are states - a

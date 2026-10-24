@@ -354,7 +354,12 @@ module tb_core;
       .spi_cs_n           (                 ),
       .ttlc_scan_req      ( 1'b0            ),
       .ttlc_scan_busy     ( 1'b0            ),
-      .spi_owned          (                 )
+      .spi_owned          (                 ),
+      .ttlc_idx           (                 ),
+      .ttlc_wdata         (                 ),
+      .ttlc_we            (                 ),
+      .ttlc_rdata         ( 8'h0            ),
+      .ttlc_lisa_start    (                 )
    );
 
    // the console input: a byte stays until the program reads it

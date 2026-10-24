@@ -372,6 +372,11 @@ module tt_um_pettit_lisa
    wire [1:0]           spi_cs_n;
    wire                 spi_owned;           // the TTLC's mode-3 pins are the SPI's
    wire                 ttlc_scan_req;       // FLAG_O, or a scan waiting for them
+   wire [4:0]           ttlcio_idx;          // RESPIN 30: the core's byte port
+   wire [7:0]           ttlcio_wdata;
+   wire                 ttlcio_we;
+   wire [7:0]           ttlcio_rdata;
+   wire                 ttlc_lisa_start;     // a scan the core started (TCTRL START)
    reg                  ttlc_scan_pend;
 
    // ==========================================================================
@@ -680,7 +685,12 @@ module tt_um_pettit_lisa
       .spi_cs_n                  ( spi_cs_n                  ),
       .ttlc_scan_req             ( ttlc_scan_req             ),
       .ttlc_scan_busy            ( io_busy                   ),
-      .spi_owned                 ( spi_owned                 )
+      .spi_owned                 ( spi_owned                 ),
+      .ttlc_idx                  ( ttlcio_idx                ),
+      .ttlc_wdata                ( ttlcio_wdata              ),
+      .ttlc_we                   ( ttlcio_we                 ),
+      .ttlc_rdata                ( ttlcio_rdata              ),
+      .ttlc_lisa_start           ( ttlc_lisa_start           )
    );
 
    // ==========================================================================
@@ -1039,7 +1049,7 @@ module tt_um_pettit_lisa
       .spi_sclk_m3               ( spi_sclk_m3               ),
       .spi_mosi                  ( spi_mosi                  ),
       .spi_cs_n                  ( spi_cs_n                  ),
-      .spi_owned                 ( spi_owned                 ),
+      .spi_owned                 ( spi_owned & !io_busy      ),   // a scan has the data pins (RESPIN 30)
       .ttlc_reset                ( ttlc_reset                ),
       .ttlc_shiftclk             ( ttlc_shiftclk             ),
 
@@ -1155,7 +1165,11 @@ module tt_um_pettit_lisa
       .data_out                  ( data_out                  ), // Data output pin, continuously assigned
       .port_out                  ( ttlc_to_lisa              ),
       .port_in                   ( lisa_to_ttlc              ),
-      .ttlc_int                  ( ttlc_int                  )
+      .ttlc_int                  ( ttlc_int                  ),
+      .lisa_idx                  ( ttlcio_idx                ),
+      .lisa_wdata                ( ttlcio_wdata              ),
+      .lisa_we                   ( ttlcio_we                 ),
+      .lisa_rdata                ( ttlcio_rdata              )
    );
 
    assign rr_value  = RR;
@@ -1182,7 +1196,10 @@ module tt_um_pettit_lisa
       .input_buffer              ( input_pins                )  // Output from the module, captures the serial input
    );
 
-   assign ttlc_io_start = ttlc_scan_req & !spi_owned;
+   // the TTLC's own scans wait while the SPI holds the pins; one the core
+   // starts (RESPIN 30) runs even then - the core holds the claim itself
+   // and lisa_ttlcio waits for the SPI byte to end
+   assign ttlc_io_start = (ttlc_scan_req & !spi_owned) | ttlc_lisa_start;
 
 endmodule // tt_um_pettit_lisa
 

@@ -88,6 +88,7 @@ module lisa_spi
    input  wire          scan_req,      // a scan requested (FLAG_O, or one waiting)
    input  wire          scan_busy,     // a scan in progress
    output reg           owned,         // the mode-3 pins are the SPI's
+   output wire          xfer_busy,     // a byte under way or waiting (RESPIN 30's START waits on it)
    output wire          irq
 );
 
@@ -118,7 +119,10 @@ module lisa_spi
    assign cs_n    = ~ctrl[1:0];
    assign irq     = done & ctrl[7];
    assign sclk_m3 = own_r ? sclk : sclk_hold;
-   assign go      = pend && !busy && (!claim || owned);
+   // on the claimed pins a byte also waits out a scan the core started
+   // while holding them (RESPIN 30): the scan has the data pins
+   assign go      = pend && !busy && (!claim || (owned && !scan_busy));
+   assign xfer_busy = busy | pend;
    assign wr_data = d_periph && d_we && d_addr == 7'h28;
 
    always @(posedge clk)

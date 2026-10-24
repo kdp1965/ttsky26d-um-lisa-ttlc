@@ -53,6 +53,7 @@ The following is a block diagram of the design:
    - Programmable I/O mux for maximum flexibility of I/O usage.
    - TTLC 48-Outputs plus 48-Inputs via external 74HC595 / 74HC165 chips
    - TTLC 32-Bit internal storage plus 16 bit I/O to LISA (8 each direction)
+   - TTLC I/O readable / writable by LISA as bytes, with LISA-started I/O scans
 
 A 32x32 1RW [DFFRAM](https://github.com/AUCOHL/DFFRAM) macro implements a 128 byte RAM module.
 The RAM can be used either as a DATA cache for the processor, giving a 32K Byte address range,
@@ -664,6 +665,48 @@ address zero" opcode to restart the PLC / TTLC loop.  So the idea is the code lo
 once using current inputs, updates internal storage and outputs, then at the end triggers an I/O update
 and jump to zero.  Then during the I/O update / busy period, the processor (ICU) core is held idle
 at address zero until the I/O transaction is complete.
+
+### LISA Access to the TTLC I/O
+
+LISA can also read and write the TTLC's I/O directly, so it can either monitor the PLC while it runs, or use the
+48 inputs and 48 outputs of the 74HC165 / 74HC595 chains as its own peripheral when the MC14500B isn't running
+(it is halted at reset until the Debug interface starts it).  The TTLC's whole I/O space (the 48 outputs, 48
+inputs, 32 internal storage bits, the 8 bits from LISA, RR and the constants) is presented to LISA as 18 bytes
+through three peripheral registers:
+
+ | ADDR | Register | Description                                                                      |
+ | ---- | -------- | -------------------------------------------------------------------------------- |
+ | 0x2C | TIDX     | Byte index, 0-17                                                                 |
+ | 0x2D | TDATA    | Read: byte TIDX.  Write: byte TIDX of the outputs (0-5) or storage (12-15).  TIDX auto-increments |
+ | 0x2E | TCTRL    | Write: [0] START a scan.  Read: [0] BUSY, [1] DONE, [2] PEND, [3] TTLC_WAIT, [4] OWNED |
+
+ | Byte  | TTLC Addresses | Contents                           |
+ | ----- | -------------- | ---------------------------------- |
+ | 0-5   | 0-47           | Outputs (to the 74HC595 chains)    |
+ | 6-11  | 48-95          | Inputs (from the 74HC165 chains)   |
+ | 12-15 | 96-127         | Internal storage (byte 12 = Port D) |
+ | 16    | 128-135        | The 8 bits from LISA (Port E)       |
+ | 17    | 136-138        | RR, constant 0, constant 1          |
+
+Reading never disturbs the MC14500B ... LISA has its own read path to the I/O.  The inputs only change at the end
+of an I/O scan, and the DONE bit (set when a scan ends, cleared when TCTRL is read) lets the code tell if a scan
+happened in the middle of reading the six input bytes.  Writing START runs an I/O scan, just like the FLAG_O
+opcode does: the outputs are shifted out to the 74HC595s and the inputs captured from the 74HC165s.  So with the
+MC14500B halted, updating all 48 outputs and reading all 48 inputs is six byte writes, a START, waiting for DONE
+and six byte reads.  If LISA writes a byte in the same clock that the MC14500B writes one of its bits, the
+MC14500B's bit wins.
+
+To make updates the PLC program must not see half done while it is running, LISA uses the same CLAIM bit as the
+SPI Master (SPI CTRL bit 4):
+
+   1. Set CLAIM and wait for OWNED.  The TTLC's own I/O scans now wait, so the MC14500B stops at its next
+      FLAG_O (TTLC_WAIT shows when it is waiting).
+   2. Write the outputs, START a scan (allowed while LISA holds the claim) and wait for DONE.
+   3. Read the inputs, then clear CLAIM.  The TTLC's waiting scan runs and its program continues.
+
+During a scan the three shared data pins (uo[0..2] in Mux Mode 3) belong to the shift registers, even while LISA
+holds the claim, and the SPI Master waits for the scan to finish before it sends a byte (and a START waits for an
+SPI byte in progress), so the two never collide.
 
 ## The SPI Master
 

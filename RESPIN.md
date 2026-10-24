@@ -40,6 +40,7 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 27 | An extension: the divider's second result and a chained step. `div` leaves the remainder in IX (`rem` the quotient; TT07 and rc10 cleared IX), and `divc` (0xA174) divides {IX, A} by the divisor of the last division, the quotient byte to A / RA and the remainder to IX - a long division of any width by a 16-bit divisor in one `divc` per byte (SDCC's 64-bit division is a 20K-instruction bit-serial loop); the divider is a restoring one now, 16 clocks | `lisa_div.v`, `lisa_core.v` op_divc | done: sdcc_test/test_divc (lisa_sim --rev2, the testbench) |
 | 22 | Bank registers (an extension): the upper 16K of the code and of the data space a window on 64 code / 16 data banks, 2 MB / 256 KB | `lisa_periph.v` 0x15-0x17, `tt_um_pettit_lisa.v`, `inst_stream.v`, `data_cache8.v`, `lisa_core.v` d_sp | done: test/progs/bank.c (make BANK=1), lisa_sim --rev2, sdcc __banked (sdcc_test/test_bank on the testbench and the Arty) |
 | 29 | An extension: a SPI master on its own pins - the core reaches a SPI flash or SD card without the QSPI bus its instructions come from (a fifth QSPI client could deadlock on the core's own fetch) - on the mux-2 pins or shared with the TTLC's pins under an interlock with the scan | `lisa_spi.v`, `lisa_periph.v` 0x28-0x2B, `lisa_io_mux.v`, `tt_um_pettit_lisa.v` ttlc_scan_pend | done: test/progs/spi.c (make SPIM=1: test_spi, test_spi_ttlc), sdcc_test/test_spiflash (lisa_sim --rev3 --spi-flash) |
+| 30 | An extension: the TTLC's I/O from the core - the 139-bit I/O vector as 18 bytes (read any time, the outputs and storage writable), scans the core starts, and atomic updates under the SPI master's claim | `lisa_ttlcio.v`, `lisa_periph.v` 0x2C-0x2E, `ttlc_io.v` byte port, `tt_um_pettit_lisa.v` ttlc_io_start, `lisa_io_mux.v`, `lisa_spi.v` go | done: test/progs/ttlcio.c (make TTLCIO=1: test_ttlcio, test_ttlcio_run) |
 
 Status: open / fixed (the test that shows it, in test/: a program of test/progs, a cocotb test of test/core or the fops bench).
 
@@ -884,7 +885,85 @@ the JEDEC ID, the write enable, a 4K erase, programs that wrap in their
 page, read and fast read.
 
 **Cost.** About 47 flops and the muxes (rc15's area is 70% of the tile).
-Hardened as rc16 (2026-10-22, the hardening section); the Arty bitstream not rebuilt.
+Hardened as rc16 (2026-10-22, the hardening section); the Arty bitstream
+rebuilt 2026-10-23, an SST25VF064C on the mux-2 pins read and written there
+(lisa-tools sdcc_test/hw_spiflash*.c, NuttX arty:smartfs).
+
+## 30. The TTLC's I/O from the core
+
+**Why.** Not a silicon issue: an extension (Ken, 2026-10-23).  The core
+could see the TTLC only through the 8-bit mailbox (port D = the storage's
+low byte, port E = the ICU's port_in).  With the I/O vector readable the
+core can watch the PLC's inputs, outputs and storage while it runs; with
+the outputs writable and a scan it can start, the 74HC595 / 74HC165
+chains are the core's own 48 outputs and 48 inputs when the ICU is not
+running (its reset state: ttlc_run is 0).
+
+**Registers** (`src/lisa_ttlcio.v`; `lisa_periph.v` 0x2C-0x2E).
+
+| Address | Register | |
+|---|---|---|
+| 0x2C | TIDX | the byte, 0-17 (an index past 17 reads 0) |
+| 0x2D | TDATA | read: byte TIDX of the vector; write: byte TIDX of the outputs (0-5) or the storage (12-15), others ignored; a read or a write moves TIDX on (17 wraps to 0) |
+| 0x2E | TCTRL | write: [0] START a scan (and clear DONE); read: [0] BUSY, [1] DONE (a scan has ended since the last read, with no START still waiting; the read clears it), [2] PEND (a START not yet taken), [3] TTLC_WAIT (the ICU holds at a scan the claim keeps back), [4] OWNED |
+
+The bytes are the ICU's addresses eight at a time (`ttlc_io.v`
+read_values): 0-5 the outputs (address 0-47), 6-11 the inputs (48-95),
+12-15 the storage (96-127; byte 12 is port D), 16 port_in (port E), 17
+{.., 1, 0, RR}.  Six reads and the inputs are the core's; six writes and a
+START and the outputs are on the chains.
+
+**Reading never disturbs the ICU**: a second read port on the vector
+(an 8-bit 18:1 mux - the ICU's 139:1 bit mux stays its own).  The inputs
+change only at a scan's end, so DONE tells a read of the six input bytes
+that spans one; the outputs and storage change as the ICU writes them.
+
+**Writing.** A byte written in the clock the ICU writes one of its bits:
+the ICU's bit wins, the other seven are the core's.
+
+**Scans.** START is kept (PEND) until shift_reg_io takes it (idle), so a
+START during a scan runs a fresh one after it; it also waits for the SPI
+master's byte in flight.  `ttlc_io_start` = the TTLC's own request (FLAG_O,
+or one waiting) while the pins are not owned, or the core's START.
+
+**Atomic updates with the ICU running** (Ken's design: the SPI master's
+claim, item 29, is the halt): set CLAIM (0x29 bit 4) and wait for OWNED -
+the ICU's own scans now wait, so it stops at its next one (TTLC_WAIT, if
+it is running at all) - write the outputs, START (allowed while the claim
+is held: the core holds it), read the inputs, clear CLAIM.  For the scan
+the mode-3 data pins uo[0..2] go back to the chains (`lisa_io_mux.v` gets
+OWNED only outside a scan), and the SPI master starts no byte on the
+claimed pins while a scan runs (`lisa_spi.v` go), so the two never
+overlap.  After the release the ICU's held scan runs: with the outputs
+the ICU left (the core's, until the ICU's loop writes its own).
+
+**Test.** `test/progs/ttlcio.c` on the chip bench (`make TTLCIO=1`, mux
+mode 3, the inputs 0x0123456789ab on the 165 chains).  test_ttlcio, the
+ICU halted: the index's auto-increment and wrap, byte 17's constants,
+port_in at 16, outputs and storage written and read back, the storage's
+low byte on port D, the inputs not writable, a scan (DONE, cleared by the
+read), the inputs it captured, and a second set of outputs found on the
+595 chains after the run.  test_ttlcio_run, the ICU running its loopback:
+two of its scans watched, the inputs and the copied outputs read, then
+the claim, TTLC_WAIT, the core's outputs and its own scan while held, the
+outputs still the core's (the ICU waited), the release, and the loopback
+copying the inputs again; whenever the chains' outputs left the inputs
+they were the core's (`tb.v` ttlc_watch / ttlc_match: 74570 of 74570
+clocks).  Without the data pins going back to the chains for the scan the
+test fails (6044 of 74570: only the ICU's held scan after the release put
+them out).  Verilator and icarus.  lisa_sim has no TTLC and no model of
+these registers.
+
+**Cost.** About ten flops (the index, PEND, DONE and its edge), the
+byte read mux and a write term per output and storage flop.  Hardened
+2026-10-23 (runs/macro-ttlcio, rc16's recipe: a free draw with the art):
+206179 um2 of standard cells against rc16's 203976 (+2203, +1.1%),
+utilization 71.1% (rc16 70.5%), 61840 instances, 919K um of wire (+2%),
+routing / Magic DRC, LVS and antenna 0, hold +0.074, setup +5.74 nominal
+(rc16 +5.59) and -8.0 at the slow max corner (rc16 -6.8) - a path wholly
+inside the core (ix -> the data address -> inst -> sp, no net of the TTLC
+I/O, the peripherals or the SPI master on it), the address chain of rc13
+(-8.2) and rc14 (-7.1), which moves from draw to draw.  Promoted as rc17 (2026-10-23).
 
 ## Verification (test/, see test/README.md)
 
@@ -1490,6 +1569,17 @@ Hardened as rc16 (2026-10-22, the hardening section); the Arty bitstream not reb
   info.yaml, every reference; runs/macro-pettit re-hardened it with the
   same recipe and came out identical (61852 instances, 70.5%, -6.8 ss,
   clean), and gds/, lef/, pnl/ are its tt_um_pettit_lisa.* files.
+* rc17 (2026-10-23, runs/macro-ttlcio - RESPIN 30, the TTLC's I/O from
+  the core: the I/O vector as bytes at 0x2C-0x2E, scans the core starts,
+  atomic updates under the SPI master's claim; rc16's recipe, a free draw
+  with the art): 61840 instances, 71.1% (rc16 70.5%; +2203 um2 of
+  standard cells), 919K um of wire, routing DRC / Magic DRC / LVS /
+  antenna 0, hold +0.074, setup +5.74 nominal, -8.0 at the slow max
+  corner (the worst path ix -> the data address -> inst -> sp, inside the
+  core).  The chip testbench (Verilator and icarus: default, SPIM, TTLC,
+  TTLC jump, OVERRUN, TTLCIO) and the core bench pass.  Promoted
+  2026-10-23 (Ken; the precheck left to the gds workflow): gds/, lef/,
+  pnl/ are this run's; macro.json's anchor table stays rc15's.  Tag rc17.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception

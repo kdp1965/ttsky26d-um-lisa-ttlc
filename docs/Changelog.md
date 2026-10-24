@@ -47,3 +47,10 @@ suite, the LISA Commander and lisa_ide; this revision fixes what was found
   uo[6]; CS1 uo[7] by default) or sharing the TTLC's pins in mux mode 3
   (SCLK uo[7], MOSI and the selects on the shift registers' data lines),
   taking turns with the TTLC's I/O scans.  MISO on ui_in[0], [1], [2] or [7].
+* The TTLC's I/O from LISA (peripheral registers 0x2C-0x2E): the 48
+  outputs, 48 inputs, 32 storage bits, port_in and RR as 18 bytes through
+  an auto-incrementing index - read at any time without disturbing the
+  MC14500B, the outputs and storage writable - and I/O scans LISA starts
+  itself, so the shift-register chains are LISA's 48 outputs and 48 inputs
+  when the TTLC isn't running.  Holding the SPI master's claim stops the
+  TTLC at its next scan, for updates it must not see half done.

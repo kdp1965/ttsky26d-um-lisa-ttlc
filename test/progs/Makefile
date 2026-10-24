@@ -8,9 +8,9 @@ SDCC      ?= ../../../lisa-tools/sdcc-lisa/build/bin/sdcc
 SDCC_TEST ?= ../../../lisa-tools/sdcc_test
 CFLAGS    ?= -mlisa --rev3 --debug -I$(SDCC_TEST)
 
-PROGS = hello alu2 reti div16 cache14 dbg swap bank uartov spi
+PROGS = hello alu2 reti div16 cache14 dbg swap bank uartov spi ttlcio
 
-all: $(PROGS:%=%.hex) ttlc_test.hex ttlc_jump_test.hex bank_test.hex spi_test.hex
+all: $(PROGS:%=%.hex) ttlc_test.hex ttlc_jump_test.hex bank_test.hex spi_test.hex ttlcio_test.hex
 
 # the TTLC programs (ttlc/*.asm, assembled by ttlc/mc14500_as.py into the
 # slot format of ttlc_fetch.v) at byte 0x10000 of the flash, behind hello:
@@ -29,6 +29,10 @@ ttlc_jump_test.hex: hello.hex ttlc/ttlc_jump.hex ../hexcat.py
 # on the TTLC's pins
 spi_test.hex: spi.hex ttlc/ttlc_loopback.hex ../hexcat.py
 	python3 ../hexcat.py $@ 0 spi.hex 10000 ttlc/ttlc_loopback.hex
+
+# the TTLC's I/O from the core (RESPIN 30): ttlcio.c, with the loopback
+ttlcio_test.hex: ttlcio.hex ttlc/ttlc_loopback.hex ../hexcat.py
+	python3 ../hexcat.py $@ 0 ttlcio.hex 10000 ttlc/ttlc_loopback.hex
 
 %.ihx: %.c $(SDCC_TEST)/harness.h
 	$(SDCC) $(CFLAGS) -o $@ $<

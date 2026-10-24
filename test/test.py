@@ -18,6 +18,7 @@ async def start(dut):
     dut.ttlc_mode.value = 0
     dut.ttlc_in.value = 0
     dut.spi_map.value = 0
+    dut.ttlc_watch.value = 0
     lisa = Lisa(dut)
     await lisa.reset()
     return lisa
@@ -180,7 +181,7 @@ async def test_ttlc_debug(dut):
 
 
 @cocotb.test(skip=plusarg('DEFAULT') is not None or plusarg('TTLC') is not None or plusarg('BANK') is not None or plusarg('OVERRUN') is not None
-             or plusarg('SPIM') is not None)
+             or plusarg('SPIM') is not None or plusarg('TTLCIO') is not None)
 async def test_program(dut):
     """+FIRMWARE=<hex>: run it (the data cache on with +CACHE) and expect ALL PASSED;
     +STATS counts the fetch clocks"""
@@ -266,6 +267,66 @@ async def test_spi_ttlc(dut):
         dut.ttlc_in.value = p
         await ClockCycles(dut.clk, 40000)
         assert int(dut.ttlc_out.value) == p, 'outputs %012x for inputs %012x after the SPI' % (int(dut.ttlc_out.value), p)
+
+
+TTLCIO_INPUTS = 0x0123456789ab
+TTLCIO_OUT1 = 0x665544332211
+TTLCIO_OUT2 = 0xf00f5aa53cc3
+
+
+async def ttlcio_setup(dut, lisa, porta):
+    """mux mode 3 on the TTLC's pins (uo[0-3], [5-7]; uo[4] the UART),
+    the shift clock clk/4, the TTLC program at flash byte 0x10000, the
+    inputs on the 165 chains"""
+    await lisa.setup(cache=False, quad=True)
+    for a, v in ((0x1f, 0x0100), (0x1b, 0xfcff), (0x1c, 0x00a3)):
+        await lisa.write_reg(a, v)
+    dut.ttlc_in.value = TTLCIO_INPUTS
+    dut.ttlc_mode.value = 1
+    dut.porta_in.value = porta
+
+
+@cocotb.test(skip=plusarg('TTLCIO') is None)
+async def test_ttlcio(dut):
+    """+TTLCIO (make TTLCIO=1): progs/ttlcio.c with the ICU halted (the
+    reset state) - the core reads and writes the TTLC's I/O vector a byte at
+    a time and scans the chains itself: the inputs it captured are the
+    testbench's, and the outputs it left are on the 595 chains"""
+    lisa = await start(dut)
+    await ttlcio_setup(dut, lisa, 0)
+    text = await lisa.run(timeout=600_000)
+    assert 'ALL PASSED' in text, 'the TTLC I/O test did not pass: %r' % text[-300:]
+    out = int(dut.ttlc_out.value)
+    assert out == TTLCIO_OUT2, 'the chains hold %012x, the core wrote %012x' % (out, TTLCIO_OUT2)
+
+
+@cocotb.test(skip=plusarg('TTLCIO') is None)
+async def test_ttlcio_run(dut):
+    """+TTLCIO: progs/ttlcio.c with the ICU running its loopback - the core
+    watches the scans and the copied outputs, then holds the ICU with the
+    SPI master's claim, puts its own outputs on the chains with a scan of
+    its own (whenever the outputs are not the inputs they are the core's),
+    and after the release the loopback copies the inputs again"""
+    lisa = await start(dut)
+    await ttlcio_setup(dut, lisa, 1)
+    await lisa.write_reg(0x40, 1)                                    # the TTLC runs
+    await ClockCycles(dut.clk, 20000)
+    assert int(dut.ttlc_out.value) == TTLCIO_INPUTS, 'the loopback is not running'
+    differ = int(dut.ttlc_differ.value)
+    dut.ttlc_watch.value = TTLCIO_OUT1
+    match = int(dut.ttlc_match.value)
+    text = await lisa.run(timeout=800_000)
+    differ = int(dut.ttlc_differ.value) - differ
+    match = int(dut.ttlc_match.value) - match
+    dut._log.info('the outputs differed from the inputs for %d clocks, held OUT1 for %d' % (differ, match))
+    assert 'ALL PASSED' in text, 'the TTLC I/O test did not pass: %r' % text[-300:]
+    # whenever the outputs left the inputs they were the core's OUT1: put on
+    # the chains by its scan during the hold (the data pins the scan's, not
+    # the SPI master's), not by the ICU's held scan after the release only
+    assert differ > 0 and match == differ, \
+        'the outputs left the inputs for %d clocks, %d of them with the core\'s %012x' % (differ, match, TTLCIO_OUT1)
+    await ClockCycles(dut.clk, 20000)
+    assert int(dut.ttlc_out.value) == TTLCIO_INPUTS, 'the loopback did not resume: %012x' % int(dut.ttlc_out.value)
 
 
 @cocotb.test(skip=plusarg('OVERRUN') is None)

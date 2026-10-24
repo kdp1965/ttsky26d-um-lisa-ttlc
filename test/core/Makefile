@@ -21,7 +21,7 @@ SRC_DIR = $(PWD)/../../src
 TB_DIR  = $(PWD)/..
 
 PROJECT_SOURCES  = lisa_core.v lisa_dbg.v lisa_div.v lisa_periph.v lisa_uart.v lisa_rx8n.v lisa_tx8n.v
-PROJECT_SOURCES += debug_brg.v debug_autobaud.v lisa_i2c.v lisa_spi.v i2c_master_byte_ctrl.v i2c_master_bit_ctrl.v
+PROJECT_SOURCES += debug_brg.v debug_autobaud.v lisa_i2c.v lisa_spi.v lisa_ttlcio.v i2c_master_byte_ctrl.v i2c_master_bit_ctrl.v
 PROJECT_SOURCES += data_cache8.v RAM32.v lisa_qqspi.v
 PROJECT_SOURCES += fops.v lampFPU_div_top.sv lampFPU_div.sv lampFPU_fractDiv.sv lampFPU_utils.v
 
