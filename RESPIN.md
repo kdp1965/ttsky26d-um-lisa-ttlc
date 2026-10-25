@@ -1917,6 +1917,15 @@ mux into the bit mux, the 24-bit address adder and mux, the select mux.
   / LVS 0, hold +0.047, setup +5.31 nominal and -8.5 at the slow max
   corner, and one antenna violation (a met3 side-area ratio 429 against
   400, one net, two pins).  Not promoted: re-hardened with item 35.
+* rc21 (2026-10-24, runs/macro-rc21 - RESPIN 34 and 35: the QSPI at
+  clk/2, the late read capture, the WS2812B driver's DMA and the data
+  cache's flush fix; rc19's recipe): 80365 instances, 62.9%, 233220 um2 of
+  standard cells (+2416 on rc19), 1221K um of wire, global-route overflow
+  461, routing DRC / Magic DRC / LVS / antenna 0, hold +0.056, setup +5.51
+  nominal and -7.7 at the slow max corner (from the core's exec_state, as
+  rc19's).  The re-tap step removed 435 taps and added 4765; no cell on
+  Calvin's 997 pixels (367 blockages).  Promoted 2026-10-24 (Ken; the
+  precheck left to the gds workflow): gds/, lef/, pnl/ are this run's.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
