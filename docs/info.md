@@ -902,8 +902,8 @@ strings can be connected and sent one after another:
 
  | ADDR | Register | Description                                                                         |
  | ---- | -------- | ----------------------------------------------------------------------------------- |
- | 0x40 | WS_CTRL  | [0] EN (WS mode), [3:1] PIN: 0 uo[0], 1 uo[1], 2 uo[2], 3 uo[5], 4 uo[6], [4] IE     |
- | 0x41 | WS_STAT  | Read: [0] FULL_A, [1] FULL_B, [2] BUSY, [3] DONE, [4] UNDERRUN, [5] NEXT.  Write: [0] / [1] set FULL_A / FULL_B, [4] clears UNDERRUN |
+ | 0x40 | WS_CTRL  | [0] EN (WS mode), [3:1] PIN: 0 uo[0], 1 uo[1], 2 uo[2], 3 uo[5], 4 uo[6], [4] IE, [5] DMA, [6] REPEAT |
+ | 0x41 | WS_STAT  | Read: [0] FULL_A, [1] FULL_B, [2] BUSY, [3] DONE, [4] UNDERRUN, [5] NEXT, [6] ACTIVE, [7] FRAME.  Write: [0] / [1] set FULL_A / FULL_B, [4] clears UNDERRUN, [6] START, [7] clears FRAME |
  | 0x42 | WS_T0H   | High time of a 0 bit in clocks (reset 20: 0.4 us at 50 MHz)                         |
  | 0x43 | WS_T1H   | High time of a 1 bit in clocks (reset 40: 0.8 us)                                   |
  | 0x44 | WS_TBIT  | A bit is TBIT + 1 clocks (reset 62: 1.26 us)                                        |
@@ -925,6 +925,28 @@ the driver work at other clock frequencies.
 While EN is set, the other four of the five pins are held low.  Keep EN set while LED strings are connected:
 with EN clear the pins go back to the TTLC (whose latch output, uo[5], idles high).  The MC14500B must not be
 running, since it writes the same output flops (it is halted at reset until the Debug interface starts it).
+
+### DMA: frames from the PSRAM
+
+Feeding a pixel every 30 us keeps LISA busy, and a data cache miss or a jump in code fetched from QSPI can take
+longer than that.  With WS_CTRL's DMA bit the driver sends a whole frame from a buffer in the data space (the
+PSRAM through the data cache) by itself, using the TTLC's instruction fetch (idle, since the MC14500B is halted
+in WS mode): a TTLC fetch group is three 16-bit words, which is exactly two pixels, and the TTLC keeps two groups,
+so one is sent while the next is fetched.  The output flops then hold the frame's description instead of pixels:
+
+ | Bytes | Field | Description                                                                              |
+ | ----- | ----- | ---------------------------------------------------------------------------------------- |
+ | 0-1   | BASE  | The buffer's data address / 256 (the buffer starts on a 256-byte boundary)               |
+ | 2-3   | LEN   | The number of pixels, [12:0] (up to 8191); the buffer holds G, R, B for each, in order   |
+
+To send a frame, write BASE and LEN (TIDX = 0, four TDATA writes), set WS_CTRL to EN, DMA and the pin, and write
+START (WS_STAT bit 6).  The driver first flushes the data cache, so pixels LISA just wrote reach the PSRAM, then
+fetches the buffer on the data cache's chip select and base address while it sends.  ACTIVE (WS_STAT bit 6) is
+set until the frame and its reset time are out; then FRAME (bit 7) is set, and with IE it requests the TTLC's
+interrupt source until LISA writes 1 to FRAME.  With REPEAT the same buffer is sent again and again (flushed
+before each frame, FRAME set after each), so changing the buffer changes the LEDs on the next frame.  The buffer
+should not change while a frame is being sent.  LISA keeps running meanwhile; a fetch group lasts two pixels
+(about 3000 clocks) and takes under 100 clocks of QSPI time at clk/2.
 
 ## How to test
 

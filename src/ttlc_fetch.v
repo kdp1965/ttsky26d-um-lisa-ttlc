@@ -61,7 +61,17 @@ module ttlc_fetch
    output reg           qspi_valid,
    output wire [3:0]    qspi_xfer_len,
    input  wire          invalidate,       // the program changed: drop the groups
-   output wire          invalidate_ack
+   output wire          invalidate_ack,
+
+   // The WS2812B driver's DMA (RESPIN 35): a frame's pixels fetched as
+   // groups (two pixels each) while the MC14500B is halted
+   input  wire          ws_mode,          // the driver has the fetch
+   input  wire          ws_restart,       // group 0 next, both groups dropped
+   input  wire          ws_adv,           // group A sent: the next one
+   input  wire [11:0]   ws_last_grp,      // nothing fetched past it
+   output wire [47:0]   group_a,
+   output wire          group_a_valid,
+   output wire          fetch_idle
 );
 
    localparam [1:0] ST_IDLE      = 2'd0;
@@ -96,7 +106,8 @@ module ttlc_fetch
    wire  [11:0]         grp_p1    = grp + 12'd1;
    wire                 promote   = !a_valid && b_valid && b_grp == grp;
    wire  [11:0]         want_grp  = a_valid ? grp_p1 : grp;
-   wire                 want_fill = !(b_valid && b_grp == want_grp) && !promote;
+   wire                 want_fill = !(b_valid && b_grp == want_grp) && !promote &&
+                                    !(ws_mode && want_grp > ws_last_grp);
 
    assign pc             = {grp, slot};
    assign ready          = fresh && a_valid && !ex;
@@ -106,6 +117,9 @@ module ttlc_fetch
    assign qspi_wstrb     = 2'b00;
    assign qspi_wdata     = 16'h0;
    assign invalidate_ack = invalidate && !a_valid && !b_valid && state == ST_IDLE;
+   assign group_a        = buf_a;
+   assign group_a_valid  = a_valid;
+   assign fetch_idle     = state == ST_IDLE;
 
    // ==========================================================================
    // The sequencer: the PC, the stack, group A and the presented slot
@@ -142,7 +156,20 @@ module ttlc_fetch
             fresh   <= 1'b0;
          end
 
-         if (ex)
+         if (ws_restart)
+         begin
+            grp     <= 12'h0;
+            slot    <= 2'h0;
+            a_valid <= 1'b0;
+            fresh   <= 1'b0;
+         end
+         else if (ws_adv)
+         begin
+            grp     <= grp_p1;
+            a_valid <= 1'b0;                // A from B (promote) or the PSRAM
+            fresh   <= 1'b0;
+         end
+         else if (ex)
          begin
             // the core executes the slot at this edge: the PC moves once
             ex <= 1'b0;
@@ -197,7 +224,7 @@ module ttlc_fetch
             buf_b <= {qspi_rdata, buf_b[47:16]};
          if (fill_done)
             b_valid <= !invalidate;
-         if (promote || (invalidate && state == ST_IDLE))
+         if (promote || (invalidate && state == ST_IDLE) || ws_restart)
             b_valid <= 1'b0;
       end
    end
@@ -212,7 +239,7 @@ module ttlc_fetch
       qspi_ready_ack = 1'b1;
       case (state)
          ST_IDLE:
-            if (fetch_en && want_fill && !invalidate)
+            if (fetch_en && want_fill && !invalidate && !ws_restart)
             begin
                fill_start = 1'b1;
                state_next = ST_LOAD;

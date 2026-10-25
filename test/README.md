@@ -26,6 +26,8 @@ make SPIM=1                   # the SPI master (RESPIN 29): progs/spi.c against 
                               # loopback running (the interlock: no scan inside a transaction)
 make WS2812=1                 # the WS2812B driver (RESPIN 33): progs/ws2812.c - frames on uo[1] / uo[2]
                               # decoded by tb.v's ws2812_rx, the vector-6 request, an underrun
+make WSDMA=1                  # the WS2812B DMA (RESPIN 35): progs/wsdma.c - frames from the PSRAM on uo[1] /
+                              # uo[2], the cache flushed, thrashed meanwhile, REPEAT; tb.v's receivers check them
 make TIMER3=1                 # Timer 3 (RESPIN 32): progs/timer3.c - the timer, captures of tb.v's
                               # square wave, the vector-9 interrupt, PWM duty measured on uo[1] / uo[2]
 make TTLCIO=1                 # the TTLC's I/O from the core (RESPIN 30): progs/ttlcio.c with the ICU

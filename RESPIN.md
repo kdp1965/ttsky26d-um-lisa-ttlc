@@ -45,6 +45,7 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 32 | An extension: Timer 3 - 16 bits with a prescaler, two PWM outputs (uo[1] / uo[2] in mux 2, when enabled; UART2's transmit otherwise) and two input captures (ui_in[4] / ui_in[5]), interrupt source 8 on vector 9 | `lisa_timer3.v`, `lisa_periph.v` 0x30-0x3F, `lisa_core.v` int_i 9 bits, `lisa_io_mux.v` periph_sel1[2:1], `tt_um_pettit_lisa.v` | done: test/progs/timer3.c (make TIMER3=1), sdcc_test/test_timer3.c (lisa_sim --cap-wave) |
 | 33 | An extension: a WS2812B LED string driver - the pixels in the TTLC's 48 output flops (two halves), the line on one of mux 3's uo[0], [1], [2], [5], [6], programmable timing, the free-half request on the TTLC's interrupt source | `lisa_ws2812.v`, `lisa_periph.v` 0x40-0x45 and int_req[5], `lisa_io_mux.v` periph_sel2, `tt_um_pettit_lisa.v` | done: test/progs/ws2812.c (make WS2812=1), sdcc_test/test_ws2812.c |
 | 34 | QSPI at clk/2: in a write burst the first nibble of every later word changed on SCLK's rising edge, the one the part samples (the Arty's PSRAM at clk/2: the cache on failed); and a late read capture, 0x1E [14:13] per select: a read bit taken again on the following falling edge, for the round trip through the pads and the part | `lisa_qqspi.v` S6, rd_late / late_pend, `debug_regs.v` 0x1E, `tt_um_pettit_lisa.v` | done: tb.v SPI_DOUT_DLY / SPI_TCO, SPI_REG=0x6010 |
+| 35 | An extension: the WS2812B driver's DMA - a frame from a PSRAM buffer (BASE / LEN in the output flops) through the TTLC's fetch, two pixels a group, the data cache flushed first, FRAME / REPEAT; and the data cache served a core access during a flush from the flush's line | `lisa_ws2812.v`, `ttlc_fetch.v` ws_*, `tt_um_pettit_lisa.v` ttlc_addr / ce / flush, `data_cache8.v` cache_hit | done: test/progs/wsdma.c (make WSDMA=1), sdcc_test/test_wsdma.c, hw_wsdma.c |
 
 Status: open / fixed (the test that shows it, in test/: a program of test/progs, a cocotb test of test/core or the fops bench).
 
@@ -1194,6 +1195,66 @@ at 0x0811 (hw_psram 1.71 s against 3.22 s at clk/4); item 33's
 test_ws2812 (the asm ws_put, TBIT 74), which underran at clk/4, passes at
 clk/2 (five runs of five).  arty_run.py's default SPI is 0x0010 now.
 
+## 35. The WS2812B driver's DMA
+
+**Why.** Item 33's driver needs a pixel every 30 us from the core, and on
+the Arty a loop that reads its pixels from the PSRAM does not keep up at
+the datasheet's bit even at clk/2 (item 34; sdcc_test/hw_ws2812_miss.c:
+a line fill every 5 pixels costs ~330 clocks a pixel over the 1800 budget
+at TBIT 74, the worst case ~3300): a fill takes the QSPI bus from the
+fetch, which starts its stream over.  Ken (2026-10-24): in WS mode the
+TTLC is halted anyway - put a base address and a length in the output
+flops instead of pixels and let the driver fetch the frame through the
+TTLC's instruction fetch, whose group of three words is two pixels.
+
+**Design.**  WS_CTRL [5] DMA, [6] REPEAT; WS_STAT bit 6 written is START,
+read ACTIVE; bit 7 FRAME (sticky, a 1 clears it).  The output bytes 0-1
+are BASE (the buffer's data address / 256), 2-3 LEN (pixels [12:0]).
+START: the data cache's flush (the debugger's: the dirty lines written
+back, `data_cache_flush` ORed at the top; a disabled cache counts as
+flushed), the fetch idle, then `restart` - ttlc_fetch.v's group 0, both
+groups dropped - and SEND: the engine's 48:1 bit mux takes group A
+(`buf_a`) for the halves, the pixel of the group `pg` for NEXT; after a
+group's second pixel (or the last) `adv` moves the fetch on (A from B,
+which was prefetched; no prefetch past the last group).  In DMA mode
+ttlc_addr = {data base, 0} | (BASE x 256 + the group's byte offset: an
+add, a frame passes 256 bytes) on the data cache's select; the
+MC14500B's run is held off.  A frame ends after the last pixel's reset
+time: FRAME set, then IDLE or (REPEAT) the next frame, flushed again.  The
+request in DMA mode is EN, IE and FRAME.  UNDERRUN: more than 8 clocks
+low between pixels (A comes from B in two).  A group lasts 3000 clocks at
+TBIT 62 and takes ~70 at clk/2; the arbiter is round-robin and the core's
+stream yields, so a group waits for one transfer at most.
+
+**Found on the way: the cache served the core during a flush.**  The
+flush walks the lines with cache_map = the flush's line; a core access
+whose tag matched that line's was a hit and read or wrote that line's
+bytes (the debugger's flush always had the core halted).  In the REPEAT
+test the program's loop counter on the stack came back wrong (3 frames
+counted with no FRAME seen).  `data_cache8.v`: no hit while
+flush_active - the core waits.
+
+**Test.** `test/progs/wsdma.c` (`make WSDMA=1`, the cache on): frame A,
+7 pixels on uo[1] written just before START (dirty in the cache: the
+flush) - an odd length; an empty frame (LEN 0); frame B, 100 pixels (300
+bytes, past 256) on uo[2] while the core thrashes one cache line (a
+write-back and a fill on every access), the request at its end; frame C,
+3 pixels with REPEAT, two FRAMEs seen and cleared before REPEAT is
+cleared.  tb.v's receivers check every pixel and its order (uo[1] 16
+pixels in 4 frames - C ran 3 times - uo[2] 100 in 1), no malformed pulse,
+no edge on the idle pins.  Verilator and icarus; the other suites pass
+(with SPI_DOUT_DLY=8 SPI_TCO=24 SPI_REG=0x6010 and without), test/core
+too.  lisa_sim (`ws2812.h`): the DMA's timing, ACTIVE, FRAME, REPEAT and
+the request (no pixels: no TTLC; the TTLC I/O window's writable bytes are
+kept for BASE / LEN); sdcc_test/test_wsdma.c (make check REV3=1).  sdcc's
+lisa/tt07.h: WS_DMA, WS_REPEAT, WS_ACTIVE, WS_START, WS_FRAME.
+sdcc_test/hw_wsdma.c for the Arty: 200-pixel frames at TBIT 62 with the
+core idle and thrashing, then REPEAT.
+
+**Cost.**  About 25 flops (the state, the 13-bit pixel count, the pixel
+of the group, FRAME, the flush request, the two strobes), the 48-bit 2:1
+mux into the bit mux, the 24-bit address adder and mux, the select mux.
+
 ## Verification (test/, see test/README.md)
 
 * `test/core/`: tb_core.v, the core with the chip's registered data bus, the
@@ -1839,6 +1900,11 @@ clk/2 (five runs of five).  arty_run.py's default SPI is 0x0010 now.
   re-tap step removed 435 taps and added 4765; no cell on a pixel
   (art/calvin_nocircle/placement_rc19.png).  Promoted 2026-10-24 (Ken; the
   precheck left to the gds workflow): gds/, lef/, pnl/ are this run's.
+* runs/macro-rc20 (2026-10-24 - RESPIN 34, the QSPI at clk/2): 62.5%,
+  231556 um2 of standard cells, 1226K um of wire, routing DRC / Magic DRC
+  / LVS 0, hold +0.047, setup +5.31 nominal and -8.5 at the slow max
+  corner, and one antenna violation (a met3 side-area ratio 429 against
+  400, one net, two pins).  Not promoted: re-hardened with item 35.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception

@@ -8,7 +8,7 @@ SDCC      ?= ../../../lisa-tools/sdcc-lisa/build/bin/sdcc
 SDCC_TEST ?= ../../../lisa-tools/sdcc_test
 CFLAGS    ?= -mlisa --rev3 --debug -I$(SDCC_TEST)
 
-PROGS = hello alu2 reti div16 cache14 dbg swap bank uartov spi ttlcio timer3 ws2812
+PROGS = hello alu2 reti div16 cache14 dbg swap bank uartov spi ttlcio timer3 ws2812 wsdma
 
 all: $(PROGS:%=%.hex) ttlc_test.hex ttlc_jump_test.hex ttlc_storage_test.hex bank_test.hex spi_test.hex ttlcio_test.hex
 
@@ -45,6 +45,7 @@ ttlcio_test.hex: ttlcio.hex ttlc/ttlc_loopback.hex ../hexcat.py
 # --tt07-cache laid that out with its workarounds; --rev2 excludes it)
 cache14.ihx: CFLAGS += --stack-loc 0x7fff
 bank.ihx: CFLAGS += --stack-loc 0x7fff
+wsdma.ihx: CFLAGS += --stack-loc 0x7fff
 
 # the bank test (RESPIN 22): bank.c at 0 and `ldi #bank; ret` at word 0x4000
 # of code banks 1, 2, 3 (flash bytes 0x8000, 0x10000, 0x18000: bank_stubs.hex)

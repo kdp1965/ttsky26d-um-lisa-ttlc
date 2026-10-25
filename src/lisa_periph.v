@@ -215,7 +215,18 @@ module lisa_periph
    // WS2812B driver (RESPIN 33, lisa_ws2812.v)
    input  wire [47:0]   ws_pixels,           // the TTLC's output_pins: two pixels
    output wire          ws_en,               // WS mode: mux 3's TTLC pins
-   output wire [4:0]    ws_pins              // uo[6], uo[5], uo[2], uo[1], uo[0]
+   output wire [4:0]    ws_pins,             // uo[6], uo[5], uo[2], uo[1], uo[0]
+   // ... its DMA through the TTLC's fetch (RESPIN 35)
+   input  wire [47:0]   ws_grp,
+   input  wire          ws_grp_valid,
+   input  wire          ws_fetch_idle,
+   input  wire          ws_flush_ack,
+   output wire          ws_flush_req,
+   output wire          ws_dma_fetch,
+   output wire          ws_restart,
+   output wire          ws_adv,
+   output wire [11:0]   ws_last_grp,
+   output wire [15:0]   ws_base
 );
 
    reg   [15:0]         ms_count;
@@ -755,6 +766,16 @@ module lisa_periph
       .d_we         ( d_we            ),
       .d_o          ( ws_d_o          ),
       .pixels       ( ws_pixels       ),
+      .grp          ( ws_grp          ),
+      .grp_valid    ( ws_grp_valid    ),
+      .fetch_idle   ( ws_fetch_idle   ),
+      .flush_ack    ( ws_flush_ack    ),
+      .flush_req    ( ws_flush_req    ),
+      .dma_fetch    ( ws_dma_fetch    ),
+      .restart      ( ws_restart      ),
+      .adv          ( ws_adv          ),
+      .last_grp     ( ws_last_grp     ),
+      .base         ( ws_base         ),
       .en           ( ws_en           ),
       .pins         ( ws_pins         ),
       .ie           ( ws_ie           ),

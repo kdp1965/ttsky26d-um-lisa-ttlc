@@ -148,6 +148,16 @@ module tt_um_pettit_lisa
    wire   [1:0]         t3_pwm;
    wire                 ws_en;               // RESPIN 33: the WS2812B driver
    wire   [4:0]         ws_pins;
+   wire   [47:0]        ws_grp;              // RESPIN 35: its DMA through the TTLC's fetch
+   wire                 ws_grp_valid;
+   wire                 ws_fetch_idle;
+   wire                 ws_flush_req;
+   wire                 ws_dma_fetch;
+   wire                 ws_restart;
+   wire                 ws_adv;
+   wire   [11:0]        ws_last_grp;
+   wire   [15:0]        ws_base;
+   wire                 dbg_cache_flush;     // the debugger's flush (the driver's ORed in)
    wire   [1:0]         t3_pwm_oe;
 
    // ==========================================================================
@@ -701,7 +711,17 @@ module tt_um_pettit_lisa
       .t3_pwm_oe                 ( t3_pwm_oe                 ),
       .ws_pixels                 ( output_pins               ),
       .ws_en                     ( ws_en                     ),
-      .ws_pins                   ( ws_pins                   )
+      .ws_pins                   ( ws_pins                   ),
+      .ws_grp                    ( ws_grp                    ),
+      .ws_grp_valid              ( ws_grp_valid              ),
+      .ws_fetch_idle             ( ws_fetch_idle             ),
+      .ws_flush_ack              ( data_cache_flush_ack || cache_disabled ),
+      .ws_flush_req              ( ws_flush_req              ),
+      .ws_dma_fetch              ( ws_dma_fetch              ),
+      .ws_restart                ( ws_restart                ),
+      .ws_adv                    ( ws_adv                    ),
+      .ws_last_grp               ( ws_last_grp               ),
+      .ws_base                   ( ws_base                   )
    );
 
    // ==========================================================================
@@ -761,7 +781,7 @@ module tt_um_pettit_lisa
       .ttlc_xfer_done            ( ttlc_xfer_done            ), // Total xfer_len transfer is done
       .ttlc_valid                ( ttlc_valid                ), // Indicates a valid request
       .ttlc_xfer_len             ( ttlc_xfer_len             ), // Number of 32-bit words to transfer
-      .ttlc_ce_ctrl              ( ttlc_ce_ctrl              ),
+      .ttlc_ce_ctrl              ( ws_dma_fetch ? lisa2_ce_ctrl : ttlc_ce_ctrl ),  // RESPIN 35: the DMA on the data select
 
       // Interface to the qqspi controller
       .addr                      ( addr                      ), // 8Mx32
@@ -931,7 +951,7 @@ module tt_um_pettit_lisa
       .cache_disabled            ( cache_disabled            ),
       .cache_map_sel             ( cache_map_sel             ),
 
-      .data_cache_flush          ( data_cache_flush          ),
+      .data_cache_flush          ( dbg_cache_flush           ),
       .data_cache_flush_ack      ( data_cache_flush_ack      ),
       .data_cache_invalidate     ( data_cache_invalidate     ),
       .data_cache_invalidate_ack ( data_cache_invalidate_ack ),
@@ -956,7 +976,13 @@ module tt_um_pettit_lisa
    assign dbg_do         = dbg_do_lisa | dbg_do_regs;
    assign dbg_ready      = dbg_ready_lisa | dbg_ready_regs;
    assign lisa1_addr     = {lisa1_base_addr, 8'h0} | {2'h0, lisa1_word_addr, 1'b0};
-   assign ttlc_addr      = {ttlc_base_addr, 8'h0} | {9'h0, ttlc_fetch_word, 1'b0};
+   // the TTLC's fetch, or the WS2812B driver's DMA (RESPIN 35): its buffer
+   // is a data address (BASE x 256 + the group's offset, an add: a frame
+   // passes 256 bytes) on the data cache's base and select
+   assign ttlc_addr      = ws_dma_fetch ?
+                           ({lisa2_base_addr, 8'h0} | ({ws_base, 8'h0} + {9'h0, ttlc_fetch_word, 1'b0})) :
+                           ({ttlc_base_addr, 8'h0} | {9'h0, ttlc_fetch_word, 1'b0});
+   assign data_cache_flush = dbg_cache_flush | ws_flush_req;
    assign baud_div       = ui_in[6:0];
    assign baud_set       = ui_in[7];
    assign debug_ready_ack= 1'b1;
@@ -1140,7 +1166,7 @@ module tt_um_pettit_lisa
    (
       .clk                       ( clk                       ),
       .rst_n                     ( rst_n_r[2]                ),
-      .fetch_en                  ( !ttlc_halt                ),
+      .fetch_en                  ( ws_dma_fetch || !ttlc_halt ),
       .run                       ( mc14500_run               ),
       .jmp                       ( JMP                       ),
       .rtn                       ( RTN                       ),
@@ -1159,12 +1185,20 @@ module tt_um_pettit_lisa
       .qspi_valid                ( ttlc_valid                ),
       .qspi_xfer_len             ( ttlc_xfer_len             ),
       .invalidate                ( ttlc_cache_invalidate     ),
-      .invalidate_ack            ( ttlc_cache_invalidate_ack )
+      .invalidate_ack            ( ttlc_cache_invalidate_ack ),
+      .ws_mode                   ( ws_dma_fetch              ),
+      .ws_restart                ( ws_restart                ),
+      .ws_adv                    ( ws_adv                    ),
+      .ws_last_grp               ( ws_last_grp               ),
+      .group_a                   ( ws_grp                    ),
+      .group_a_valid             ( ws_grp_valid              ),
+      .fetch_idle                ( ws_fetch_idle             )
    );
 
    // The core takes the presented slot when nothing holds it: an I/O scan
    // (and the clock after), the debugger, or the scan a nopo just started
-   assign mc14500_run  = ttlc_i_ready && !io_busy && !io_busy_r && !ttlc_halt && !FLAG_O && !ttlc_scan_pend;
+   assign mc14500_run  = ttlc_i_ready && !io_busy && !io_busy_r && !ttlc_halt && !FLAG_O && !ttlc_scan_pend &&
+                         !ws_dma_fetch;
 
    // ==========================================================================
    // I/O for the MC14500B

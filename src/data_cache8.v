@@ -150,7 +150,11 @@ module data_cache
    assign cl_hit[5]    = cl_addr[5] && cl_valid[5] && cache_sel[5];
    assign cl_hit[6]    = cl_addr[6] && cl_valid[6] && cache_sel[6];
    assign cl_hit[7]    = cl_addr[7] && cl_valid[7] && cache_sel[7];
-   assign cache_hit    = |cl_hit;
+   // no hit while a flush walks the lines (RESPIN 35): cache_map is the
+   // flush's line then, and a core access whose tag matched it was served
+   // from that line - the debugger's flush has the core halted, the
+   // WS2812B driver's runs beside it; the core waits instead
+   assign cache_hit    = |cl_hit && !flush_active;
    assign tag_addr     = d_addr[22:7];
    assign cache_valid  = cache_hit & d_valid;
    assign cache_map    = flush_active ? flush_cache_line : d_addr[6:4];

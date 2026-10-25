@@ -113,6 +113,10 @@ else ifneq ($(WS2812),)
 # the WS2812B driver (RESPIN 33): progs/ws2812.c - frames on uo[1] and
 # uo[2] decoded by tb.v's ws2812_rx, the vector-6 request, an underrun
 PLUSARGS += +FIRMWARE=$(PWD)/progs/ws2812.hex +PROGRAM=ws2812.hex +WS2812
+else ifneq ($(WSDMA),)
+# the WS2812B driver's DMA (RESPIN 35): progs/wsdma.c - frames from the
+# PSRAM through the TTLC's fetch on uo[1] / uo[2], the cache on
+PLUSARGS += +FIRMWARE=$(PWD)/progs/wsdma.hex +PROGRAM=wsdma.hex +WSDMA
 else ifneq ($(TTLC),)
 # TTLC_IMAGE=<hex>: another flash image (the TTLC program at byte 0x10000);
 # TTLCTRACE=<clocks> logs the TTLC's fetch (SIM=icarus)

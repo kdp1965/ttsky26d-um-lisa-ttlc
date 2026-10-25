@@ -184,7 +184,7 @@ async def test_ttlc_debug(dut):
 
 @cocotb.test(skip=plusarg('DEFAULT') is not None or plusarg('TTLC') is not None or plusarg('BANK') is not None or plusarg('OVERRUN') is not None
              or plusarg('SPIM') is not None or plusarg('TTLCIO') is not None or plusarg('TIMER3') is not None
-             or plusarg('WS2812') is not None)
+             or plusarg('WS2812') is not None or plusarg('WSDMA') is not None)
 async def test_program(dut):
     """+FIRMWARE=<hex>: run it (the data cache on with +CACHE) and expect ALL PASSED;
     +STATS counts the fetch clocks"""
@@ -383,6 +383,39 @@ async def test_ws2812(dut):
                   '%d bad pulses, %d edges on idle pins' % got)
     assert got == (10, ws_hash(f1 + f3), 2, 3, ws_hash(f2), 1, 0, 0), \
         'expected uo[1] 10 pixels %08x 2 frames, uo[2] 3 pixels %08x 1 frame, none bad or stray' % (ws_hash(f1 + f3), ws_hash(f2))
+
+
+@cocotb.test(skip=plusarg('WSDMA') is None)
+async def test_wsdma(dut):
+    """+WSDMA (make WSDMA=1): progs/wsdma.c - the WS2812B driver's DMA
+    (RESPIN 35), the data cache on: frame A (7 pixels written just before
+    START: the flush) and frame C (3 pixels, REPEAT: two or more frames) on
+    uo[1], frame B (100 pixels, 300 bytes, the core thrashing the cache
+    meanwhile) on uo[2]; every pixel and its order, the frames, nothing bad
+    or stray"""
+    lisa = await start(dut)
+    await lisa.setup(cache=True, quad=True)
+    await lisa.write_reg(0x1b, 0x3c3f)                               # uo[0-2], [5], [6] to mux 3
+    dut.ws_arm.value = 1
+    try:
+        text = await lisa.run(timeout=2_000_000)
+    except Exception:
+        text = None
+    await ClockCycles(dut.clk, 20000)
+    fa = [((i * 17 + 1) & 0xFF, 0x40 ^ i, 0xA0 + i) for i in range(7)]
+    fb = [(i, 0xFF - i, i ^ 0x55) for i in range(100)]
+    fc = [(0x11 * (i + 1), 0x22, 0x33 + i) for i in range(3)]
+    got = (int(dut.ws_count1.value), int(dut.ws_hash1.value), int(dut.ws_frames1.value),
+           int(dut.ws_count2.value), int(dut.ws_hash2.value), int(dut.ws_frames2.value),
+           int(dut.ws_bad.value), int(dut.ws_other.value))
+    dut._log.info('uo[1]: %d pixels, hash %08x, %d frames; uo[2]: %d pixels, hash %08x, %d frames; '
+                  '%d bad pulses, %d edges on idle pins' % got)
+    assert text is not None and 'ALL PASSED' in text, 'the WS2812B DMA test did not pass: %r' % text
+    k = got[2] - 1                                                   # frame C's repeats
+    assert k >= 2, 'frame C ran %d times, expected at least 2' % k
+    assert got == (7 + 3 * k, ws_hash(fa + fc * k), 1 + k, 100, ws_hash(fb), 1, 0, 0), \
+        'expected uo[1] %d pixels %08x, uo[2] 100 pixels %08x 1 frame, none bad or stray' % (
+            7 + 3 * k, ws_hash(fa + fc * k), ws_hash(fb))
 
 
 @cocotb.test(skip=plusarg('OVERRUN') is None)

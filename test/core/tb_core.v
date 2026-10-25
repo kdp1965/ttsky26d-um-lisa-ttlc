@@ -366,7 +366,17 @@ module tb_core;
       .t3_pwm_oe          (                 ),
       .ws_pixels          ( 48'h0           ),
       .ws_en              (                 ),
-      .ws_pins            (                 )
+      .ws_pins            (                 ),
+      .ws_grp             ( 48'h0           ),
+      .ws_grp_valid       ( 1'b0            ),
+      .ws_fetch_idle      ( 1'b1            ),
+      .ws_flush_ack       ( 1'b1            ),
+      .ws_flush_req       (                 ),
+      .ws_dma_fetch       (                 ),
+      .ws_restart         (                 ),
+      .ws_adv             (                 ),
+      .ws_last_grp        (                 ),
+      .ws_base            (                 )
    );
 
    // the console input: a byte stays until the program reads it
