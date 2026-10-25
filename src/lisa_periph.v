@@ -113,7 +113,9 @@ Address Map:
    0x35-0x38:  CMP0, CMP1: PWM0 / PWM1 high while CNT < CMPn
    0x39-0x3C:  CAP0, CAP1: CNT at an edge of ui_in[4] / ui_in[5]
    0x3D:       CTRL: [0] EN, [2:1] PWM1 / PWM0 out, [5:4] CAP0 edge, [7:6] CAP1 edge
-   0x3E:       IE: OVF, CMP0, CMP1, CAP0, CAP1
+   0x3E:       IE: OVF, CMP0, CMP1, CAP0, CAP1; [6:5] PDM0 / PDM1 (RESPIN 36):
+               the channel a sigma-delta output of CMPn[7:0] / 256 (CAPn its
+               accumulator) instead of an input capture
    0x3F:       STATUS: the same, a 1 written clears
 
    WS2812B (RESPIN 33, lisa_ws2812.v): the pixels in the TTLC's output flops
@@ -122,7 +124,8 @@ Address Map:
    0x41:       WS_STAT: FULL_A, FULL_B, BUSY, DONE, UNDERRUN, NEXT; write sets FULL
    0x42-0x45:  WS_T0H, WS_T1H, WS_TBIT, WS_TRST: the timing in clocks
 
-   CYCLE COUNTER, WATCHDOG, PDM (RESPIN 36: lisa_cyccnt.v, lisa_wdt.v, lisa_pdm.v)
+   CYCLE COUNTER, WATCHDOG (RESPIN 36: lisa_cyccnt.v, lisa_wdt.v; the PDM
+   outputs are Timer 3's channels in PDM mode, IE [6:5])
    =============================
    0x48-0x4B:  CYC0..CYC3: a 32-bit count of clocks (a CYC0 read latches 1..3,
                a write to CYC0 clears it)
@@ -130,8 +133,6 @@ Address Map:
    0x4D:       WDT_KICK: 0xA5 written restarts the count; read: the ticks
    0x4E:       WDT_TIMEOUT: (TIMEOUT + 1) x 2^(16 + SCALE) clocks (reset 255)
    0x4F:       WDT_STAT: [0] WDRST, the last reset was the watchdog's (1 clears)
-   0x50:       PDM_CTRL: [1:0] the channels on (Timer 3's PWM pins, uo[1] / uo[2])
-   0x51-0x52:  PDM_VAL0, PDM_VAL1: the levels, VAL / 256
 
    TTLC I/O (RESPIN 30, lisa_ttlcio.v)
    ========
@@ -221,7 +222,7 @@ module lisa_periph
 
    // Timer 3 (RESPIN 32, lisa_timer3.v)
    input  wire [1:0]    t3_cap_in,           // ui_in[5:4]
-   output wire [1:0]    t3_pwm,              // Timer 3's PWM, or the PDM outputs (RESPIN 36)
+   output wire [1:0]    t3_pwm,              // Timer 3's PWM (or its PDM outputs, RESPIN 36)
    output wire [1:0]    t3_pwm_oe,
 
    // WS2812B driver (RESPIN 33, lisa_ws2812.v)
@@ -285,13 +286,8 @@ module lisa_periph
    wire  [7:0]          ttlcio_d_o;
    wire  [7:0]          t3_d_o;
    wire  [7:0]          ws_d_o;
-   wire  [7:0]          cyc_d_o;             // RESPIN 36: the cycle counter, the watchdog, the PDM
+   wire  [7:0]          cyc_d_o;             // RESPIN 36: the cycle counter, the watchdog
    wire  [7:0]          wdt_d_o;
-   wire  [7:0]          pdm_d_o;
-   wire  [1:0]          pdm;
-   wire  [1:0]          pdm_en;
-   wire  [1:0]          t3_pwm_r;            // Timer 3's own PWM ...
-   wire  [1:0]          t3_pwm_oe_r;         // ... and enables, before the PDM's
    wire                 ws_ie;
    wire                 ws_irq;
    wire                 t3_irq;
@@ -770,8 +766,8 @@ module lisa_periph
       .d_rd         ( d_rd            ),
       .d_o          ( t3_d_o          ),
       .cap_in       ( t3_cap_in       ),
-      .pwm          ( t3_pwm_r        ),
-      .pwm_oe       ( t3_pwm_oe_r     ),
+      .pwm          ( t3_pwm          ),
+      .pwm_oe       ( t3_pwm_oe       ),
       .irq          ( t3_irq          )
    );
 
@@ -805,7 +801,8 @@ module lisa_periph
    );
 
    // ==============================================
-   // The cycle counter, the watchdog, the PDM outputs (RESPIN 36)
+   // The cycle counter and the watchdog (RESPIN 36; the PDM outputs are
+   // Timer 3's channels in PDM mode)
    // ==============================================
    lisa_cyccnt i_lisa_cyccnt
    (
@@ -831,24 +828,7 @@ module lisa_periph
       .wdt_reset    ( wdt_reset       )
    );
 
-   lisa_pdm i_lisa_pdm
-   (
-      .clk          ( clk             ),
-      .rst_n        ( rst_n           ),
-      .d_addr       ( d_addr          ),
-      .d_i          ( d_i             ),
-      .d_periph     ( d_periph        ),
-      .d_we         ( d_we            ),
-      .d_o          ( pdm_d_o         ),
-      .pdm          ( pdm             ),
-      .pdm_en       ( pdm_en          )
-   );
-
-   // An enabled PDM channel takes Timer 3's PWM pin (uo[1] / uo[2], mux 2)
-   assign t3_pwm    = {pdm_en[1] ? pdm[1] : t3_pwm_r[1], pdm_en[0] ? pdm[0] : t3_pwm_r[0]};
-   assign t3_pwm_oe = pdm_en | t3_pwm_oe_r;
-
-   assign d_o = d_o_r | i2c_d_o | spi_d_o | ttlcio_d_o | t3_d_o | ws_d_o | cyc_d_o | wdt_d_o | pdm_d_o;
+   assign d_o = d_o_r | i2c_d_o | spi_d_o | ttlcio_d_o | t3_d_o | ws_d_o | cyc_d_o | wdt_d_o;
    // The requests to the core and INT_STATUS.  The timers' rollovers, the
    // port's edges and the TTLC's toggle are instants: latched (int_o_r) until
    // a 1 is written to their bit of INT_STATUS.  The UARTs' are states - a

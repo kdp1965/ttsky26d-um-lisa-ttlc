@@ -428,7 +428,8 @@ async def test_misc36(dut):
     """+MISC36 (make MISC36=1): progs/misc36.c - RESPIN 36: the cycle
     counter; the watchdog kept off by kicks, then firing (the program
     restarts and finds WDRST); the two PDM channels left at 64 and 192,
-    their duty on uo[1] / uo[2] (mux 2) measured here: 25% and 75%"""
+    (Timer 3's channels in PDM mode) - their duty on uo[1] / uo[2] (mux 2)
+    measured here: 25% and 75%"""
     lisa = await start(dut)
     await lisa.setup(cache=False, quad=True)
     await lisa.write_reg(0x1b, 0x0028)                               # uo[1], uo[2] to mux 2

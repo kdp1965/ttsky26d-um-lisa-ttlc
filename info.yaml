@@ -33,7 +33,6 @@ project:
     - "lisa_ws2812.v"
     - "lisa_cyccnt.v"
     - "lisa_wdt.v"
-    - "lisa_pdm.v"
     - "debug_ctrl.v"
     - "debug_autobaud.v"
     - "debug_brg.v"

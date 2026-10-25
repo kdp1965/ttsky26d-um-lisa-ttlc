@@ -869,7 +869,7 @@ simply a periodic timer with an overflow interrupt.  It uses 16 peripheral regis
  | 0x39-0x3A | CAP0      | CNT at the last selected edge of ui_in[4] (read only)                       |
  | 0x3B-0x3C | CAP1      | CNT at the last selected edge of ui_in[5] (read only)                       |
  | 0x3D      | CTRL      | [0] EN, [1] PWM0 out, [2] PWM1 out, [5:4] CAP0 edge, [7:6] CAP1 edge        |
- | 0x3E      | IE        | [0] OVF, [1] CMP0, [2] CMP1, [3] CAP0, [4] CAP1 interrupt enables           |
+ | 0x3E      | IE        | [0] OVF, [1] CMP0, [2] CMP1, [3] CAP0, [4] CAP1 interrupt enables; [5] / [6] channel 0 / 1 in PDM mode (below) |
  | 0x3F      | STATUS    | The same five events; writing a 1 clears a bit                              |
 
 The capture edge selects are 0 = off, 1 = rising, 2 = falling and 3 = both edges.  The PWM duty cycle is
@@ -961,10 +961,12 @@ WDT_STAT's WDRST bit is set (write a 1 to clear it) and the watchdog is disabled
 watchdog restart from a power-on and decide whether to enable it again.  The timeout is
 (TIMEOUT + 1) x 2^(16 + SCALE) clocks: 1.3 ms to 43 seconds at 50 MHz.
 
-**PDM outputs.**  Two first-order sigma-delta (pulse density) outputs: each produces a stream of 1s with a
-density of VAL / 256.  Through a simple RC low-pass filter (for audio, 1 kOhm and 10 nF) each becomes an 8-bit
-DAC.  An enabled channel drives Timer 3's PWM pin in uo_out mux mode 2 (uo[1] for channel 0, uo[2] for
-channel 1) in place of the PWM.
+**PDM outputs.**  Each of Timer 3's two channels can be a first-order sigma-delta (pulse density) output
+instead of an input capture: Timer 3's IE register bit 5 (channel 0) or 6 (channel 1) selects it.  The
+channel's output is a stream of 1s with a density of CMPn[7:0] / 256 on its PWM pin (enabled by CTRL's PWMn
+out bit; uo[1] / uo[2] in uo_out mux mode 2), and that channel captures nothing (CAPn holds the modulator's
+accumulator).  Through a simple RC low-pass filter (for audio, 1 kOhm and 10 nF) each becomes an 8-bit DAC.
+A channel left in capture mode is PWM and input capture as before.
 
  | ADDR      | Register    | Description                                                               |
  | --------- | ----------- | ------------------------------------------------------------------------- |
@@ -973,9 +975,8 @@ channel 1) in place of the PWM.
  | 0x4D      | WDT_KICK    | Write 0xA5: restart the count.  Read: the ticks counted so far             |
  | 0x4E      | WDT_TIMEOUT | The timeout in ticks of 2^(16 + SCALE) clocks, less one (reset 255)        |
  | 0x4F      | WDT_STAT    | [0] WDRST: the last reset was the watchdog's (write 1 to clear)            |
- | 0x50      | PDM_CTRL    | [0] channel 0 on (uo[1]), [1] channel 1 on (uo[2])                         |
- | 0x51      | PDM_VAL0    | Channel 0's level: VAL / 256                                               |
- | 0x52      | PDM_VAL1    | Channel 1's level                                                          |
+ | 0x3E      | T3 IE       | [5] channel 0 PDM, [6] channel 1 PDM (bits 4:0: Timer 3's interrupts)      |
+ | 0x35/0x37 | T3 CMPn_L   | In PDM mode: the channel's level, CMPn[7:0] / 256                          |
 
 ## How to test
 

@@ -47,8 +47,19 @@ PWM outputs off it is a plain timer with an overflow interrupt.
    0x3D  CTRL     [0] EN, [1] PWM0 out (uo[1] in mux 2), [2] PWM1 out
                   (uo[2]), [5:4] CAP0 edge, [7:6] CAP1 edge: 0 off, 1
                   rising, 2 falling, 3 both
-   0x3E  IE       [0] OVF, [1] CMP0, [2] CMP1, [3] CAP0, [4] CAP1
+   0x3E  IE       [0] OVF, [1] CMP0, [2] CMP1, [3] CAP0, [4] CAP1;
+                  [5] PDM0, [6] PDM1: the channel is a PDM output instead of
+                  an input capture (RESPIN 36, below)
    0x3F  STATUS   the same events, set when they happen; a 1 written clears
+
+PDM (RESPIN 36): with IE [5] (channel 0) or [6] (channel 1) the channel is
+a first-order sigma-delta modulator instead of an input capture - each
+clock CAPn's low 9 bits take {0, CAPn[7:0]} + CMPn[7:0] and the carry, bit
+8, is the output: a density of 1s of CMPn[7:0] / 256, an 8-bit DAC through
+an RC filter.  It drives the channel's PWM pin (PWMn out in CTRL as for
+the PWM), whether the counter runs or not; the channel captures nothing
+and its CAPn event stays clear.  The PDM reuses the flops the capture and
+the compare already have (Ken: the PDM a subset of Timer 3).
 
 Any enabled event in STATUS is the core's interrupt source 8 (vector 9).
 The capture inputs are synchronised (two flops); a capture takes the count
@@ -82,23 +93,28 @@ module lisa_timer3
    reg   [15:0]   cmp0, cmp1;
    reg   [15:0]   cap0, cap1;
    reg   [7:0]    ctrl;
-   reg   [4:0]    ie;
+   reg   [6:0]    ie;                  // [4:0] the events; [6:5] PDM0 / PDM1 (RESPIN 36)
    reg   [4:0]    status;
    reg   [1:0]    sync1, sync2, last;
    wire           wr;
    wire           tick;
    wire  [15:0]   cnt_next;
    wire  [1:0]    rise, fall, edge_hit;
+   wire  [1:0]    pdm;                 // the channels in PDM mode
+   wire  [8:0]    pdm0_next, pdm1_next;
 
    assign wr       = d_periph && d_we;
    assign tick     = ctrl[0] && pcnt == pre;
    assign cnt_next = cnt == top ? 16'h0 : cnt + 16'h1;
    assign rise     = sync2 & ~last;
    assign fall     = ~sync2 & last;
-   assign edge_hit = {(rise[1] & ctrl[6]) | (fall[1] & ctrl[7]),
-                      (rise[0] & ctrl[4]) | (fall[0] & ctrl[5])};
+   assign pdm      = ie[6:5];
+   assign edge_hit = {((rise[1] & ctrl[6]) | (fall[1] & ctrl[7])) & ~pdm[1],
+                      ((rise[0] & ctrl[4]) | (fall[0] & ctrl[5])) & ~pdm[0]};
+   assign pdm0_next = {1'b0, cap0[7:0]} + {1'b0, cmp0[7:0]};
+   assign pdm1_next = {1'b0, cap1[7:0]} + {1'b0, cmp1[7:0]};
    assign pwm_oe   = ctrl[2:1];
-   assign irq      = |(status & ie);
+   assign irq      = |(status & ie[4:0]);
 
    always @(posedge clk)
    begin
@@ -115,7 +131,7 @@ module lisa_timer3
          cap0     <= 16'h0;
          cap1     <= 16'h0;
          ctrl     <= 8'h0;
-         ie       <= 5'h0;
+         ie       <= 7'h0;
          status   <= 5'h0;
          sync1    <= 2'h0;
          sync2    <= 2'h0;
@@ -137,7 +153,7 @@ module lisa_timer3
          if (wr && d_addr == 7'h37) cmp1[7:0]  <= d_i;
          if (wr && d_addr == 7'h38) cmp1[15:8] <= d_i;
          if (wr && d_addr == 7'h3D) ctrl       <= d_i;
-         if (wr && d_addr == 7'h3E) ie         <= d_i[4:0];
+         if (wr && d_addr == 7'h3E) ie         <= d_i[6:0];
          if (d_periph && d_rd && d_addr == 7'h33)
             cnt_hold <= cnt[15:8];
 
@@ -154,8 +170,12 @@ module lisa_timer3
                cnt <= cnt_next;
          end
 
-         if (edge_hit[0]) cap0 <= cnt;
-         if (edge_hit[1]) cap1 <= cnt;
+         // a capture, or in PDM mode the modulator's accumulator (bit 8
+         // its output, the carry)
+         if (pdm[0])           cap0[8:0] <= pdm0_next;
+         else if (edge_hit[0]) cap0      <= cnt;
+         if (pdm[1])           cap1[8:0] <= pdm1_next;
+         else if (edge_hit[1]) cap1      <= cnt;
 
          // the events: set when they happen, a 1 written clears (an event
          // in the clock of the write wins)
@@ -164,7 +184,8 @@ module lisa_timer3
                     tick && cnt_next == cmp1, tick && cnt_next == cmp0,
                     tick && cnt == top};
 
-         pwm <= {ctrl[0] && cnt < cmp1, ctrl[0] && cnt < cmp0};
+         pwm <= {pdm[1] ? cap1[8] : ctrl[0] && cnt < cmp1,
+                 pdm[0] ? cap0[8] : ctrl[0] && cnt < cmp0};
       end
    end
 
@@ -185,7 +206,7 @@ module lisa_timer3
       7'h3B:   d_o = cap1[7:0];
       7'h3C:   d_o = cap1[15:8];
       7'h3D:   d_o = ctrl;
-      7'h3E:   d_o = {3'h0, ie};
+      7'h3E:   d_o = {1'h0, ie};
       7'h3F:   d_o = {3'h0, status};
       default: d_o = 8'h0;
       endcase

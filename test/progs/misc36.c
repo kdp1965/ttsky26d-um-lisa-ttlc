@@ -1,5 +1,6 @@
 /* misc36.c - RESPIN 36: the cycle counter (lisa_cyccnt.v), the watchdog
- * (lisa_wdt.v) and the PDM outputs (lisa_pdm.v).
+ * (lisa_wdt.v) and the PDM outputs (Timer 3's channels in PDM mode,
+ * lisa_timer3.v IE [6:5]).
  *
  * First run (WDRST clear):
  *  1 the cycle counter counts: a loop of known length, CYC0 latching 31:8
@@ -10,8 +11,9 @@
  *    again
  * Second run (WDRST set):
  *  4 WDRST set, EN clear; a 1 written clears WDRST
- *  5 the PDM channels at 64 and 192 (25% and 75%: test.py measures them on
- *    uo[1] / uo[2], mux 2) - left running
+ *  5 Timer 3's channels in PDM mode at 64 and 192 (CMP0 / CMP1's low
+ *    bytes; 25% and 75%: test.py measures them on uo[1] / uo[2], mux 2) -
+ *    left running
  */
 #include "harness.h"
 
@@ -23,9 +25,10 @@ __sfr __at(0x24C) WDT_CTRL;
 __sfr __at(0x24D) WDT_KICK;
 __sfr __at(0x24E) WDT_TIMEOUT;
 __sfr __at(0x24F) WDT_STAT;
-__sfr __at(0x250) PDM_CTRL;
-__sfr __at(0x251) PDM_VAL0;
-__sfr __at(0x252) PDM_VAL1;
+__sfr __at(0x235) T3_CMP0_L;
+__sfr __at(0x237) T3_CMP1_L;
+__sfr __at(0x23D) T3_CTRL;
+__sfr __at(0x23E) T3_IE;
 
 static unsigned long cycles(void)
 {
@@ -52,10 +55,11 @@ void main(void)
     /* the second run: the watchdog fired */
     puts("watchdog reset\n");
     CHECK(4, (WDT_CTRL & 1) == 0 && ((WDT_STAT = 1), (WDT_STAT & 1) == 0));
-    PDM_VAL0 = 64;
-    PDM_VAL1 = 192;
-    PDM_CTRL = 3;
-    CHECK(5, PDM_CTRL == 3 && PDM_VAL0 == 64 && PDM_VAL1 == 192);
+    T3_CMP0_L = 64;                   /* the levels */
+    T3_CMP1_L = 192;
+    T3_IE = 0x60;                     /* PDM0, PDM1: no captures, no interrupts */
+    T3_CTRL = 0x06;                   /* PWM0 / PWM1 out (uo[1] / uo[2]) */
+    CHECK(5, T3_IE == 0x60 && T3_CMP0_L == 64 && T3_CMP1_L == 192);
     DONE();
     for (;;)
       ;
