@@ -1251,6 +1251,18 @@ lisa/tt07.h: WS_DMA, WS_REPEAT, WS_ACTIVE, WS_START, WS_FRAME.
 sdcc_test/hw_wsdma.c for the Arty: 200-pixel frames at TBIT 62 with the
 core idle and thrashing, then REPEAT.
 
+**On the Arty** (2026-10-24, 50 MHz, setup +0.013 / hold +0.019 ns,
+build/lisa_arty_r3_50_respin35.bit on andromeda; no LEDs attached, the
+driver's own flags and timing): hw_wsdma, a 200-pixel frame in 4981
+64-clock ticks at clk/2 against 4945 for the pixels and the reset (the
+flush and the first group ~2300 clocks), 4975 with the core thrashing
+the cache throughout (328 write-back + fill iterations meanwhile), REPEAT
+4967 a frame; no UNDERRUN in any; at clk/4 (0x0811) 5004 / 4999 / 5041,
+no UNDERRUN either.  test_wsdma passes at clk/2 and clk/4 (its thrash
+count check lowered to "the core ran": ~90 iterations in frame B at
+clk/4).  The first run after programming the FPGA printed nothing; every
+run since passed.
+
 **Cost.**  About 25 flops (the state, the 13-bit pixel count, the pixel
 of the group, FRAME, the flush request, the two strobes), the 48-bit 2:1
 mux into the bit mux, the 24-bit address adder and mux, the select mux.
