@@ -1262,6 +1262,11 @@ no UNDERRUN either.  test_wsdma passes at clk/2 and clk/4 (its thrash
 count check lowered to "the core ran": ~90 iterations in frame B at
 clk/4).  The first run after programming the FPGA printed nothing; every
 run since passed.
+2026-10-25: real LEDs - an Adafruit NeoPixel Jewel (7 WS2812B) on uo_out[0]
+(the Arty's JB1) runs Ken's TinyQV LED demo ported to LISA
+(sdcc_test/hw_leddemo.c: zip, star crossed, wipe, circle, rainbow, fade;
+7 pixels G R B in a PSRAM buffer, START, FRAME, Timer 3 delays) at clk/2;
+Ken: "It works!!!".
 
 **Cost.**  About 25 flops (the state, the 13-bit pixel count, the pixel
 of the group, FRAME, the flush request, the two strobes), the 48-bit 2:1
