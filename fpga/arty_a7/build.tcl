@@ -36,7 +36,7 @@ foreach f $sources {
 read_verilog -sv [list $src/lampFPU_div_top.sv $src/lampFPU_div.sv $src/lampFPU_fractDiv.sv]
 read_verilog -sv [list $here/fpga_cells.v $here/lisa_arty_clk.v \
    $here/eth_crc32_byte.v $here/eth_mii_mac.v $here/eth_ipstack.v $here/ttlc_eth_app.v $here/eth_ttlc.v \
-   $here/ttlc_chains_fpga.v $here/lisa_arty.v]
+   $here/ttlc_chains_fpga.v $here/m3_pmod.v $here/lisa_arty.v]
 read_xdc $here/lisa_arty.xdc
 
 synth_design -top lisa_arty -part $part -include_dirs $src -generic CLK_DIVIDE=$div

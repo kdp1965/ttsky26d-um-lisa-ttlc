@@ -113,6 +113,10 @@ else ifneq ($(WS2812),)
 # the WS2812B driver (RESPIN 33): progs/ws2812.c - frames on uo[1] and
 # uo[2] decoded by tb.v's ws2812_rx, the vector-6 request, an underrun
 PLUSARGS += +FIRMWARE=$(PWD)/progs/ws2812.hex +PROGRAM=ws2812.hex +WS2812
+else ifneq ($(I2C),)
+# the I2C master in io mux mode 3 (the custom Pmod's CE latch, the cache
+# through it): progs/i2c.c against tb.v's slave at 0x3C (an SSD1309's)
+PLUSARGS += +FIRMWARE=$(PWD)/progs/i2c.hex +PROGRAM=i2c.hex +I2C
 else ifneq ($(WSDMA),)
 # the WS2812B driver's DMA (RESPIN 35): progs/wsdma.c - frames from the
 # PSRAM through the TTLC's fetch on uo[1] / uo[2], the cache on
@@ -141,6 +145,10 @@ $(FIRMWARE): $(IHX) ihx2hex.py
 endif
 ifneq ($(CACHE),)
 PLUSARGS += +CACHE
+endif
+# M3=1: io mux mode 3 - the CEs latched from uio[0..2] (tb.v's 7475), DQ2 / DQ3 on uio[6] / [7]
+ifneq ($(M3),)
+PLUSARGS += +M3
 endif
 ifneq ($(SPI),)
 PLUSARGS += +SPI

@@ -43,7 +43,12 @@ module tb
    output wire  [31:0]  ws_hash2,
    output wire  [15:0]  ws_frames2,
    output wire  [15:0]  ws_bad,             // high pulses neither a 0 nor a 1, on either
-   output wire  [15:0]  ws_other            // rising edges on uo[0], uo[5], uo[6] since ws_arm
+   output wire  [15:0]  ws_other,           // rising edges on uo[0], uo[5], uo[6] since ws_arm
+   input  wire          m3,                 // io mux mode 3: the custom Pmod's CE latch on uio[0..2], I2C on uio[4] / [5]
+   output wire  [15:0]  i2c_count,          // bytes the I2C slave at 0x3C took ...
+   output wire  [31:0]  i2c_hash,           // ... their hash (h = h * 33 ^ byte)
+   output wire  [15:0]  i2c_txns,           // ... transactions addressed to it
+   output wire  [15:0]  i2c_nacks           // addresses not its own (not acknowledged)
 );
    wire     [2:0] ttlc_din;
    wire           spi_miso;           // the SPI devices' MISO (ui_in[2])
@@ -58,6 +63,8 @@ module tb
    wire     [7:0] uio_in;
 
    wire           ce0;
+   wire           i2c_scl;            // mode 3's I2C (uio[4] / [5])
+   wire           i2c_sda;
    wire           ce1;
    wire           sclk;
    wire           dq0;
@@ -216,8 +223,11 @@ module tb
    wire     [7:0] uio_out_d = uio_out;
    wire     [7:0] uio_oe_d  = uio_oe;
 `endif
-   assign dq0  = uio_oe_d[1] ? uio_out_d[1] : 1'bz;
-   assign dq1  = uio_oe_d[2] ? uio_out_d[2] : 1'bz;
+   // mode 3: the CE values on uio[1] / [2] while uio[0] strobes reach the
+   // latch, not the parts (the custom Pmod's series resistors)
+   wire           m3_strobe = m3 && uio_out[0];
+   assign dq0  = uio_oe_d[1] && !m3_strobe ? uio_out_d[1] : 1'bz;
+   assign dq1  = uio_oe_d[2] && !m3_strobe ? uio_out_d[2] : 1'bz;
    assign dq2  = uio_oe_d[6] ? uio_out_d[6] : 1'bz;
    assign dq3  = uio_oe_d[7] ? uio_out_d[7] : 1'bz;
    // SPI_TCO=<ns> (make SPI_TCO=..., RESPIN 34): what the flash and PSRAM
@@ -233,7 +243,8 @@ module tb
    assign uio_in[0] = 1'b0;
    assign uio_in[1] = dq_in[0];
    assign uio_in[2] = dq_in[1];
-   assign uio_in[5:3] = 3'b0;
+   assign uio_in[3] = 1'b0;
+   assign uio_in[5] = m3 ? i2c_sda : 1'b0;
    assign uio_in[6] = uart_port_sel == 2'h2 ? txd : dq_in[2];
    assign uio_in[7] = dq_in[3];
 
@@ -244,16 +255,42 @@ module tb
 
    // ==========================================================================
    // The chip selects: plain SPI pins (io mux 0x1c bits 1:0 = 3 puts CE1 on
-   // uio[4]); the TT07 testbench modelled the custom Pmod's CE latches here
+   // uio[4]), or in mode 3 (0x1c [7:6] = 3) the custom Pmod's 7475: a
+   // transparent latch, open while uio[0] is high, taking CE0 / CE1 from
+   // uio[1] / uio[2]
    // ==========================================================================
-   assign ce0 = uio_out[0];
-   assign ce1 = uio_out[4];
+   reg      [1:0] ce_l = 2'b11;
+   always @*
+      if (m3_strobe)
+         ce_l = uio_out[2:1];
+   assign ce0 = m3 ? ce_l[0] : uio_out[0];
+   assign ce1 = m3 ? ce_l[1] : uio_out[4];
+
+   // ==========================================================================
+   // Mode 3's I2C on uio[4] (SCL) / uio[5] (SDA): open drain, pulled up, and
+   // a write-only slave at 0x3C (an SSD1309 OLED's address)
+   // ==========================================================================
+   assign i2c_scl = m3 && uio_oe[4] && !uio_out[4] ? 1'b0 : 1'bz;
+   assign i2c_sda = m3 && uio_oe[5] && !uio_out[5] ? 1'b0 : 1'bz;
+   pullup (i2c_scl);
+   pullup (i2c_sda);
+
+   i2c_slave_rx #( .ADDR(7'h3c) ) i_i2c
+   (
+      .clk     ( clk       ),
+      .scl     ( i2c_scl   ),
+      .sda     ( i2c_sda   ),
+      .count   ( i2c_count ),
+      .hash    ( i2c_hash  ),
+      .txns    ( i2c_txns  ),
+      .nacks   ( i2c_nacks )
+   );
 
    // ==========================================================================
    // Connect the UART to the port specified
    // ==========================================================================
    assign ui_in[3]  = uart_port_sel == 2'h0 ? txd : porta_in[3];
-   assign uio_in[4] = uart_port_sel == 2'h1 ? txd : 1'b0;
+   assign uio_in[4] = m3 ? i2c_scl : uart_port_sel == 2'h1 ? txd : 1'b0;
    assign rxd = uart_port_sel == 2'h0 ? uo_out[4] : 
                 uart_port_sel == 2'h1 ? uio_out[5] :
                 uart_port_sel == 2'h2 ? uio_out[5] :
@@ -649,6 +686,103 @@ module ws2812_rx
          end
          else if (live)
             bad <= bad + 16'h1;
+      end
+   end
+endmodule
+
+
+// A write-only I2C slave (mode 3's bus): START / STOP from SDA moving while
+// SCL is high, a bit on each SCL rise, the acknowledge driven from the 8th
+// bit's falling edge to the 9th's; its own address (write) is acknowledged
+// and counted in txns, any other in nacks; the data bytes of its own
+// transactions are acknowledged, counted and hashed.  Sampled on the
+// system clock (SCL is far slower).
+module i2c_slave_rx
+#(
+   parameter [6:0] ADDR = 7'h3c
+)
+(
+   input  wire          clk,
+   input  wire          scl,
+   inout  wire          sda,
+   output reg  [15:0]   count = 16'h0,
+   output reg  [31:0]   hash  = 32'h0,
+   output reg  [15:0]   txns  = 16'h0,
+   output reg  [15:0]   nacks = 16'h0
+);
+   reg   [2:0]    scl_s = 3'b111;
+   reg   [2:0]    sda_s = 3'b111;
+   reg            in_txn = 1'b0;
+   reg            is_addr = 1'b0;
+   reg            selected = 1'b0;
+   reg            ackph = 1'b0;
+   reg            drive = 1'b0;
+   reg   [3:0]    bitn = 4'h0;
+   reg   [7:0]    shreg = 8'h0;
+
+   assign sda = drive ? 1'b0 : 1'bz;
+
+   wire scl_rise = scl_s[2:1] == 2'b01;
+   wire scl_fall = scl_s[2:1] == 2'b10;
+   wire start    = scl_s[1] && sda_s[2:1] == 2'b10;
+   wire stop     = scl_s[1] && sda_s[2:1] == 2'b01;
+
+   always @(posedge clk)
+   begin
+      scl_s <= {scl_s[1:0], scl !== 1'b0};
+      sda_s <= {sda_s[1:0], sda !== 1'b0};
+      if (start)
+      begin
+         in_txn   <= 1'b1;
+         is_addr  <= 1'b1;
+         selected <= 1'b0;
+         ackph    <= 1'b0;
+         drive    <= 1'b0;
+         bitn     <= 4'h0;
+      end
+      else if (stop)
+      begin
+         in_txn <= 1'b0;
+         drive  <= 1'b0;
+      end
+      else if (in_txn)
+      begin
+         if (scl_rise && !ackph)
+         begin
+            shreg <= {shreg[6:0], sda_s[1]};
+            bitn  <= bitn + 4'h1;
+         end
+         if (scl_fall)
+         begin
+            if (ackph)
+            begin
+               ackph <= 1'b0;
+               drive <= 1'b0;
+               bitn  <= 4'h0;
+            end
+            else if (bitn == 4'h8)
+            begin
+               ackph <= 1'b1;
+               if (is_addr)
+               begin
+                  is_addr <= 1'b0;
+                  if (shreg[7:1] == ADDR && !shreg[0])
+                  begin
+                     selected <= 1'b1;
+                     drive    <= 1'b1;
+                     txns     <= txns + 16'h1;
+                  end
+                  else
+                     nacks <= nacks + 16'h1;
+               end
+               else if (selected)
+               begin
+                  drive <= 1'b1;
+                  count <= count + 16'h1;
+                  hash  <= (hash * 32'd33) ^ {24'h0, shreg};
+               end
+            end
+         end
       end
    end
 endmodule

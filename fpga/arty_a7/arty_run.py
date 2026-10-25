@@ -36,7 +36,7 @@ rising edge; a bitstream from before needs SPI=0x0811 - clk/4, mode 1 on
 the flash; 0x6010 adds the late capture, which the Arty does not need).  The load
 leaves 0x08d3 - clk/8, a 13-clock gap - the emulated RAM's settings, which the
 TT07 board still needs (lisa_pydb keeps them); the testbench runs 0x0010.
-usage: [CACHE=1] [ETH=1] [QUAD=0] [DUMMY=0x66] [SPI=0x..] [REGS=a=v,..] [SEND=..] [STOP=..] arty_run.py <file.ihx> [seconds] [baud]   (any rate; 460800 as the demo board)"""
+usage: [CACHE=1] [ETH=1] [M3=1] [QUAD=0] [DUMMY=0x66] [SPI=0x..] [REGS=a=v,..] [SEND=..] [STOP=..] arty_run.py <file.ihx> [seconds] [baud]   (any rate; 460800 as the demo board)"""
 import os, sys, time
 img = sys.argv[1]
 secs = float(sys.argv[2]) if len(sys.argv) > 2 else 5
@@ -51,7 +51,7 @@ if eth:
     TtlcIo().flash_write(0, load_image(img), log=lambda *a: print("ethernet:", *a, flush=True))
 class A: flashbase = 0
 d = m.LisaPyDb(); d.iwidth = 16; d.args = A()
-d.openPort("/dev/ttyUSB1", baud)
+d.openPort(os.environ.get("PORT", "/dev/ttyUSB1"), baud)        # PORT=: the USB-UART if it re-enumerated
 print("debugger", d.getVer(), flush=True)
 d.readHexFile(img)
 if eth:
@@ -64,7 +64,10 @@ cache = os.environ.get("CACHE") == "1"
 quad = os.environ.get("QUAD", "1") != "0"
 cs_cfg = (0x0007 if cache else 0x0005) if quad else (0x0006 if cache else 0x0004)
 dummy = int(os.environ.get("DUMMY", "0x66" if quad else "0x6a"), 0)
-if cache or quad:                                # psram_mod + the uio mux at 2: SIO2/3 on uio[4:5], the Pmod's SD2/SD3
+m3 = os.environ.get("M3") == "1"
+if m3:                                           # io mux mode 3 (SW2 up: m3_pmod.v): the CEs latched from uio[0..2],
+    d.writeReg(0x1c, 0x00fa)                     # SIO2/3 on uio[6:7], the I2C master on uio[4:5] (JD)
+elif cache or quad:                              # psram_mod + the uio mux at 2: SIO2/3 on uio[4:5], the Pmod's SD2/SD3
     d.writeReg(0x1c, 0x04aa)
 d.writeReg(0x17, cs_cfg); d.writeReg(0x18, dummy)
 spi = os.environ.get("SPI", "0x0010")            # register 0x1e: bits 3:0 SCLK = clk / (2 (n + 1)), 10:4 the CE gap in clocks,

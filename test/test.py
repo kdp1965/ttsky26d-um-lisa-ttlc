@@ -21,6 +21,7 @@ async def start(dut):
     dut.ttlc_watch.value = 0
     dut.cap_period.value = 0
     dut.ws_arm.value = 0
+    dut.m3.value = 0
     lisa = Lisa(dut)
     await lisa.reset()
     return lisa
@@ -184,15 +185,18 @@ async def test_ttlc_debug(dut):
 
 @cocotb.test(skip=plusarg('DEFAULT') is not None or plusarg('TTLC') is not None or plusarg('BANK') is not None or plusarg('OVERRUN') is not None
              or plusarg('SPIM') is not None or plusarg('TTLCIO') is not None or plusarg('TIMER3') is not None
-             or plusarg('WS2812') is not None or plusarg('WSDMA') is not None)
+             or plusarg('WS2812') is not None or plusarg('WSDMA') is not None or plusarg('I2C') is not None)
 async def test_program(dut):
     """+FIRMWARE=<hex>: run it (the data cache on with +CACHE) and expect ALL PASSED;
     +STATS counts the fetch clocks"""
     lisa = await start(dut)
     cache = plusarg('CACHE') is not None
     timeout = int(plusarg('TIMEOUT', 2_000_000))
-    await lisa.setup(cache=cache, quad=plusarg('SPI') is None)
-    dut._log.info('running %s with the data cache %s' % (plusarg('PROGRAM', plusarg('FIRMWARE')), 'on' if cache else 'off'))
+    m3 = plusarg('M3') is not None
+    dut.m3.value = int(m3)
+    await lisa.setup(cache=cache, quad=plusarg('SPI') is None, m3=m3)
+    dut._log.info('running %s with the data cache %s%s' % (plusarg('PROGRAM', plusarg('FIRMWARE')), 'on' if cache else 'off',
+                                                          ', io mux mode 3' if m3 else ''))
     stats = plusarg('STATS') is not None
     counters = ('st_clocks', 'st_insts', 'st_wait', 'st_xfers', 'st_words')
     before = [int(getattr(dut, c).value) for c in counters] if stats else None
@@ -416,6 +420,29 @@ async def test_wsdma(dut):
     assert got == (7 + 3 * k, ws_hash(fa + fc * k), 1 + k, 100, ws_hash(fb), 1, 0, 0), \
         'expected uo[1] %d pixels %08x, uo[2] 100 pixels %08x 1 frame, none bad or stray' % (
             7 + 3 * k, ws_hash(fa + fc * k), ws_hash(fb))
+
+
+@cocotb.test(skip=plusarg('I2C') is None)
+async def test_i2c(dut):
+    """+I2C (make I2C=1): progs/i2c.c in io mux mode 3 (the custom Pmod's CE
+    latch, the data cache on through it) with the I2C master on uio[4] /
+    uio[5] at 400 kHz: a probe of 0x3D (not acknowledged), an SSD1309
+    command transaction and a data one to tb.v's slave at 0x3C - its bytes,
+    their order (the hash), two transactions, one NAK"""
+    lisa = await start(dut)
+    dut.m3.value = 1
+    await lisa.setup(cache=True, quad=True, m3=True)
+    text = await lisa.run(timeout=2_000_000)
+    assert 'ALL PASSED' in text, 'the I2C test did not pass: %r' % text[-300:]
+    cmds = [0x00, 0xAE, 0xD5, 0xA0, 0xA8, 0x3F, 0xD3, 0x00, 0x40, 0xA1, 0xC8, 0xDA, 0x12,
+            0x81, 0x6F, 0xD9, 0xD3, 0xDB, 0x34, 0xA4, 0xA6, 0x20, 0x00, 0xAF]
+    data = [0x40] + [(i * 37 + 5) & 0xFF for i in range(16)]
+    h = 0
+    for b in cmds + data:
+        h = ((h * 33) ^ b) & 0xFFFFFFFF
+    got = (int(dut.i2c_count.value), int(dut.i2c_hash.value), int(dut.i2c_txns.value), int(dut.i2c_nacks.value))
+    dut._log.info('I2C slave: %d bytes, hash %08x, %d transactions, %d NAKed addresses' % got)
+    assert got == (len(cmds) + len(data), h, 2, 1), 'expected %d bytes %08x, 2 transactions, 1 NAK' % (len(cmds) + len(data), h)
 
 
 @cocotb.test(skip=plusarg('OVERRUN') is None)

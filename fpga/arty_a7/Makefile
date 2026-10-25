@@ -28,7 +28,7 @@ CHIP = tt_um_pettit_lisa.v RAM32.v lisa_core.v lisa_div.v lisa_periph.v lisa_io_
 	   fops.v lampFPU_div_top.sv lampFPU_div.sv lampFPU_fractDiv.sv lampFPU_utils.v \
 	   mc14500b.v ttlc_io.v ttlc_fetch.v shift_reg_io.v
 ARTY = fpga_cells.v lisa_arty_clk.v eth_crc32_byte.v eth_mii_mac.v eth_ipstack.v ttlc_eth_app.v \
-	   eth_ttlc.v ttlc_chains_fpga.v lisa_arty.v
+	   eth_ttlc.v ttlc_chains_fpga.v m3_pmod.v lisa_arty.v
 LINT_FLAGS ?= -Wno-fatal -Wno-DECLFILENAME -Wno-PROCASSINIT -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM \
 	          -Wno-PINCONNECTEMPTY -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC
 

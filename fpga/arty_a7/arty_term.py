@@ -6,7 +6,7 @@ at 0 and hands it the UART, and this terminal stays on the port - the
 port must not be reopened, since opening it resets the design.  Keys go
 straight through (ctrl-] quits, as pyserial's miniterm).  For lisa_monitor
 press Enter for the banner and 'lisa> ', then 'help'.
-usage: [CACHE=0] [QUAD=0] [REGS=0x1b=0x2880,..] arty_term.py <file.ihx> [baud]     (on andromeda, the board's host)"""
+usage: [CACHE=0] [QUAD=0] [M3=1] [REGS=0x1b=0x2880,..] arty_term.py <file.ihx> [baud]     (on andromeda, the board's host)"""
 import os
 import sys
 import time
@@ -35,14 +35,16 @@ miniterm.TRANSFORMATIONS["entercr"] = EnterSendsCR
 TtlcIo().flash_write(0, load_image(img), log=lambda *a: print("ethernet:", *a, flush=True))
 class A: flashbase = 0
 d = m.LisaPyDb(); d.iwidth = 16; d.args = A()
-d.openPort("/dev/ttyUSB1", baud)
+d.openPort(os.environ.get("PORT", "/dev/ttyUSB1"), baud)        # PORT=: the USB-UART if it re-enumerated
 print("debugger", d.getVer(), flush=True)
 d.halt(); d.writePC(0); d.setFlashBase(); d.writeReg(0x17, 4); d.writeReg(0x1e, 0x0801)
 cache = os.environ.get("CACHE", "1") != "0"
 quad = os.environ.get("QUAD", "1") != "0"                    # both selects quad, as the demo board
 d.writeReg(0x17, (0x0007 if cache else 0x0005) if quad else (0x0006 if cache else 0x0004))
 d.writeReg(0x18, int(os.environ.get("DUMMY", "0x66" if quad else "0x6a"), 0))
-if cache or quad:
+if os.environ.get("M3") == "1":
+    d.writeReg(0x1c, 0x00fa)                                    # io mux mode 3 (SW2: m3_pmod.v), I2C on uio[4:5] / JD
+elif cache or quad:
     d.writeReg(0x1c, 0x04aa)                                    # SIO2/3 on the Pmod's SD2/SD3
 if cache:
     for a, v in ((0x15, 0x0006), (0x1d, 0x0013)):

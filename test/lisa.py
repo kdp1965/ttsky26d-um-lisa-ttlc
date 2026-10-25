@@ -159,13 +159,15 @@ class Lisa:
         await self.write_reg(REG_DATA, v & 0xff)
 
     # ------------------------------------------------------ the configuration
-    async def setup(self, cache=False, quad=True, verify=True):
+    async def setup(self, cache=False, quad=True, verify=True, m3=False):
         """the Commander's setup: CS0 the program flash, CS1 the data RAM,
         both QSPI with 24-bit addresses (the testbench models), the fetch
         and data bases 0; the data cache off (the 128-byte RAM is the data
         space) or on (32K through the RAM model on CS1)"""
         regs = [
-            (REG_IO_MUX,     0x00a3 if quad else 0x0003),   # uio6/7 DQ2/DQ3, uio4 CE1
+            (REG_IO_MUX,     0x00fa if m3 else 0x00a3 if quad else 0x0003),
+                                                            # uio6/7 DQ2/DQ3, uio4 CE1; m3: mode 3 - the CEs
+                                                            # latched from uio[0..2], I2C on uio4/5
             (REG_OUT_MUX,    0x0000),
             (REG_CS_CFG,     0x0007 if quad else 0x0004),   # {addr16, is_flash, quad} per CS
             (REG_DUMMY,      0x0066),                       # 6 dummy clocks after an EB address

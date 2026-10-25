@@ -9,7 +9,10 @@
 //   JC   uio      bidirectional: the QSPI flash / PSRAM Pmod goes here.
 //                 JB and JC are the Arty's high-speed Pmods; JA and JD
 //                 have 200 ohm series resistors.
-//   JD   unused
+//   JD   I2C (SCL pin 1, SDA pin 2) with SW2 up: io mux mode 3's custom
+//        Pmod (m3_pmod.v) - the chip selects latched from uio[0..2], DQ2 /
+//        DQ3 on uio[6] / [7] - is built here, its parts the QSPI Pmod's
+//        on JC, and the I2C master's uio[4] / [5] go to JD
 //
 // The USB-UART is the debug UART: uart_txd_in (from the host) and JA pin 4
 // are ANDed into ui_in[3] (rx) - a UART idles high and the unused one is
@@ -44,7 +47,8 @@ module lisa_arty
 (
    input  wire        CLK100MHZ,
    input  wire        ck_rst,         // RESET button, active low
-   input  wire [3:0]  sw,             // SW3: the TTLC Pmod on JA / JB instead of the inside chains
+   input  wire [3:0]  sw,             // SW3: the TTLC Pmod on JA / JB instead of the inside chains;
+                                      // SW2: io mux mode 3's custom Pmod (m3_pmod.v), I2C on JD
    output wire [3:0]  led,
    output wire        led0_r,
    output wire        led0_g,
@@ -52,6 +56,7 @@ module lisa_arty
    input  wire [7:0]  ja,             // ui_in
    output wire [7:0]  jb,             // uo_out
    inout  wire [7:0]  jc,             // uio
+   inout  wire [1:0]  jd,             // I2C SCL, SDA (SW2)
    input  wire        uart_txd_in,    // from the host
    output wire        uart_rxd_out,   // to the host
    output wire        eth_ref_clk,    // 25 MHz to the PHY
@@ -143,7 +148,31 @@ module lisa_arty
    assign ui_in  = {ja[7], ttlc_din, uart_txd_in & ja[3], ja[2:0]};
    assign jb     = uo_out;
    assign uart_rxd_out = uo_out[4];
-   assign uio_in = jc;
+   // SW2: the chip's uio through mode 3's custom Pmod, else straight to JC
+   wire                 m3_sel = sw[2];
+   wire [7:0]           m3_uio_in;
+   wire [7:0]           m3_jc_o;
+   wire [7:0]           m3_jc_oe;
+   wire [7:0]           pmod_o  = m3_sel ? m3_jc_o  : uio_out;
+   wire [7:0]           pmod_oe = m3_sel ? m3_jc_oe : uio_oe;
+   wire [1:0]           m3_jd_low;
+
+   assign uio_in = m3_sel ? m3_uio_in : jc;
+   assign jd[0]  = m3_sel && m3_jd_low[0] ? 1'b0 : 1'bz;
+   assign jd[1]  = m3_sel && m3_jd_low[1] ? 1'b0 : 1'bz;
+
+   m3_pmod m3
+   (
+      .rst_n      ( rst_n     ),
+      .uio_out    ( uio_out   ),
+      .uio_oe     ( uio_oe    ),
+      .uio_in     ( m3_uio_in ),
+      .jc_o       ( m3_jc_o   ),
+      .jc_oe      ( m3_jc_oe  ),
+      .jc_i       ( jc        ),
+      .jd_low     ( m3_jd_low ),
+      .jd_i       ( jd        )
+   );
 
    // JC: the chip's uio, or the bridge's SPI master while it holds the
    // flash bus (CS on uio[0], MOSI [1], MISO [2], SCLK [3]; HOLD#, WP# and
@@ -159,7 +188,7 @@ module lisa_arty
    generate
       for (i = 0; i < 8; i = i + 1)
       begin : UIO
-         assign jc[i] = spi_own ? (spi_oe[i] ? spi_drive[i] : 1'bz) : (uio_oe[i] ? uio_out[i] : 1'bz);
+         assign jc[i] = spi_own ? (spi_oe[i] ? spi_drive[i] : 1'bz) : (pmod_oe[i] ? pmod_o[i] : 1'bz);
       end
    endgenerate
 

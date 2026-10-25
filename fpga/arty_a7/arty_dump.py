@@ -32,7 +32,7 @@ if eth:
     TtlcIo().flash_write(0, load_image(img), log=lambda *a: print("ethernet:", *a, flush=True))
 class A: flashbase = 0
 d = m.LisaPyDb(); d.iwidth = 16; d.args = A()
-d.openPort("/dev/ttyUSB1", baud)
+d.openPort(os.environ.get("PORT", "/dev/ttyUSB1"), baud)        # PORT=: the USB-UART if it re-enumerated
 print("debugger", d.getVer(), flush=True)
 d.readHexFile(img)
 if eth:

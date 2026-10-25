@@ -64,6 +64,12 @@ set_property -dict { PACKAGE_PIN U13   IOSTANDARD LVCMOS33 } [get_ports { jc[7] 
 ## debug UART's other rx candidates, idle high like a UART
 set_property PULLUP true [get_ports { jc[4] jc[5] jc[6] jc[7] }];
 
+## Pmod JD: I2C SCL (pin 1) / SDA (pin 2) of io mux mode 3's custom Pmod
+## (SW2, m3_pmod.v); open drain, pulled up here as well as on the display
+set_property -dict { PACKAGE_PIN D4    IOSTANDARD LVCMOS33 } [get_ports { jd[0] }];
+set_property -dict { PACKAGE_PIN D3    IOSTANDARD LVCMOS33 } [get_ports { jd[1] }];
+set_property PULLUP true [get_ports { jd[0] jd[1] }];
+
 ## USB-UART (FTDI): uart_txd_in is the host's transmit, into the design
 set_property -dict { PACKAGE_PIN D10   IOSTANDARD LVCMOS33 } [get_ports { uart_rxd_out }];
 set_property -dict { PACKAGE_PIN A9    IOSTANDARD LVCMOS33 } [get_ports { uart_txd_in }];
@@ -98,8 +104,8 @@ set_output_delay -clock eth_tx_clk -max 10.0 [get_ports { eth_txd[*] eth_tx_en }
 set_output_delay -clock eth_tx_clk -min  0.0 [get_ports { eth_txd[*] eth_tx_en }];
 
 ## Everything else off chip is asynchronous to the project clock
-set_false_path -from [get_ports { ck_rst sw[*] ja[*] jc[*] uart_txd_in }];
-set_false_path -to   [get_ports { led[*] led0_* jb[*] jc[*] uart_rxd_out eth_rstn }];
+set_false_path -from [get_ports { ck_rst sw[*] ja[*] jc[*] jd[*] uart_txd_in }];
+set_false_path -to   [get_ports { led[*] led0_* jb[*] jc[*] jd[*] uart_rxd_out eth_rstn }];
 
 ## Configuration
 set_property CFGBVS VCCO [current_design];
