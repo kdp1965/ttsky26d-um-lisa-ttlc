@@ -8,7 +8,7 @@ SDCC      ?= ../../../lisa-tools/sdcc-lisa/build/bin/sdcc
 SDCC_TEST ?= ../../../lisa-tools/sdcc_test
 CFLAGS    ?= -mlisa --rev3 --debug -I$(SDCC_TEST)
 
-PROGS = hello alu2 reti div16 cache14 dbg swap bank uartov spi ttlcio timer3 ws2812 wsdma i2c
+PROGS = hello alu2 reti div16 cache14 dbg swap bank uartov spi ttlcio timer3 ws2812 wsdma i2c misc36
 
 all: $(PROGS:%=%.hex) ttlc_test.hex ttlc_jump_test.hex ttlc_storage_test.hex bank_test.hex spi_test.hex ttlcio_test.hex
 

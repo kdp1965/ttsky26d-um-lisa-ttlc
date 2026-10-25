@@ -46,6 +46,7 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 33 | An extension: a WS2812B LED string driver - the pixels in the TTLC's 48 output flops (two halves), the line on one of mux 3's uo[0], [1], [2], [5], [6], programmable timing, the free-half request on the TTLC's interrupt source | `lisa_ws2812.v`, `lisa_periph.v` 0x40-0x45 and int_req[5], `lisa_io_mux.v` periph_sel2, `tt_um_pettit_lisa.v` | done: test/progs/ws2812.c (make WS2812=1), sdcc_test/test_ws2812.c |
 | 34 | QSPI at clk/2: in a write burst the first nibble of every later word changed on SCLK's rising edge, the one the part samples (the Arty's PSRAM at clk/2: the cache on failed); and a late read capture, 0x1E [14:13] per select: a read bit taken again on the following falling edge, for the round trip through the pads and the part | `lisa_qqspi.v` S6, rd_late / late_pend, `debug_regs.v` 0x1E, `tt_um_pettit_lisa.v` | done: tb.v SPI_DOUT_DLY / SPI_TCO, SPI_REG=0x6010 |
 | 35 | An extension: the WS2812B driver's DMA - a frame from a PSRAM buffer (BASE / LEN in the output flops) through the TTLC's fetch, two pixels a group, the data cache flushed first, FRAME / REPEAT; and the data cache served a core access during a flush from the flush's line | `lisa_ws2812.v`, `ttlc_fetch.v` ws_*, `tt_um_pettit_lisa.v` ttlc_addr / ce / flush, `data_cache8.v` cache_hit | done: test/progs/wsdma.c (make WSDMA=1), sdcc_test/test_wsdma.c, hw_wsdma.c |
+| 36 | An extension: a 32-bit cycle counter, a watchdog (resets the core and the peripherals, WDRST flag) and two PDM (first-order sigma-delta) outputs on Timer 3's PWM pins - an 8-bit DAC through an RC filter | `lisa_cyccnt.v`, `lisa_wdt.v`, `lisa_pdm.v`, `lisa_periph.v` 0x48-0x52, `tt_um_pettit_lisa.v` the core's and the peripherals' resets | done: test/progs/misc36.c (make MISC36=1), sdcc_test/test_misc36.c |
 
 Status: open / fixed (the test that shows it, in test/: a program of test/progs, a cocotb test of test/core or the fops bench).
 
@@ -1271,6 +1272,53 @@ Ken: "It works!!!".
 **Cost.**  About 25 flops (the state, the 13-bit pixel count, the pixel
 of the group, FRAME, the flush request, the two strobes), the 48-bit 2:1
 mux into the bit mux, the 24-bit address adder and mux, the select mux.
+
+## 36. A cycle counter, a watchdog and PDM outputs
+
+**Why.** Not a silicon issue: extensions (Ken, 2026-10-25) after a review
+of what a small microcontroller still lacked - no analog on this tile, so
+no ADC or DAC; USB and Ethernet would need DMA and are better as external
+modules.  These three are digital, small and broadly useful.
+
+**Cycle counter** (`src/lisa_cyccnt.v`, 0x48-0x4B): 32 bits of clocks,
+wrapping every 86 s at 50 MHz.  Reading CYC0 latches CYC1-CYC3, so the four
+reads are one value; a write to CYC0 clears it.  For timing and profiling
+(the 16-bit Timer 3 wrapped in several measurements).
+
+**Watchdog** (`src/lisa_wdt.v`, 0x4C-0x4F): enabled, it must be kicked
+(0xA5 to WDT_KICK) within (TIMEOUT + 1) x 2^(16 + SCALE) clocks - 1.3 ms to
+43 s at 50 MHz - or it resets the core (the debugger's core reset, ORed:
+the program restarts at 0) and the peripherals (`lisa_periph.v`'s rst_n
+ANDed with it at the top), for 7 clocks.  Not itself (its own power-on
+reset port, rst_por_n), the debug registers or the QSPI configuration -
+a full chip reset would lose the host's QSPI setup and the chip could not
+fetch.  After it fires EN is clear and WDRST (WDT_STAT bit 0, sticky, a 1
+clears it) set, so a program can tell the restart from a power-on.
+
+**PDM** (`src/lisa_pdm.v`, 0x50-0x52): two first-order sigma-delta
+modulators - each clock an 8-bit accumulator adds the channel's level and
+the carry is the output, a density of VAL / 256.  An enabled channel takes
+Timer 3's PWM pin in uo_out mux 2 (uo[1] channel 0, uo[2] channel 1) in
+`lisa_periph.v`, so `lisa_io_mux.v` is unchanged.  Through an RC low-pass
+(1 kOhm and 10 nF for audio) it is an 8-bit DAC.
+
+**Test.** `test/progs/misc36.c` (`make MISC36=1`, Verilator and icarus): the
+cycle counter over a loop and cleared; the watchdog (TIMEOUT 1, SCALE 0:
+131072 clocks) kicked every 60000 clocks five times without firing, then
+left: it resets, the program restarts and finds WDRST set and EN clear;
+the PDM channels at 64 and 192, measured by test.py on uo[1] / uo[2] over
+25600 clocks: 25.00% and 75.00%.  The other suites (TIMER3 and WS2812 share
+the pins and the peripherals' reset) pass.  lisa_sim (`misc36.h`): the
+three, the watchdog resetting the core and the peripherals but not itself;
+sdcc_test/test_misc36.c (make check REV3=1: 39/39).  sdcc's lisa/tt07.h:
+CYC0-3, WDT_*, PDM_*.
+On the Arty (2026-10-25, 50 MHz, setup +0.128 / hold +0.018 ns,
+build/lisa_arty_r3_50_respin36.bit on andromeda): test_misc36 three runs
+of three, the watchdog reset and the restart from the flash each time.
+
+**Cost.** The counter 56 flops (32 + the 24-bit latch), the watchdog 47
+(23-bit prescaler, 8-bit ticks and timeout, scale, EN, WDRST, the reset
+pulse), the PDM 36 (two 9-bit accumulators, two levels, the enables).
 
 ## Verification (test/, see test/README.md)
 

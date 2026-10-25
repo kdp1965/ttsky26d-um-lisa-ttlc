@@ -158,6 +158,7 @@ module tt_um_pettit_lisa
    wire   [11:0]        ws_last_grp;
    wire   [15:0]        ws_base;
    wire                 dbg_cache_flush;     // the debugger's flush (the driver's ORed in)
+   wire                 wdt_reset;           // RESPIN 36: the watchdog resets the core and the peripherals
    wire   [1:0]         t3_pwm_oe;
 
    // ==========================================================================
@@ -460,7 +461,7 @@ module tt_um_pettit_lisa
       .clk                       ( clk                       ),
       .rst_n                     ( rst_n_r[2]                ),
       .rst_async_n               ( rst_async_n_r[2]          ),
-      .reset                     ( dbg_reset                 ),
+      .reset                     ( dbg_reset | wdt_reset     ),  // the debugger's reset, or the watchdog's (RESPIN 36)
                                                              
       // Instruction bus                                     
       .inst_i                    ( core_inst                 ),
@@ -641,7 +642,8 @@ module tt_um_pettit_lisa
    lisa_periph i_lisa_periph
    (
       .clk                       ( clk                       ),
-      .rst_n                     ( rst_n_r[2]                ),
+      .rst_n                     ( rst_n_r[2] & ~wdt_reset   ),  // RESPIN 36: the watchdog resets the peripherals ...
+      .rst_por_n                 ( rst_n_r[2]                ),  // ... but not itself
 `ifdef WANT_UART2
       .rst_async_n               ( rst_async_n_r[2]          ),
 `endif
@@ -721,7 +723,8 @@ module tt_um_pettit_lisa
       .ws_restart                ( ws_restart                ),
       .ws_adv                    ( ws_adv                    ),
       .ws_last_grp               ( ws_last_grp               ),
-      .ws_base                   ( ws_base                   )
+      .ws_base                   ( ws_base                   ),
+      .wdt_reset                 ( wdt_reset                 )
    );
 
    // ==========================================================================

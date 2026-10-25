@@ -948,6 +948,35 @@ before each frame, FRAME set after each), so changing the buffer changes the LED
 should not change while a frame is being sent.  LISA keeps running meanwhile; a fetch group lasts two pixels
 (about 3000 clocks) and takes under 100 clocks of QSPI time at clk/2.
 
+## Cycle Counter, Watchdog and PDM Outputs
+
+**Cycle counter.**  A free-running 32-bit count of clocks (it wraps every 86 seconds at 50 MHz), for timing
+and profiling.  Reading CYC0 latches the upper three bytes, so reading CYC0, CYC1, CYC2, CYC3 in that order
+gives one consistent value; writing CYC0 clears the counter.
+
+**Watchdog.**  Once enabled, the program must write 0xA5 to WDT_KICK before the timeout, or the watchdog
+resets the LISA core and its peripherals and the program restarts from address 0.  The QSPI configuration
+and the Debug registers are not reset, so the chip keeps running from its flash.  After a watchdog reset
+WDT_STAT's WDRST bit is set (write a 1 to clear it) and the watchdog is disabled, so the program can tell a
+watchdog restart from a power-on and decide whether to enable it again.  The timeout is
+(TIMEOUT + 1) x 2^(16 + SCALE) clocks: 1.3 ms to 43 seconds at 50 MHz.
+
+**PDM outputs.**  Two first-order sigma-delta (pulse density) outputs: each produces a stream of 1s with a
+density of VAL / 256.  Through a simple RC low-pass filter (for audio, 1 kOhm and 10 nF) each becomes an 8-bit
+DAC.  An enabled channel drives Timer 3's PWM pin in uo_out mux mode 2 (uo[1] for channel 0, uo[2] for
+channel 1) in place of the PWM.
+
+ | ADDR      | Register    | Description                                                               |
+ | --------- | ----------- | ------------------------------------------------------------------------- |
+ | 0x48-0x4B | CYC0-CYC3   | The cycle counter (a CYC0 read latches CYC1-3; a CYC0 write clears it)    |
+ | 0x4C      | WDT_CTRL    | [0] EN, [3:1] SCALE (a write restarts the count)                          |
+ | 0x4D      | WDT_KICK    | Write 0xA5: restart the count.  Read: the ticks counted so far             |
+ | 0x4E      | WDT_TIMEOUT | The timeout in ticks of 2^(16 + SCALE) clocks, less one (reset 255)        |
+ | 0x4F      | WDT_STAT    | [0] WDRST: the last reset was the watchdog's (write 1 to clear)            |
+ | 0x50      | PDM_CTRL    | [0] channel 0 on (uo[1]), [1] channel 1 on (uo[2])                         |
+ | 0x51      | PDM_VAL0    | Channel 0's level: VAL / 256                                               |
+ | 0x52      | PDM_VAL1    | Channel 1's level                                                          |
+
 ## How to test
 
 You will need to download and compile the C-based assembler, linker and C compiler I wrote (will make available)

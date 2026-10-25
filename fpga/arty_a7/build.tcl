@@ -17,7 +17,7 @@ file mkdir $out
 set sources {
    tt_um_pettit_lisa.v RAM32.v
    lisa_core.v lisa_dbg.v lisa_div.v lisa_periph.v lisa_io_mux.v
-   lisa_qqspi.v lisa_qspi_controller.v lisa_rx8n.v lisa_tx8n.v lisa_i2c.v lisa_spi.v lisa_ttlcio.v lisa_timer3.v lisa_ws2812.v
+   lisa_qqspi.v lisa_qspi_controller.v lisa_rx8n.v lisa_tx8n.v lisa_i2c.v lisa_spi.v lisa_ttlcio.v lisa_timer3.v lisa_ws2812.v lisa_cyccnt.v lisa_wdt.v lisa_pdm.v
    debug_ctrl.v debug_autobaud.v debug_brg.v debug_regs.v
    data_cache8.v inst_stream.v
    i2c_master_byte_ctrl.v i2c_master_bit_ctrl.v lisa_uart.v

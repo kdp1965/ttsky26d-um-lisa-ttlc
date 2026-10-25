@@ -314,6 +314,7 @@ module tb_core;
    (
       .clk                ( clk             ),
       .rst_n              ( rst_n           ),
+      .rst_por_n          ( rst_n           ),
       .rst_async_n        ( rst_n           ),
       .d_i                ( d_o             ),
       .d_o                ( d_i_periph      ),
@@ -376,7 +377,8 @@ module tb_core;
       .ws_restart         (                 ),
       .ws_adv             (                 ),
       .ws_last_grp        (                 ),
-      .ws_base            (                 )
+      .ws_base            (                 ),
+      .wdt_reset          (                 )
    );
 
    // the console input: a byte stays until the program reads it

@@ -185,7 +185,8 @@ async def test_ttlc_debug(dut):
 
 @cocotb.test(skip=plusarg('DEFAULT') is not None or plusarg('TTLC') is not None or plusarg('BANK') is not None or plusarg('OVERRUN') is not None
              or plusarg('SPIM') is not None or plusarg('TTLCIO') is not None or plusarg('TIMER3') is not None
-             or plusarg('WS2812') is not None or plusarg('WSDMA') is not None or plusarg('I2C') is not None)
+             or plusarg('WS2812') is not None or plusarg('WSDMA') is not None or plusarg('I2C') is not None
+             or plusarg('MISC36') is not None)
 async def test_program(dut):
     """+FIRMWARE=<hex>: run it (the data cache on with +CACHE) and expect ALL PASSED;
     +STATS counts the fetch clocks"""
@@ -420,6 +421,26 @@ async def test_wsdma(dut):
     assert got == (7 + 3 * k, ws_hash(fa + fc * k), 1 + k, 100, ws_hash(fb), 1, 0, 0), \
         'expected uo[1] %d pixels %08x, uo[2] 100 pixels %08x 1 frame, none bad or stray' % (
             7 + 3 * k, ws_hash(fa + fc * k), ws_hash(fb))
+
+
+@cocotb.test(skip=plusarg('MISC36') is None)
+async def test_misc36(dut):
+    """+MISC36 (make MISC36=1): progs/misc36.c - RESPIN 36: the cycle
+    counter; the watchdog kept off by kicks, then firing (the program
+    restarts and finds WDRST); the two PDM channels left at 64 and 192,
+    their duty on uo[1] / uo[2] (mux 2) measured here: 25% and 75%"""
+    lisa = await start(dut)
+    await lisa.setup(cache=False, quad=True)
+    await lisa.write_reg(0x1b, 0x0028)                               # uo[1], uo[2] to mux 2
+    text = await lisa.run(timeout=1_500_000)
+    assert 'ALL PASSED' in text and 'FAIL' not in text and 'watchdog reset' in text, \
+        'the RESPIN 36 test did not pass: %r' % text[-400:]
+    h0, h1, c0 = int(dut.pwm_high0.value), int(dut.pwm_high1.value), int(dut.clocks.value)
+    await ClockCycles(dut.clk, 25600)
+    h0, h1 = int(dut.pwm_high0.value) - h0, int(dut.pwm_high1.value) - h1
+    n = int(dut.clocks.value) - c0
+    dut._log.info('PDM0 high %d of %d clocks (%.2f%%), PDM1 %d (%.2f%%)' % (h0, n, 100.0 * h0 / n, h1, 100.0 * h1 / n))
+    assert abs(h0 / n - 0.25) < 0.005 and abs(h1 / n - 0.75) < 0.005, 'PDM density %.4f / %.4f, expected 0.25 / 0.75' % (h0 / n, h1 / n)
 
 
 @cocotb.test(skip=plusarg('I2C') is None)
