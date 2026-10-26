@@ -1988,6 +1988,19 @@ CMPn).
   rc19's).  The re-tap step removed 435 taps and added 4765; no cell on
   Calvin's 997 pixels (367 blockages).  Promoted 2026-10-24 (Ken; the
   precheck left to the gds workflow): gds/, lef/, pnl/ are this run's.
+* rc22 (2026-10-25, runs/macro-rc22 - RESPIN 36: the cycle counter, the
+  watchdog and Timer 3's PDM mode; rc21's recipe, GRT/DRT antenna repair
+  5 iterations instead of 3): 79447 instances, 64.3%, 239441 um2 of
+  standard cells, 1227K um of wire, global-route overflow 534, routing DRC
+  / Magic DRC / LVS / antenna 0, hold +0.079, setup +4.36 nominal and -6.6
+  at the slow max corner.  The first draw with the PDM as its own module
+  (lisa_pdm.v) was stopped at 79 violations in the 25th detailed-route
+  iteration (rc21: 6); with the PDM in Timer 3 the same point was 12, clean
+  at 71, but one met3 antenna at 1.02 was left with 3 repair iterations
+  (runs/macro-rc22-draw1; the re-run with 5 placed and routed the same).
+  No cell on Calvin's 997 pixels (367 blockages).  Promoted 2026-10-25
+  (Ken; the precheck left to the gds workflow): gds/, lef/, pnl/ are this
+  run's.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
