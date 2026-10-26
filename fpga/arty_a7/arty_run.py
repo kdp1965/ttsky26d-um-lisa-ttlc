@@ -25,6 +25,12 @@ lisa_monitor and asks for its help; arty_term.py is the live terminal).
 The capture ends at the first of STOP's markers ("ALL PASSED|SOME FAILED"
 unless set; STOP= for none) or after the seconds, and the program's time
 from the UART hand-over is printed.
+DDR=auto (or DDR=<0-7>) turns on RESPIN 37's DDR instruction reads on the
+flash (0x17 bit 6: EDh, the W25Q128JV-DTR, 7 dummy clocks in bits 15:12):
+auto sweeps the capture point (bits 11:9) through the debugger's reads of
+the first 64 words (EDh too) and takes the middle of the passing points;
+SEAMLESS=1 the SDR bursts through the same pipeline (bit 8; its point
+DDR= or 1).  Needs quad (the default) and a RESPIN 37 bitstream.
 REGS=0x1b=0x2880[,..] writes more debug registers just before the run
 (0x1b = 0x2880: the SPI master's CS0 / SCLK / MOSI on uo[3] / [5] / [6]).
 SPI=0x.... sets register 0x1e after the load (bits 3:0 SCLK = clk / (2 (n + 1)),
@@ -36,7 +42,7 @@ rising edge; a bitstream from before needs SPI=0x0811 - clk/4, mode 1 on
 the flash; 0x6010 adds the late capture, which the Arty does not need).  The load
 leaves 0x08d3 - clk/8, a 13-clock gap - the emulated RAM's settings, which the
 TT07 board still needs (lisa_pydb keeps them); the testbench runs 0x0010.
-usage: [CACHE=1] [ETH=1] [M3=1] [QUAD=0] [DUMMY=0x66] [SPI=0x..] [REGS=a=v,..] [SEND=..] [STOP=..] arty_run.py <file.ihx> [seconds] [baud]   (any rate; 460800 as the demo board)"""
+usage: [CACHE=1] [ETH=1] [M3=1] [QUAD=0] [DUMMY=0x66] [SPI=0x..] [DDR=auto|n] [SEAMLESS=1] [REGS=a=v,..] [SEND=..] [STOP=..] arty_run.py <file.ihx> [seconds] [baud]   (any rate; 460800 as the demo board)"""
 import os, sys, time
 img = sys.argv[1]
 secs = float(sys.argv[2]) if len(sys.argv) > 2 else 5
@@ -79,6 +85,46 @@ for i, w in enumerate(d.opcodes[:64]):          # read back through the selected
     d.ser.write(b"r20\n"); r = d.ser.read_until(b"\r").strip().decode()
     if r != w: bad += 1
 print("words %d, first 64 read back: %d mismatches" % (len(d.opcodes), bad), flush=True)
+
+def read64():
+    d.writeReg(0x10, 0)
+    n = 0
+    for w in d.opcodes[:64]:
+        d.ser.write(b"r20\n"); r = d.ser.read_until(b"\r").strip().decode()
+        n += r != w
+    return n
+
+ddr = os.environ.get("DDR")
+seamless = os.environ.get("SEAMLESS") == "1"
+if ddr or seamless:
+    if not quad:
+        sys.exit("DDR= / SEAMLESS= need the quad flash")
+    if ddr == "auto":
+        good = []
+        for cap in range(8):
+            d.writeReg(0x17, cs_cfg | 0x40 | cap << 9 | 7 << 12)
+            n = read64()
+            print("DDR capture point %d: %s" % (cap, "ok" if not n else "%d of 64 words wrong" % n), flush=True)
+            if not n:
+                good.append(cap)
+        if not good:
+            d.writeReg(0x17, cs_cfg)
+            sys.exit("DDR: no capture point reads the flash")
+        runs, run = [], [good[0]]                # the longest run of passing points, its middle
+        for c in good[1:]:
+            if c == run[-1] + 1:
+                run.append(c)
+            else:
+                runs.append(run); run = [c]
+        runs.append(run)
+        best = max(runs, key=len)
+        cap = best[len(best) // 2]
+    else:
+        cap = int(ddr if ddr else "1", 0)
+    cs_cfg |= (0x40 if ddr else 0) | (0x100 if seamless else 0) | cap << 9 | 7 << 12
+    d.writeReg(0x17, cs_cfg)
+    print("0x17 = %04x: %s%s, capture point %d; first 64 read back: %d mismatches"
+          % (cs_cfg, "DDR (EDh)" if ddr else "SDR", " seamless" if seamless else "", cap, read64()), flush=True)
 if cache:
     for a, v in ((0x15, 0x0006), (0x1d, 0x0013)):
         d.writeReg(a, v)

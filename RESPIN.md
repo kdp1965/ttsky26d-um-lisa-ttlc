@@ -47,6 +47,7 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 34 | QSPI at clk/2: in a write burst the first nibble of every later word changed on SCLK's rising edge, the one the part samples (the Arty's PSRAM at clk/2: the cache on failed); and a late read capture, 0x1E [14:13] per select: a read bit taken again on the following falling edge, for the round trip through the pads and the part | `lisa_qqspi.v` S6, rd_late / late_pend, `debug_regs.v` 0x1E, `tt_um_pettit_lisa.v` | done: tb.v SPI_DOUT_DLY / SPI_TCO, SPI_REG=0x6010 |
 | 35 | An extension: the WS2812B driver's DMA - a frame from a PSRAM buffer (BASE / LEN in the output flops) through the TTLC's fetch, two pixels a group, the data cache flushed first, FRAME / REPEAT; and the data cache served a core access during a flush from the flush's line | `lisa_ws2812.v`, `ttlc_fetch.v` ws_*, `tt_um_pettit_lisa.v` ttlc_addr / ce / flush, `data_cache8.v` cache_hit | done: test/progs/wsdma.c (make WSDMA=1), sdcc_test/test_wsdma.c, hw_wsdma.c |
 | 36 | An extension: a 32-bit cycle counter, a watchdog (resets the core and the peripherals, WDRST flag) and a PDM (first-order sigma-delta) mode for each of Timer 3's channels in place of its input capture, on the PWM pin - an 8-bit DAC through an RC filter | `lisa_cyccnt.v`, `lisa_wdt.v`, `lisa_timer3.v` IE [6:5], `lisa_periph.v` 0x48-0x4F, `tt_um_pettit_lisa.v` the core's and the peripherals' resets | done: test/progs/misc36.c (make MISC36=1), sdcc_test/test_misc36.c |
+| 37 | An option: DDR instruction reads - with 0x17 [6] the flash's instruction bursts and the debugger's single-word reads are DTR Fast Read Quad I/O (EDh, the W25Q128JV-DTR), a word every 4 clocks at clk/2 instead of 10; the read data through a capture pipeline whose point (0x17 [11:9], half clocks) the host finds by sweeping it; 0x17 [8] puts the SDR bursts through it too (8 clocks a word); off at reset | `lisa_qqspi.v` S13_RUN, dtr / run, cap_pipe, sclk_n / sio_neg, `debug_regs.v` 0x17 [15:6] | done: test/test.py test_ddr_sweep (make DDRSWEEP=1), DDR_CAP= / SEAMLESS= / DDR_TOGGLE= for any program |
 
 Status: open / fixed (the test that shows it, in test/: a program of test/progs, a cocotb test of test/core or the fops bench).
 
@@ -1328,6 +1329,88 @@ of three, the watchdog reset and the restart from the flash each time.
 (23-bit prescaler, 8-bit ticks and timeout, scale, EN, WDRST, the reset
 pulse), the PDM 2 (the mode bits: the accumulators are CAPn, the levels
 CMPn).
+
+## 37. DDR instruction reads (an option)
+
+**Why.** lisa_sim's fetch model (`--icache=0x8,window`, the chip's
+streaming window, with `LISA_ICACHE_WORD=` for the word time) on the SDCC
+suite: at 10 clocks a word the fetch is still most of the time of
+straight-line code (6.55 clocks an instruction against 3.79 with a free
+fetch).  The flash on the Tiny Tapeout QSPI Pmod is the W25Q128JV-DTR
+(JEDEC ID EF 70 18; its datasheet: DTR reads at up to 66 MHz, tCLQV 6 ns,
+tCLQX 1.5 ns), which reads on both SCLK edges: 2 SCLK a word instead of 4.
+Modeled: DDR 1.28x (to 1.56x a program), DDR without the 2-clock pause
+per word 1.49x (to 2.16x), the pause removed in SDR 1.12x; the flash's
+continuous-read mode would add little (the window already avoids most
+restarts).  Ken: as an option - off at reset, so nothing depends on it if
+it does not work on silicon.
+
+**The read.** A read of a quad flash select with its 0x17 DDR bit (bit 6
+CS0, bit 7 CS1) that is an instruction burst or a single word (the
+debugger's 0x20) is EDh: the instruction on IO0 as before, the falling
+edge after it unused (a DTR part takes no address there), the address and
+the mode byte (0xFF, never continuous-read) a nibble on each edge, then
+`ddr_dummy` (0x17 [15:12], reset 7) dummy clocks and the data a nibble on
+each edge.  SCLK goes out half a clock late for the whole read (`sclk_n`,
+a falling-edge flop, selected by `dtr`), so the nibbles the chip drives on
+a clock edge are half a clock either side of the SCLK edge that takes
+them.  Every other access (multi-word reads, writes, the debugger's
+commands, a RAM select) is as before.
+
+**The capture.** The data does not come in through the shift register but
+through a pipeline (state S13_RUN): every SCLK edge that launches a nibble
+(each edge in DDR, the falling ones in SDR) is marked in `cap_pipe`, and
+the nibble is taken `ddr_cap + 1` half clocks after the clock that made
+the edge - an odd `ddr_cap` from the pins at a rising edge of clk, an even
+one from `sio_neg`, the pins at the falling edge before.  Half-clock steps
+from 0.5 to 4 clocks: the window of a DDR nibble is one clock at clk/2, so
+whole-clock steps could miss it for some round trips.  The host finds the
+point: the debugger reads words of the flash in SDR, then in DDR at each
+point, and takes the middle of the ones that agree (`arty_run.py
+DDR=auto`).  Four nibbles make a word in `spi_buf[15:0]`; in a burst the
+word goes to rdata / ready as its last nibble comes in, while the next
+word's edges already run: edges are issued while fewer than 4 nibbles are
+in flight, or fewer than 8 with ready free, so a word is held until the
+client takes it (ready drops for a clock after each ready_ack, as
+inst_stream.v's `pushed` expects).  A single word goes to S7 as before.
+`seamless` (0x17 [8]) runs the SDR bursts (EBh) through the same pipeline,
+without the S7 / S6 pause: 8 clocks a word.
+
+**Changing it.** `dtr` and `run` are taken at the command (S2): a burst
+open when 0x17 changes goes on as it began, the next one takes the new
+setting, so the bits can be changed while the core runs from the flash.
+`ddr_cap` acts at once (a sweep runs with the core halted).
+
+**Test.** `make DDRSWEEP=1` (test_ddr_sweep): the sweep as above with
+the 32 first words, then hello in DDR at the middle point, and SDR again
+after a reset.  The flash model (`test/spiflash.v`) does EDh as the
+datasheet's Figure 27a, the first data nibble on the falling edge of the
+last dummy clock or (+DTR_LAUNCH=1) the rising edge after it.  Verilator:
+points 1-2 pass, 3-4 with DTR_LAUNCH=1; icarus with SPI_TCO= round trips:
+the passing points move with the round trip as expected - 5 ns: 1-2, 12
+and 18 ns: 2-3, 25 ns: 3-4, 35 ns: 4-5 (SDR with 0x1E's late capture at
+25 and 35), 12 ns with DTR_LAUNCH=1: 4-5 - and hello runs in DDR at each
+(tb.v's SPI_TCO / SPI_DOUT_DLY are transport delays now: a continuous
+assign's inertial delay swallowed the 20 ns DDR nibbles past 20 ns).  `DDR_CAP=<n>` / `SEAMLESS=1` set the bits for any test:
+the REV3 SDCC suite (run_suite.sh chip REV3=1) passes 28 of 28 in DDR and
+in seamless SDR; `DDR_TOGGLE=<clocks>` flips the DDR and seamless bits
+while a program runs from the flash (test_core with the cache, every 613
+to 3001 clocks: ALL PASSED).  test_core's fetch: 5.3 clocks an instruction
+in SDR (23% waiting for the flash), 5.1 seamless, 4.7 in DDR (15%).  With
+the bits clear: the default suite, TIMER3, WS2812, WSDMA, SPIM, TTLCIO,
+OVERRUN, I2C, MISC36 and TTLC pass, the REV3 SDCC suite 28 of 28 on the
+chip bench and 27 of 27 on the core bench (BANK fails as it did before -
+a rev-2 program).  On the Arty (2026-10-25, 50 MHz, setup +0.028 / hold
++0.015 ns, build/lisa_arty_r3_50_respin37.bit on andromeda, the TT QSPI
+Pmod's W25Q128JV-DTR, io mux mode 3, the cache on): `arty_run.py
+DDR=auto` finds points 2 and 3 (the others misread nearly every word) and
+runs at 3; the REV3 suite 27 of 27 in DDR, NuttX's nsh boots and runs
+(free, ls); test_divl 0.38 s in SDR, 0.33 s seamless, 0.23 s in DDR
+(1.65x).
+
+**Cost.** 28 flops: in the engine `dtr`, `run`, `sclk_n`, `sio_neg` (4),
+`cap_pipe` (4), the nibble count (2), `word_full`, `inflight` (4); in
+debug_regs 0x17's ten bits.  The word is assembled in `spi_buf`.
 
 ## Verification (test/, see test/README.md)
 

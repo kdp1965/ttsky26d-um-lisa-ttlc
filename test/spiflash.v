@@ -81,6 +81,18 @@ module spiflash #(
   reg [3:0] mode = 0;
   reg [3:0] next_mode = 0;
 
+  // EDh (RESPIN 37, the dtr_* blocks below)
+  reg         dtr_arm = 0;    // the instruction was EDh
+  reg         dtr_go = 0;     // ... its falling edge is past
+  integer     dtr_n = 0;      // address and mode nibbles in
+  integer     dtr_dummy = 0;  // dummy clocks counted
+  reg         dtr_out = 0;    // driving data
+  reg  [31:0] dtr_ad = 0;
+  reg  [7:0]  dtr_byte = 0;
+  reg         dtr_hi = 0;     // the next nibble out is the high one
+  integer     DTR_DUMMY = 7;
+  integer     DTR_LAUNCH = 0;
+
   reg io0_oe = 0;
   reg io1_oe = 0;
   reg io2_oe = 0;
@@ -216,25 +228,11 @@ module spiflash #(
         end
       end
 
-      if (powered_up && spi_cmd == 'hed) begin
-        if (bytecount == 1) next_mode = mode_qspi_ddr_rd;
-
-        if (bytecount == 2) spi_addr[23:16] = buffer;
-
-        if (bytecount == 3) spi_addr[15:8] = buffer;
-
-        if (bytecount == 4) spi_addr[7:0] = buffer;
-
-        if (bytecount == 5) begin
-          xip_cmd = (buffer == 8'ha5) ? spi_cmd : 8'h00;
-          mode = mode_qspi_ddr_wr;
-          dummycount = latency;
-        end
-
-        if (bytecount >= 5) begin
-          buffer   = memory[spi_addr];
-          spi_addr = spi_addr + 1;
-        end
+      // EDh as the W25Q128JV-DTR does it (RESPIN 37): the dtr_* blocks below
+      if (powered_up && spi_cmd == 'hed && bytecount == 1) begin
+        mode    = 0;
+        dtr_arm = 1;
+        {io3_oe, io2_oe, io1_oe, io0_oe} = 4'h0;   // the instruction's MISO off
       end
 
       if (powered_up && spi_cmd == 'hd8) begin
@@ -321,8 +319,65 @@ module spiflash #(
     end
   endtask
 
+  // ==========================================================================
+  // DTR Fast Read Quad I/O (EDh), the W25Q128JV-DTR's (its Figure 27a, RESPIN
+  // 37): after the instruction's last rising edge, the falling edge is
+  // ignored; the address and the mode byte come in a nibble on each edge from
+  // the next rising one (4 clocks), then DTR_DUMMY dummy clocks (7), then the
+  // data goes out a nibble on each edge, high nibble first, from the falling
+  // edge of the last dummy clock (+DTR_LAUNCH=1: the rising edge after it).
+  // ==========================================================================
+  initial begin
+    if (!$value$plusargs("DTR_DUMMY=%d", DTR_DUMMY)) DTR_DUMMY = 7;
+    if (!$value$plusargs("DTR_LAUNCH=%d", DTR_LAUNCH)) DTR_LAUNCH = 0;
+  end
+
+  task dtr_drive;
+    begin
+      if (dtr_hi) begin
+        dtr_byte = memory[spi_addr[21:0]];
+        spi_addr = spi_addr + 1;
+      end
+      {io3_dout, io2_dout, io1_dout, io0_dout} = dtr_hi ? dtr_byte[7:4] : dtr_byte[3:0];
+      {io3_oe, io2_oe, io1_oe, io0_oe} = 4'hf;
+      dtr_hi = !dtr_hi;
+    end
+  endtask
+
+  always @(clk) begin
+    if (!csb && dtr_arm) begin
+      if (!dtr_go) begin
+        if (!clk) dtr_go = 1;
+      end else if (dtr_n < 8) begin
+        dtr_ad = {dtr_ad[27:0], io3, io2, io1, io0};
+        dtr_n = dtr_n + 1;
+        if (dtr_n == 8) begin
+          spi_addr = dtr_ad[31:8];
+          dtr_dummy = 0;
+          dtr_hi = 1;
+          if (verbose) $display("spiflash: EDh at %06x mode %02x", dtr_ad[31:8], dtr_ad[7:0]);
+        end
+      end else if (dtr_out) begin
+        dtr_drive;
+      end else if (clk) begin
+        dtr_dummy = dtr_dummy + 1;
+        if (dtr_dummy == DTR_DUMMY + DTR_LAUNCH && DTR_LAUNCH) begin
+          dtr_out = 1;
+          dtr_drive;
+        end
+      end else if (dtr_dummy == DTR_DUMMY && !DTR_LAUNCH) begin
+        dtr_out = 1;
+        dtr_drive;
+      end
+    end
+  end
+
   always @(csb) begin
     if (csb) begin
+      dtr_arm = 0;
+      dtr_go = 0;
+      dtr_n = 0;
+      dtr_out = 0;
       if (verbose) begin
         $display("");
         $fflush;

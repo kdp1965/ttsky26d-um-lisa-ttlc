@@ -134,7 +134,7 @@ commands.  The individual register details will be described in the sections to 
  | 0x14 | LISA1 QSPI CE select         | 0x40 | MC14500B Run Control         |     
  | 0x15 | LISA2 QSPI CE select         | 0x41 | MC14500B Program Counter     |     
  | 0x16 | Debug QSPI CE select         | 0x48 | MC14500B Breakpoint 1        |     
- | 0x17 | QSPI Mode (QUAD, flash, 16b) | 0x49 | MC14500B Breakpoint 2        |     
+ | 0x17 | QSPI Mode (QUAD, flash, 16b, DDR) | 0x49 | MC14500B Breakpoint 2        |     
  | 0x18 | QSPI Dummy read cycles       | 0x4a | MC14500B Breakpoint 3        |     
                                                                                    
 ### LISA Processor Interface Details                                         
@@ -249,7 +249,9 @@ be programmed to indicate the nature of the external device(s).  This is accompi
       -  0x13: {LISA2_BASE, 8'h0} | {8'h0, DATA_ADDR}
       -  0x1f: {TTLC_BASE, 8'h0}  | {8'h0, MC14500_ADDR}
    3. Program the mode for each Chip Enable (bits active HIGH)
-      -  0x17: {10'h0, is_16b[1:0], is_flash[1:0], is_quad[1:0]}
+      -  0x17: {ddr_dummy[3:0], ddr_cap[2:0], seamless, ddr[1:0], is_16b[1:0], is_flash[1:0], is_quad[1:0]}
+         (reset 0x7205: CS0 a quad flash, the DDR fields at their defaults and off; the upper
+         bits are optional - see "DDR instruction reads" below)
    4. For Quad SPI, Special Mux Mode 3, or CE1, program the uio_mux mode:
       -  0x1C:
          * [7:6] = 2'h2: Normal QSPI DQ2 select
@@ -270,6 +272,29 @@ be programmed to indicate the nature of the external device(s).  This is accompi
       -  0x18: {8'h0, dummy1[3:0], dummy0[3:0]
    7. For QSPI FLASH, set the QSPI Write opcode (it is different for various Flashes):
       -  0x19: {8'h0, quad_write_cmd}
+   8. Optionally, DDR instruction reads (below): 0x17 [6] (CS0) with the capture point found first.
+
+### DDR instruction reads (optional)
+
+A flash that does DTR reads - the W25Q128JV-DTR on the Tiny Tapeout QSPI Pmod (JEDEC ID EF 70 18) -
+can feed the instruction fetch twice as fast: with 0x17 bit 6 (CS0; bit 7 CS1) set on a quad flash
+select, the instruction bursts and the debugger's single-word reads use the DTR Fast Read Quad I/O
+command (EDh): the address, the mode byte and the data a nibble on each SCLK edge, `ddr_dummy`
+(0x17 [15:12], 7 for the W25Q128JV-DTR) dummy clocks, and in a burst a 16-bit word every 4 clocks at
+clk/2 instead of 10.  Every other access (the data cache, the TTLC, writes, the debugger's
+commands) stays SDR, so the flash keeps working for them.  The modeled gain on the SDCC suite is
+about 1.3-1.5x for code running from the flash.
+
+The read data is captured through a pipeline: `ddr_cap` (0x17 [11:9]) is when, counted in half clocks
+from the clock that makes the SCLK edge - the nibble is taken `ddr_cap + 1` half clocks after it.
+The right value depends on the round trip through the pads, the board and the flash, so it is found
+by the host: read some words of the flash with the debugger (register 0x20) in SDR, then with the DDR
+bit set at each `ddr_cap` from 0 to 7, and use the middle of the values that read the same words
+(the Arty's `arty_run.py DDR=auto` does this).  0x17 [8] (`seamless`) puts the SDR bursts (EBh)
+through the same pipeline, without the 2-clock pause per word (8 clocks a word instead of 10).
+
+The bits only take effect at the start of a burst, so they can be changed while the core runs from
+the flash.  With them clear (the reset value) the QSPI works exactly as before.
 
 NOTE: For register 0x1E (SPI Clock Div and CE Delay), there is only a single register, meaning this
       register value applies to both CE outputs.  Delaying the clock of one CE will delay both,

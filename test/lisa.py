@@ -29,6 +29,20 @@ class Timeout(Exception):
     pass
 
 
+def cs_ddr_bits():
+    """RESPIN 37's 0x17 bits from the environment: DDR_CAP=<0-7> turns on the
+    DDR (EDh) instruction reads on CS0 with that capture point, SEAMLESS=1 the
+    SDR bursts through the capture pipeline (its point DDR_CAP, default 1);
+    DDR_DUMMY=<n> EDh's dummy clocks (7)"""
+    ddr = os.environ.get('DDR_CAP')
+    seamless = os.environ.get('SEAMLESS')
+    if ddr is None and not seamless:
+        return 0x7000 | (1 << 9)                    # the reset values: no DDR, capture 1, 7 dummies
+    cap = int(ddr if ddr is not None else '1', 0)
+    dummy = int(os.environ.get('DDR_DUMMY', '7'), 0)
+    return (0x40 if ddr is not None else 0) | (0x100 if seamless else 0) | (cap << 9) | (dummy << 12)
+
+
 class Lisa:
     def __init__(self, dut):
         self.dut = dut
@@ -169,7 +183,9 @@ class Lisa:
                                                             # uio6/7 DQ2/DQ3, uio4 CE1; m3: mode 3 - the CEs
                                                             # latched from uio[0..2], I2C on uio4/5
             (REG_OUT_MUX,    0x0000),
-            (REG_CS_CFG,     0x0007 if quad else 0x0004),   # {addr16, is_flash, quad} per CS
+            (REG_CS_CFG,     (0x0007 if quad else 0x0004) | cs_ddr_bits()),
+                                                            # {addr16, is_flash, quad} per CS; DDR_CAP= /
+                                                            # SEAMLESS=1: RESPIN 37's DDR / seamless fetch
             (REG_DUMMY,      0x0066),                       # 6 dummy clocks after an EB address
             (REG_SPI,        int(os.environ.get('SPI_REG', '0x0010'), 0)),  # mode 0, CE delay 1, SCLK clk/2;
                                                             # SPI_REG=0x6010 adds the late read capture (RESPIN 34)

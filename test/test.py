@@ -5,9 +5,9 @@
 #                                        test_program: run it, expect ALL PASSED
 import os
 import cocotb
-from cocotb.triggers import ClockCycles, RisingEdge
+from cocotb.triggers import ClockCycles, RisingEdge, Timer
 
-from lisa import Lisa, Timeout, REG_STATUS, REG_LISA1_BASE, REG_PC, CHAR_CYCLES
+from lisa import Lisa, Timeout, REG_STATUS, REG_LISA1_BASE, REG_PC, CHAR_CYCLES, REG_CS_CFG, REG_DBG_ADDR_L, REG_DBG_ADDR_H
 
 
 def plusarg(name, default=None):
@@ -186,7 +186,7 @@ async def test_ttlc_debug(dut):
 @cocotb.test(skip=plusarg('DEFAULT') is not None or plusarg('TTLC') is not None or plusarg('BANK') is not None or plusarg('OVERRUN') is not None
              or plusarg('SPIM') is not None or plusarg('TTLCIO') is not None or plusarg('TIMER3') is not None
              or plusarg('WS2812') is not None or plusarg('WSDMA') is not None or plusarg('I2C') is not None
-             or plusarg('MISC36') is not None)
+             or plusarg('MISC36') is not None or plusarg('DDRSWEEP') is not None)
 async def test_program(dut):
     """+FIRMWARE=<hex>: run it (the data cache on with +CACHE) and expect ALL PASSED;
     +STATS counts the fetch clocks"""
@@ -200,6 +200,28 @@ async def test_program(dut):
                                                           ', io mux mode 3' if m3 else ''))
     stats = plusarg('STATS') is not None
     counters = ('st_clocks', 'st_insts', 'st_wait', 'st_xfers', 'st_words')
+    toggle = int(plusarg('DDR_TOGGLE', 0))
+    if toggle:
+        # +DDR_TOGGLE=<clocks> (RESPIN 37): 0x17's DDR bit on CS0 and the
+        # seamless bit flipped every that many clocks while the program runs
+        # from the flash - a burst open at the change goes on as it began,
+        # the next one takes the new setting
+        async def flip():
+            regs = dut.lisa.i_debug_regs
+            n = 0
+            while True:
+                await Timer(toggle * 20 + 7, 'ns')     # not on the clock's edges: an extra waiter on
+                n += 1                                  # them broke the bench UART's read strobe
+                what = plusarg('DDR_TOGGLE_ONLY', 'both')       # ddr, seamless, both; none rewrites 0x17's bits unchanged
+                if what in ('ddr', 'both'):
+                    regs.ddr_sel.value = n & 1
+                if what in ('seamless', 'both'):
+                    regs.ddr_seamless.value = ((n >> 1) if what == 'both' else n) & 1
+                if what == 'idle':
+                    continue
+                if what == 'none':
+                    regs.ddr_sel.value = int(regs.ddr_sel.value)
+        cocotb.start_soon(flip())
     before = [int(getattr(dut, c).value) for c in counters] if stats else None
     try:
         send = plusarg('SEND')
@@ -442,6 +464,45 @@ async def test_misc36(dut):
     n = int(dut.clocks.value) - c0
     dut._log.info('PDM0 high %d of %d clocks (%.2f%%), PDM1 %d (%.2f%%)' % (h0, n, 100.0 * h0 / n, h1, 100.0 * h1 / n))
     assert abs(h0 / n - 0.25) < 0.005 and abs(h1 / n - 0.75) < 0.005, 'PDM density %.4f / %.4f, expected 0.25 / 0.75' % (h0 / n, h1 / n)
+
+
+@cocotb.test(skip=plusarg('DDRSWEEP') is None)
+async def test_ddr_sweep(dut):
+    """+DDRSWEEP (make DDRSWEEP=1 [SPI_TCO=ns] [DTR_LAUNCH=1]): RESPIN 37's
+    capture point found as a host would - the debugger reads 32 words of the
+    flash in SDR, then with 0x17's DDR bit on at each of the 8 capture
+    points (its single-word reads are EDh then too), and the points that
+    read the same words pass; hello then runs from the flash in DDR at the
+    middle one; after a reset 0x17 is SDR again"""
+    lisa = await start(dut)
+    await lisa.setup(cache=False, quad=True)
+
+    async def words():
+        await lisa.write_reg(REG_DBG_ADDR_L, 0)
+        await lisa.write_reg(REG_DBG_ADDR_H, 0)
+        return [await lisa.read_reg(0x20) for _ in range(32)]
+
+    ref = await words()
+    good = []
+    for cap in range(8):
+        await lisa.write_reg(REG_CS_CFG, 0x0047 | cap << 9 | 7 << 12)
+        got = await words()
+        bad = sum(1 for a, b in zip(ref, got) if a != b)
+        dut._log.info('DDR capture point %d: %s' % (cap, 'ok' if not bad else '%d of 32 words wrong (%04x for %04x)'
+                      % (bad, next(b for a, b in zip(ref, got) if a != b), next(a for a, b in zip(ref, got) if a != b))))
+        if not bad:
+            good.append(cap)
+    assert good, 'no capture point reads the flash'
+    assert good == list(range(good[0], good[-1] + 1)), 'the passing points are not contiguous: %r' % good
+    cap = good[len(good) // 2]
+    dut._log.info('passing points %r: running hello in DDR at %d' % (good, cap))
+    await lisa.write_reg(REG_CS_CFG, 0x0047 | cap << 9 | 7 << 12)
+    text = await lisa.run(timeout=400 * CHAR_CYCLES, stop_at=('ready\n',))
+    assert 'hello from sdcc' in text, text
+    await lisa.reset()
+    assert await lisa.read_reg(REG_CS_CFG) == 0x7205, 'not SDR after a reset'
+    await lisa.setup(cache=False, quad=True)
+    assert await words() == ref, 'SDR reads after DDR differ'
 
 
 @cocotb.test(skip=plusarg('I2C') is None)

@@ -49,7 +49,7 @@ module lisa_qqspi
    input  wire [CHIP_SELECTS-1:0]   is_flash,
    input  wire [CHIP_SELECTS-1:0]   quad_mode,
                                    
-   output reg                       sclk,
+   output wire                      sclk,
    input  wire                      sio0_si_mosi_i,
    input  wire                      sio1_so_miso_i,
    input  wire                      sio2_i,
@@ -64,6 +64,10 @@ module lisa_qqspi
    input wire [CHIP_SELECTS -1:0]   ce_ctrl,
    input wire [CHIP_SELECTS -1:0]   spi_mode,
    input wire [CHIP_SELECTS -1:0]   spi_rd_late,  // RESPIN 34: capture read data on SCLK's falling edge
+   input wire [CHIP_SELECTS -1:0]   ddr_sel,      // RESPIN 37: DDR (EDh) instruction reads on this flash
+   input wire                       ddr_seamless, // ... SDR instruction bursts through the capture pipeline
+   input wire [2:0]                 ddr_cap,      // ... the capture point: cap + 1 half clocks after the edge
+   input wire [3:0]                 ddr_dummy,    // ... EDh's dummy clocks after the mode byte (7)
    output reg [CHIP_SELECTS -1:0]   ce,
    input wire [CHIP_SELECTS*4-1:0]  dummy_read_cycles,
    input wire [3:0]                 spi_clk_div,
@@ -76,6 +80,7 @@ module lisa_qqspi
 );
 //   localparam [7:0] CMD_QUAD_WRITE        = 8'h38;
    localparam [7:0] CMD_FAST_READ_QUAD    = 8'hEB;
+   localparam [7:0] CMD_DTR_READ_QUAD     = 8'hED;
    localparam [7:0] CMD_WRITE             = 8'h02;
    localparam [7:0] CMD_READ              = 8'h03;
    localparam [3:0] S0_IDLE               = 4'd0;
@@ -90,6 +95,7 @@ module lisa_qqspi
    localparam [3:0] S10_DESELECT_WREN     = 4'd10;
    localparam [3:0] S11_WREN_WAIT         = 4'd11;
    localparam [3:0] S12_MODE              = 4'd12;   // a quad read's mode bits, driven 1
+   localparam [3:0] S13_RUN               = 4'd13;   // RESPIN 37: a read's words through the capture pipeline
    
    reg  [3:0]                 sio_out;
    wire [3:0]                 sio_in;
@@ -132,6 +138,24 @@ module lisa_qqspi
    reg  [3:0]                 clk_div_r;
    reg  [3:0]                 clk_div_next;
    reg  [6:0]                 ce_delay_r;
+   // RESPIN 37: DDR reads and the capture pipeline
+   reg                        dtr, dtr_next;    // this read is EDh: address, mode and data on both edges
+   reg                        run, run_next;    // ... its words come through S13_RUN's capture pipeline
+   reg                        sclk_r;           // SCLK (the pin but in a DDR read)
+   reg                        sclk_n;           // SCLK half a clock late: a DDR read's pin
+   reg  [3:0]                 sio_neg;          // the data lines at the falling edge of clk
+   reg  [3:0]                 cap_pipe, cap_pipe_next;   // [k]: an edge launched a nibble k + 1 clocks ago
+   reg  [1:0]                 nib_cnt, nib_cnt_next;     // nibbles of the word in spi_buf[15:0]
+   reg                        word_full, word_full_next; // ... all four, waiting for ready to be free
+   reg  [3:0]                 inflight, inflight_next;   // nibbles launched, not yet in rdata
+   reg                        issue;            // this clock's SCLK edge launches a nibble
+   wire                       ddr_c;
+   wire                       run_c;
+   wire                       dtr_tx;
+   wire                       issue_ok;
+   wire                       take;
+   wire [3:0]                 nib;
+   wire [15:0]                word;
 
    assign write = |wstrb;
    assign read = ~write;
@@ -158,6 +182,44 @@ module lisa_qqspi
    assign custom_cmd_val = write ? wdata[7:0] : cmd_quad_write;
    assign custom_cmd_addr = wdata[8];
    assign custom_cmd_read = custom_spi_cmd && !write;
+
+   // RESPIN 37.  A read of a flash select with its 0x17 DDR bit, a burst or a
+   // single word (the debugger's), is a DTR Fast Read Quad I/O (EDh, the
+   // W25Q128JV-DTR): the instruction on IO0 as before, then the address and
+   // the mode byte a nibble on each SCLK edge, ddr_dummy dummy clocks, and
+   // the data a nibble on each edge.  The address and mode go out with SCLK
+   // half a clock late (sclk_n), so each nibble is on the lines half a clock
+   // either side of the edge that takes it.  The data comes in through a
+   // pipeline instead of the shift register: every edge that launches a
+   // nibble (each edge in DDR, the falling ones in SDR) is marked in
+   // cap_pipe, and the nibble is taken ddr_cap + 1 half clocks after the
+   // clock that made the edge (an even ddr_cap from sio_neg, the lines at
+   // clk's falling edge) - set by the host from the board's round trip.  In
+   // a burst the edges keep going while there is room: a word to rdata as
+   // its fourth nibble comes in, and the next word's edges already running,
+   // so a word takes 4 clocks at clk/2 (8 in SDR) instead of 10.
+   // ddr_seamless puts SDR bursts (EBh) through the same pipeline.  Every
+   // other read and every write is as before; with the bits clear nothing
+   // here is used.
+   assign ddr_c    = |(ce_ctrl & ddr_sel) && is_flash_c && quad_mode_c && read && !custom_spi_cmd &&
+                     !spi_mode1 && (is_stream || len_count == 4'h0);
+   assign run_c    = ddr_c || (ddr_seamless && is_stream && is_flash_c && quad_mode_c && read &&
+                     !custom_spi_cmd && !spi_mode1);
+   assign dtr_tx   = dtr && is_quad;
+   assign issue_ok = is_stream ? (inflight < 4'd4 || (inflight < 4'd8 && !ready)) : (inflight < 4'd8);
+   assign take     = (state == S13_RUN) && cap_pipe[ddr_cap[2:1]];
+   assign nib      = ddr_cap[0] ? sio_in : sio_neg;
+   assign word     = {spi_buf[11:0], nib};
+   assign sclk     = dtr ? sclk_n : sclk_r;
+
+   always @(negedge clk)
+   begin
+      if (!rst_n)
+         sclk_n  <= 1'b0;
+      else
+         sclk_n  <= sclk_r;
+      sio_neg <= sio_in;
+   end
 
    /*
    ================================================================
@@ -208,7 +270,7 @@ module lisa_qqspi
    always @(posedge clk) begin
       if (!rst_n) begin
          ce           <= ~0;
-         sclk         <= 1'b0;
+         sclk_r         <= 1'b0;
          sio_oe       <= 4'b0000;
          sio_out      <= 4'b0000;
          spi_buf      <= 0;
@@ -221,10 +283,16 @@ module lisa_qqspi
          clk_div_r    <= 4'h0;
          is_stream    <= 1'b0;
          late_pend    <= 1'b0;
+         dtr          <= 1'b0;
+         run          <= 1'b0;
+         cap_pipe     <= 4'h0;
+         nib_cnt      <= 2'h0;
+         word_full    <= 1'b0;
+         inflight     <= 4'h0;
       end else begin
          state         <= next_state;
          ce            <= ce_next;
-         sclk          <= sclk_next;
+         sclk_r          <= sclk_next;
          sio_oe        <= sio_oe_next;
          sio_out       <= sio_out_next;
          spi_buf       <= spi_buf_next;
@@ -237,13 +305,19 @@ module lisa_qqspi
          late_pend     <= late_pend_next;
          xfer_done     <= xfer_done_next;
          clk_div_r     <= clk_div_next;
+         dtr           <= dtr_next;
+         run           <= run_next;
+         cap_pipe      <= cap_pipe_next;
+         nib_cnt       <= nib_cnt_next;
+         word_full     <= word_full_next;
+         inflight      <= inflight_next;
       end
    end
  
    always @(*) begin
       next_state       = state;
       ce_next          = ce;
-      sclk_next        = sclk;
+      sclk_next        = sclk_r;
       sio_oe_next      = sio_oe;
       sio_out_next     = sio_out;
       spi_buf_next     = spi_buf;
@@ -257,6 +331,12 @@ module lisa_qqspi
       late_pend_next   = 1'b0;
       xfer_done_next   = xfer_done;
       clk_div_next     = clk_div_r;
+      dtr_next         = dtr;
+      run_next         = run;
+      nib_cnt_next     = nib_cnt;
+      word_full_next   = word_full;
+      inflight_next    = inflight;
+      issue            = 1'b0;
       
       if (is_stream && !stream && state != S0_IDLE)
       begin
@@ -270,12 +350,30 @@ module lisa_qqspi
          ready_next       = 1'b0;
          xfer_done_next   = 1'b1;
          is_stream_next   = 1'b0;
+         dtr_next         = 1'b0;
+         run_next         = 1'b0;
+         nib_cnt_next     = 2'h0;
+         word_full_next   = 1'b0;
+         inflight_next    = 4'h0;
       end
       else if (|xfer_cycles)
       begin  
          sio_out_next[3:0] = is_quad ? spi_buf[23:20] : {3'b0, spi_buf[23]};
          
-         if (sclk)
+         if (dtr_tx)
+         begin
+            // a DDR read's address and mode: a nibble out on each edge
+            if (clk_div_r == 4'h0)
+            begin
+               clk_div_next = spi_clk_div;
+               sclk_next = ~sclk_r;
+               spi_buf_next = {spi_buf[19:0], 4'h0};
+               xfer_cycles_next = xfer_cycles - 5'd4;
+            end
+            else
+               clk_div_next = clk_div_r - 4'h1;
+         end
+         else if (sclk_r)
          begin
             if (clk_div_r == 4'h0)
             begin
@@ -322,6 +420,8 @@ module lisa_qqspi
                sio_oe_next  = 4'b0001;
                is_quad_next = 0;
                is_stream_next = 0;
+               dtr_next     = 1'b0;
+               run_next     = 1'b0;
                xfer_done_next = 1'b0;
                if (valid && !ready) begin
                   next_state = write & is_flash_c ? S8_SELECT_WREN : S1_SELECT_DEVICE;
@@ -350,9 +450,11 @@ module lisa_qqspi
             end
           
             S2_CMD: begin
+               dtr_next = ddr_c;
+               run_next = run_c;
                if (quad_mode_c) begin
                   spi_buf_next[23:16] = custom_spi_cmd ? custom_cmd_val : write ?
-                     cmd_quad_write : CMD_FAST_READ_QUAD;
+                     cmd_quad_write : ddr_c ? CMD_DTR_READ_QUAD : CMD_FAST_READ_QUAD;
                end else begin
                   spi_buf_next[23:16] = custom_spi_cmd ? custom_cmd_val : write ? CMD_WRITE : CMD_READ;
                end
@@ -373,6 +475,8 @@ module lisa_qqspi
                xfer_cycles_next = addr_16b_c ? 16 : 24;
               
                is_quad_next = quad_mode_c;
+               if (dtr)
+                  sclk_next = 1'b0;    // the falling edge after the instruction: a DTR part takes no address on it
                next_state = custom_spi_cmd ? S7_WAIT_FOR_XFER_DONE: quad_mode_c && read ?
                               (is_flash_c ? S12_MODE : S5_WAIT) : S6_XFER;
             end
@@ -400,10 +504,58 @@ module lisa_qqspi
 
             S5_WAIT: begin
                sio_oe_next = 4'b0000;
-               xfer_cycles_next = !is_flash_c ? {1'h0, dummy_cycles} :
+               xfer_cycles_next = dtr ? {1'h0, ddr_dummy} : !is_flash_c ? {1'h0, dummy_cycles} :
                                   dummy_cycles > 4'd2 ? {1'h0, dummy_cycles - 4'd2} : 5'd0;
                is_quad_next = 0;
-               next_state = S6_XFER;
+               next_state = run ? S13_RUN : S6_XFER;
+               nib_cnt_next   = 2'h0;
+               word_full_next = 1'b0;
+               inflight_next  = 4'h0;
+               ready_next     = 1'b0;
+            end
+
+            // RESPIN 37: the data through the capture pipeline (above).  A
+            // single word goes to S7 as the shift register's would; a burst
+            // runs here until the client drops stream (the abort above).
+            S13_RUN: begin
+               sio_oe_next = 4'b0000;
+               if (clk_div_r != 4'h0)
+                  clk_div_next = clk_div_r - 4'h1;
+               else if ((!dtr && !sclk_r) || issue_ok)
+               begin
+                  clk_div_next = spi_clk_div;
+                  sclk_next    = ~sclk_r;
+                  issue        = dtr || sclk_r;
+               end
+
+               if (ready && ready_ack)
+                  ready_next = 1'b0;
+               if (take)
+               begin
+                  spi_buf_next[15:0] = word;
+                  nib_cnt_next = nib_cnt + 2'h1;
+               end
+               if (take && nib_cnt == 2'h3)
+               begin
+                  if (!is_stream)
+                     next_state = S7_WAIT_FOR_XFER_DONE;
+                  else if (!ready)
+                  begin
+                     rdata_next = {word[7:0], word[15:8]};
+                     ready_next = 1'b1;
+                  end
+                  else
+                     word_full_next = 1'b1;
+               end
+               else if (word_full && !ready)
+               begin
+                  rdata_next = {spi_buf[7:0], spi_buf[15:8]};
+                  ready_next = 1'b1;
+                  word_full_next = 1'b0;
+               end
+               inflight_next = inflight + {3'h0, issue} -
+                               ((is_stream && ((take && nib_cnt == 2'h3 && !ready) || (word_full && !ready))) ?
+                                4'd4 : 4'd0);
             end
           
             S6_XFER: begin
@@ -484,6 +636,9 @@ module lisa_qqspi
             default: next_state = S0_IDLE;
          endcase
       end
+
+      // the edges that launched a nibble, a clock older at each stage (S13_RUN only)
+      cap_pipe_next = (state == S13_RUN) ? {cap_pipe[2:0], issue} : 4'h0;
    end
 endmodule
 

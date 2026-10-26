@@ -28,6 +28,12 @@ make WS2812=1                 # the WS2812B driver (RESPIN 33): progs/ws2812.c -
                               # decoded by tb.v's ws2812_rx, the vector-6 request, an underrun
 make MISC36=1                 # RESPIN 36: progs/misc36.c - the cycle counter, the watchdog (a reset and
                               # the restart), the PDM outputs measured on uo[1] / uo[2]
+make DDRSWEEP=1               # RESPIN 37: the DDR capture point swept through the debugger's flash reads,
+                              # hello in DDR at the middle one (SPI_TCO= for a round trip, DTR_LAUNCH=1:
+                              # the flash model's first nibble an edge later)
+make DDR_CAP=1 ...            # any test with DDR instruction reads (0x17 bit 6, that capture point);
+                              # SEAMLESS=1 the SDR bursts through the pipeline; DDR_TOGGLE=<clocks>
+                              # (with IHX=) flips both while the program runs
 make WSDMA=1                  # the WS2812B DMA (RESPIN 35): progs/wsdma.c - frames from the PSRAM on uo[1] /
                               # uo[2], the cache flushed, thrashed meanwhile, REPEAT; tb.v's receivers check them
 make TIMER3=1                 # Timer 3 (RESPIN 32): progs/timer3.c - the timer, captures of tb.v's

@@ -216,9 +216,11 @@ module tb
    // burst was: the Arty's PSRAM at clk/2)
    assign sclk = uio_out[3];
 `ifdef SPI_DOUT_DLY
-   wire     [7:0] uio_out_d, uio_oe_d;
-   assign #(`SPI_DOUT_DLY) uio_out_d = uio_out;
-   assign #(`SPI_DOUT_DLY) uio_oe_d  = uio_oe;
+   reg      [7:0] uio_out_d, uio_oe_d;   // transport delays, as SPI_TCO's
+   always @(uio_out)
+      uio_out_d <= #(`SPI_DOUT_DLY) uio_out;
+   always @(uio_oe)
+      uio_oe_d  <= #(`SPI_DOUT_DLY) uio_oe;
 `else
    wire     [7:0] uio_out_d = uio_out;
    wire     [7:0] uio_oe_d  = uio_oe;
@@ -235,8 +237,11 @@ module tb
    // parts' clock-to-output time; at clk/2 a bit is sampled 20 ns after the
    // falling edge that launched it, unless 0x1E's late read capture is set
 `ifdef SPI_TCO
-   wire     [3:0] dq_in;
-   assign #(`SPI_TCO) dq_in = {dq3, dq2, dq1, dq0};
+   // a transport delay: a continuous assign's would be inertial and swallow
+   // a nibble shorter than it (a DDR nibble lasts a clock, RESPIN 37)
+   reg      [3:0] dq_in;
+   always @(dq0, dq1, dq2, dq3)
+      dq_in <= #(`SPI_TCO) {dq3, dq2, dq1, dq0};
 `else
    wire     [3:0] dq_in = {dq3, dq2, dq1, dq0};
 `endif

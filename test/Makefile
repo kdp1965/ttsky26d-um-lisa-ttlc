@@ -117,6 +117,12 @@ else ifneq ($(MISC36),)
 # RESPIN 36: progs/misc36.c - the cycle counter, the watchdog (a reset and
 # the restart), the PDM outputs (their duty on uo[1] / uo[2], mux 2)
 PLUSARGS += +FIRMWARE=$(PWD)/progs/misc36.hex +PROGRAM=misc36.hex +MISC36
+else ifneq ($(DDRSWEEP),)
+# RESPIN 37: the DDR capture point swept through the debugger's flash reads,
+# then hello in DDR at the middle of the passing points (with SPI_TCO= /
+# SPI_DOUT_DLY= for a round trip, DTR_LAUNCH=1 for the flash's first nibble
+# an edge later)
+PLUSARGS += +FIRMWARE=$(PWD)/progs/hello.hex +PROGRAM=hello.hex +DDRSWEEP
 else ifneq ($(I2C),)
 # the I2C master in io mux mode 3 (the custom Pmod's CE latch, the cache
 # through it): progs/i2c.c against tb.v's slave at 0x3C (an SSD1309's)
@@ -156,6 +162,15 @@ PLUSARGS += +M3
 endif
 ifneq ($(SPI),)
 PLUSARGS += +SPI
+endif
+ifneq ($(DDR_TOGGLE),)
+PLUSARGS += +DDR_TOGGLE=$(DDR_TOGGLE)
+ifneq ($(DDR_TOGGLE_ONLY),)
+PLUSARGS += +DDR_TOGGLE_ONLY=$(DDR_TOGGLE_ONLY)
+endif
+endif
+ifneq ($(DTR_LAUNCH),)
+PLUSARGS += +DTR_LAUNCH=$(DTR_LAUNCH)
 endif
 ifneq ($(TIMEOUT),)
 PLUSARGS += +TIMEOUT=$(TIMEOUT)

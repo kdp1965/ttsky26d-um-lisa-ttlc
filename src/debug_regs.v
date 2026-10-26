@@ -72,6 +72,10 @@ module debug_regs
    output reg  [CHIP_SELECTS-1:0] is_flash,
    output reg  [CHIP_SELECTS-1:0] quad_mode,
    output reg  [CHIP_SELECTS*4-1:0] dummy_read_cycles,
+   output reg  [CHIP_SELECTS-1:0] ddr_sel,      // 0x17 [7:6]: DDR (EDh) instruction reads (RESPIN 37)
+   output reg                 ddr_seamless,     // 0x17 [8]: SDR instruction bursts without the pause per word
+   output reg  [2:0]          ddr_cap,          // 0x17 [11:9]: the read capture point, in half clocks
+   output reg  [3:0]          ddr_dummy,        // 0x17 [15:12]: EDh's dummy clocks after the mode byte
    output wire                custom_spi_cmd,
    output wire [7:0]          cmd_quad_write,
    output reg  [3:0]          plus_guard_time,
@@ -406,6 +410,10 @@ module debug_regs
          addr_16b          <= {CHIP_SELECTS{1'b0}};
          is_flash          <= {{(CHIP_SELECTS-1){1'b0}}, 1'b1};
          dummy_read_cycles <= {{((CHIP_SELECTS-1)*4){1'b0}}, 4'ha};
+         ddr_sel           <= {CHIP_SELECTS{1'b0}};
+         ddr_seamless      <= 1'b0;
+         ddr_cap           <= 3'h1;
+         ddr_dummy         <= 4'h7;
          cmd_quad_write_r  <= 8'h38;
          plus_guard_time   <= 4'h1;
          ttlc_reset        <= 1'b0;
@@ -440,7 +448,8 @@ module debug_regs
                4'h4: lisa1_ce_ctrl <= dbg_di[CHIP_SELECTS -1:0];
                4'h5: {ttlc_ce_ctrl, lisa2_ce_ctrl} <= dbg_di[CHIP_SELECTS*2 -1:0];
                4'h6: debug_ce_ctrl <= dbg_di[CHIP_SELECTS -1:0];
-               4'h7: {addr_16b, is_flash, quad_mode} <= dbg_di[CHIP_SELECTS*3-1:0];
+               4'h7: {ddr_dummy, ddr_cap, ddr_seamless, ddr_sel, addr_16b, is_flash, quad_mode} <=
+                        dbg_di[CHIP_SELECTS*4+7:0];
                4'h8: dummy_read_cycles <= dbg_di[CHIP_SELECTS*4-1:0];
                4'h9: cmd_quad_write_r <= dbg_di[7:0];
                4'ha: plus_guard_time <= dbg_di[3:0];
@@ -521,7 +530,7 @@ module debug_regs
          4'h4: dbg_do = {{(16-CHIP_SELECTS){1'b0}}, lisa1_ce_ctrl};
          4'h5: dbg_do = {{(16-CHIP_SELECTS*2){1'b0}}, ttlc_ce_ctrl, lisa2_ce_ctrl};
          4'h6: dbg_do = {{(16-CHIP_SELECTS){1'b0}}, debug_ce_ctrl};
-         4'h7: dbg_do = {{(16-CHIP_SELECTS*3){1'b0}}, addr_16b, is_flash, quad_mode};
+         4'h7: dbg_do = {ddr_dummy, ddr_cap, ddr_seamless, ddr_sel, addr_16b, is_flash, quad_mode};
          4'h8: dbg_do = {{(16-CHIP_SELECTS*4){1'b0}}, dummy_read_cycles};
          4'h9: dbg_do = {8'h0, cmd_quad_write_r};
          4'ha: dbg_do = {12'h0, plus_guard_time};
