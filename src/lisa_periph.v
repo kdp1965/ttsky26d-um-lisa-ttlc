@@ -310,6 +310,13 @@ module lisa_periph
    reg           uart2_rx_ie;
 `endif
 
+   // 0x2E's TTLC_WAIT bit, a clock late: ttlc_scan_req is the ICU's FLAG_O,
+   // a falling-edge flop, and read through d_o it was a half-clock path into
+   // the core (RESPIN 38)
+   reg           ttlc_wait_r;
+   always @(posedge clk)
+      ttlc_wait_r <= rst_n && ttlc_scan_req && spi_owned;
+
    always @(posedge clk)
    begin
       if (~rst_n)
@@ -747,7 +754,7 @@ module lisa_periph
       .rdata        ( ttlc_rdata      ),
       .scan_busy    ( ttlc_scan_busy  ),
       .spi_busy     ( spi_xfer_busy   ),
-      .ttlc_wait    ( ttlc_scan_req & spi_owned ),
+      .ttlc_wait    ( ttlc_wait_r     ),     // read-only status: a clock late (RESPIN 38)
       .owned        ( spi_owned       ),
       .start        ( ttlc_lisa_start )
    );

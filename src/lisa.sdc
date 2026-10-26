@@ -78,6 +78,12 @@ set dbg_halted [lisa_regs {dbg_halted} {i_lisa_core.dbg_halted} "$dbg.halted"]
 set cont_q     [lisa_regs "$dbg.cont_q_r" "$dbg.cont_q"]
 set predec     [lisa_regs {i_lisa_core.predec_state}]
 set d_we_r     [lisa_regs {i_lisa_core.d_we_r}]
+# the registered instruction: loaded as a fetch ends (and by lda (ix++)'s
+# constant fetch as its exec ends), so an instruction's exec state is two
+# clocks after it at the earliest (RESPIN 38: the BF16 cone's index is read
+# from it since 2026-10-20, but it was never in a group - inst_r -> facc
+# was timed as one clock, rc23 -7.8 ns at the slow corner)
+set inst_r     [lisa_regs {i_lisa_core.inst_r[*]}]
 
 # destinations
 set facc       [lisa_regs {i_lisa_core.facc[*]}]
@@ -99,7 +105,7 @@ set div_cond   [lisa_regs "$div.cond"]
 set div_ixc    [lisa_regs "$div.ix_cond"]
 set div_sinv   [lisa_regs "$div.signed_inversion"]
 
-set groups {pc win_count win_head win_data brk dbg_a dbg_di dbg_we dbg_halted cont_q predec d_we_r
+set groups {pc win_count win_head win_data brk dbg_a dbg_di dbg_we dbg_halted cont_q predec d_we_r inst_r
             facc ix ra ia sp cond ie isr_jump isr_sh div_rs1 div_rs2 div_zflag div_cond div_ixc div_sinv}
 set report "lisa.sdc:"
 foreach g $groups { append report " $g [llength [set $g]]" }
@@ -133,3 +139,21 @@ foreach src [list $brk $dbg_we $dbg_halted $dbg_di $cont_q] {
 # the BF16 accumulator is loaded only in the decode state
 lisa_mcp 2 $predec $facc
 lisa_mcp 2 $d_we_r $facc
+# the registers written at an instruction's end (core3, facc among them)
+# are written in its decode state at the earliest, two clocks after inst_r
+# is loaded (rc25: inst_r -> ra -2.3 ns, -> ia at the slow corner); facc
+# only in an exec state (or fdiv's second stage)
+lisa_mcp 2 $inst_r $core3
+# ... and the BF16 operation flags (op_f*_r, op_taf_r, op_itof_r, op_ftoi_r),
+# registered from the decoded word as the fetch ends, as inst_r (rc24:
+# op_fadd_r -> facc -1.9 ns at the slow corner)
+lisa_mcp 2 [lisa_regs {i_lisa_core.op_fmul_r} {i_lisa_core.op_fadd_r} {i_lisa_core.op_fswap_r} \
+                      {i_lisa_core.op_taf_r} {i_lisa_core.op_itof_r} {i_lisa_core.op_ftoi_r} \
+                      {i_lisa_core.op_fclr_r}] $facc
+# facc and the f registers into facc: written in an exec state, so the next
+# write is the next instruction's exec, four clocks on at the least (rc25:
+# facc -> the BF16 adder -> facc -4.9 ns at the slow corner)
+# (the f registers' nets take the debugger's names in the netlist, "$dbg.f0")
+lisa_mcp 2 [concat $facc [lisa_regs {i_lisa_core.f0[*]} {i_lisa_core.f1[*]} {i_lisa_core.f2[*]} \
+                                    {i_lisa_core.f3[*]} "$dbg.f0\[*\]" "$dbg.f1\[*\]" \
+                                    "$dbg.f2\[*\]" "$dbg.f3\[*\]"]] $facc

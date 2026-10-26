@@ -301,6 +301,7 @@ module lisa_core
    wire                       decode_state;
    wire                       exec_state;
    wire                       kfetch;                 // lda (ix++)'s fetch of its constant
+   reg                        kfetch_q;               // ... its flop (RESPIN 38)
    wire                       k_ok;
    wire                       c_load;
    reg                        c_val;
@@ -547,6 +548,11 @@ module lisa_core
    wire                       irq_take;               // ... and it does, this clock
    wire                       stg2_next;              // the instruction in exec goes on to its second stage
 
+   // inst, the fetch bus or the registered word, is only decoded (op_*,
+   // jump_taken, ...: the flags are registered as the fetch ends); what the
+   // instruction does in its exec state reads inst_r (RESPIN 38) - the same
+   // word there except in lda (ix++)'s constant fetch, where none of it is
+   // selected - so the window lookup stops at the decode flops
    assign inst = (inst_ready & !d_we_r) ? inst_i : inst_r;
 
    // An interrupt is taken after an instruction that leaves no predicate and
@@ -557,7 +563,7 @@ module lisa_core
                                      (op_any_div & inst_r[0]) | op_divc_r)) || div_stage_two || rem_stage_two || op_fops;
    // Nor after ei/di, stirq or xchg ia, whose effect the entry would undo.
    assign irq_pending = ie & cond[1] & |(int_i & int_en) & ~ldxf_stage[1] &
-                        ~(cond[0] & (op_if_r | op_ldx_r | op_ldxf_r | op_lddiv_r | (op_any_div & ~inst[0]) |
+                        ~(cond[0] & (op_if_r | op_ldx_r | op_ldxf_r | op_lddiv_r | (op_any_div & ~inst_r[0]) |
                                      op_eidi_r | op_stirq_r | op_xchg_ia_r));
    assign stage_last  = stage == 2'd2;
    // the code bank (lisa_periph.v) follows a jump through IX or a return (REV3.md)
@@ -684,9 +690,18 @@ module lisa_core
    assign div_dividend = op_divc_r ? {8'h00, acc} : {div_args[1] ? (amode[1] ? {8{ix[7]}}  : 8'h00) : ra[7:0], ix[7:0]};
 
    assign pc_inc   = pc + {{(PC_BITS-1){1'b0}}, 1'b1};
-   assign pc_rel   = pc + {{(PC_BITS-11){inst[10]}}, inst[10:0]};
-   assign ix_sum   = ix + {{(D_BITS-10){inst[9]}}, inst[9:0]};
-   assign ix_addr  = ix + {{(D_BITS-9){1'b0}}, inst[8:0]};
+   assign pc_rel   = pc + {{(PC_BITS-11){inst_r[10]}}, inst_r[10:0]};
+   assign ix_sum   = ix + {{(D_BITS-10){inst_r[9]}}, inst_r[9:0]};
+   // The data address and its adders take the instruction from inst_r, not
+   // inst (RESPIN 38): the two differ only in a fetch that has its word
+   // (inst_i, the window's) and in lda (ix++)'s constant fetch, and in
+   // neither is there a data access (d_valid is 0, d_rd needs the exec
+   // state); from predec on inst is inst_r, so d_addr_r is the instruction's
+   // address two clocks before its exec as before.  Through inst the address
+   // hung off the window lookup: kfetch / pc -> the window's subtract and
+   // hit -> inst -> these adders -> d_addr_good -> d_ok -> every register,
+   // the slow corner's worst path (rc23 -8.7 ns).
+   assign ix_addr  = ix + {{(D_BITS-9){1'b0}}, inst_r[8:0]};
    // The stack: push a / sra / push ix write at SP - 1 and SP is decremented
    // as the write completes (the delayed decrement below), pop a / lra /
    // pop ix read at SP and increment it after, so SP is the address of the
@@ -699,13 +714,13 @@ module lisa_core
    // n + 2 first, then the middle at n + 1, the low byte at n.
    assign sp_adder = (op_sra_r | op_push_a_r | op_push_ix_r) ? {D_BITS{1'b1}} :
                      (lddiv_stage_two | div_stage_two  |
-                        rem_stage_two)                       ? {{(D_BITS-D_STCK){1'b0}}, inst[D_STCK-1:0]} :
-                     (op_ldxx_r | op_stxx_r)                 ? {{(D_BITS-D_STCK){1'b0}}, inst[D_STCK-1:0]} + {{(D_BITS-2){1'b0}}, 2'd2 - stage} :
-                     (op_shl16_r | op_shr16_r)               ? {{(D_BITS-2){1'b0}}, inst[1:0]} :
+                        rem_stage_two)                       ? {{(D_BITS-D_STCK){1'b0}}, inst_r[D_STCK-1:0]} :
+                     (op_ldxx_r | op_stxx_r)                 ? {{(D_BITS-D_STCK){1'b0}}, inst_r[D_STCK-1:0]} + {{(D_BITS-2){1'b0}}, 2'd2 - stage} :
+                     (op_shl16_r | op_shr16_r)               ? {{(D_BITS-2){1'b0}}, inst_r[1:0]} :
                      (op_lra_r | op_pop_a_r | op_pop_ix_r)   ? {D_BITS{1'b0}} :
-                                                               {{(D_BITS-D_INST){inst[9]}}, inst[9:0]};
+                                                               {{(D_BITS-D_INST){inst_r[9]}}, inst_r[9:0]};
    assign sp_sum   = sp + sp_adder;
-   assign sp_addr  = sp + {{(D_BITS-D_STCK){1'b0}}, inst[D_STCK-1:0]};
+   assign sp_addr  = sp + {{(D_BITS-D_STCK){1'b0}}, inst_r[D_STCK-1:0]};
 
    // The adder: a real carry-in (TT07 folded it into the 8-bit operand, so
    // adc #0xff with C set added 0, and sub / cmp of a zero operand borrowed).
@@ -717,8 +732,8 @@ module lisa_core
       acc_adder = d_i;
       acc_cin   = 1'b0;
       case (1'b1)
-         op_adc_r:   begin acc_adder = inst[7:0];  acc_cin = cflag;  end   // adc
-         op_cpi_r:   begin acc_adder = ~inst[7:0]; acc_cin = 1'b1;   end   // cpi
+         op_adc_r:   begin acc_adder = inst_r[7:0];  acc_cin = cflag;  end   // adc
+         op_cpi_r:   begin acc_adder = ~inst_r[7:0]; acc_cin = 1'b1;   end   // cpi
          op_sub_r:   begin acc_adder = ~d_i;       acc_cin = ~cflag; end   // sub (sbb)
          op_cmp_r:   begin acc_adder = ~d_i;       acc_cin = 1'b1;   end   // cmp
       endcase
@@ -730,7 +745,12 @@ module lisa_core
    // lda (ix++) fetches its constant from the exec state: the instruction
    // bus is asked for the word at IX[14:1] (tt_um_pettit_lisa.v puts the KB bank
    // on it, i_kfetch), the exec state waits for it (k_ok in d_ok)
-   assign kfetch  = exec_state & op_ldk_r & cond[0];
+   // kfetch is its own flop (RESPIN 38): set as an lda (ix++) with its
+   // predicate goes from decode to exec, cleared as the exec state ends
+   // (d_ok) or on a reset - what exec_state & op_ldk_r & cond[0] is, without
+   // op_ldk_r's fanout tree and the AND in front of the fetch address mux
+   // and the window lookup (the simulation checks the two agree)
+   assign kfetch  = kfetch_q;
    assign k_ok    = !kfetch | inst_ready;
    assign i_kfetch = kfetch;
    assign i_addr  = kfetch ? ix[PC_BITS:1] : pc;
@@ -779,12 +799,12 @@ module lisa_core
                        (dbg_d_access && !dbg_d_periph) ;
    assign d_ok       = (d_ready || !d_valid) && k_ok;
    assign d_we       = dbg_d_access ? dbg_we : d_we_r;
-   assign d_periph   = ((op_sta_r | op_lda_r | op_swapi_r) & inst[9] & !dbg_d_access) | dbg_d_periph;
+   assign d_periph   = ((op_sta_r | op_lda_r | op_swapi_r) & inst_r[9] & !dbg_d_access) | dbg_d_periph;
    assign d_valid_rd = op_mul_r | op_mulu_r | op_pop_ix_r | div_stage_two | rem_stage_two | //(op_any_div & inst[0] == 1'b0) |
                        op_adc_r | op_dcx_r | op_shl16_r | op_shr16_r | op_pop_a_r |
                        lddiv_stage_two | op_lra_r | op_add_r | op_sub_r | op_cmp_r | op_dcx_r | op_inx_r |
-                       op_ldxx_r | op_and_r | op_or_r | (op_swapi_r & !inst[9] & !dbg_d_access) | op_xor_r | op_swap_r |
-                       (op_lda_r & !inst[9] & !dbg_d_access) | op_ldax_r;
+                       op_ldxx_r | op_and_r | op_or_r | (op_swapi_r & !inst_r[9] & !dbg_d_access) | op_xor_r | op_swap_r |
+                       (op_lda_r & !inst_r[9] & !dbg_d_access) | op_ldax_r;
    // a debugger RAM access is ready when the cache says so AND the debug
    // block's own delay has passed: with the cache off d_ready is always 1,
    // and TT07 answered in the first clock with RAM[IX] still on the bus
@@ -799,14 +819,14 @@ module lisa_core
    assign sp_sum_op  = op_sra_r | op_lra_r | op_ads_r | op_pop_a_r | op_push_a_r |
                        op_push_ix_r | op_pop_ix_r | op_stxx_r | op_ldxx_r | op_shl16_r | op_shr16_r | div_stage_two |
                        rem_stage_two | lddiv_stage_two;
-   assign d_addr_imm = inst[`PWORD_SIZE-6] == 1'b1 && inst[`PWORD_SIZE-4] == 1'b1 &&
-                       inst[`PWORD_SIZE-2] == 1'b1;
+   assign d_addr_imm = inst_r[`PWORD_SIZE-6] == 1'b1 && inst_r[`PWORD_SIZE-4] == 1'b1 &&
+                       inst_r[`PWORD_SIZE-2] == 1'b1;
    // halted, the data address is IX (register 6 reads RAM[IX]) - but not
    // before a pending store has landed: a breakpoint on the instruction after
    // a store halts in the store's write clock, and TT07 then wrote the
    // debugger's last data byte to RAM[IX] and lost the store
-   assign d_addr = dbg_d_access ? dbg_d_addr : (stop && !d_we_r) ? ix : d_addr_imm ? {{(D_BITS-D_STCK){1'b0}}, inst[D_STCK-1:0]} : (sp_sum_op) ? sp_sum :
-                        inst[9] ? sp_addr : ix_addr;
+   assign d_addr = dbg_d_access ? dbg_d_addr : (stop && !d_we_r) ? ix : d_addr_imm ? {{(D_BITS-D_STCK){1'b0}}, inst_r[D_STCK-1:0]} : (sp_sum_op) ? sp_sum :
+                        inst_r[9] ? sp_addr : ix_addr;
    assign acc_mul = acc * d_i;
    assign acc_muls = $signed(acc) * $signed(d_i);
 
@@ -839,8 +859,8 @@ module lisa_core
       op_ldirq_r:          {acc_ld_misc, acc_misc} = {1'b1, amode_isr, signed_inv_live_isr, cflag_save_isr,
                                                       signed_inv_isr, zflag_isr, cflag_isr};  // ldirq
 `ifdef WANT_BF16
-      op_tfa_r:            if (inst[1] == 1'b0)
-                            {acc_ld_misc, acc_misc} = {1'b1, f_half[inst[0]]};             // tfa
+      op_tfa_r:            if (inst_r[1] == 1'b0)
+                            {acc_ld_misc, acc_misc} = {1'b1, f_half[inst_r[0]]};             // tfa
 `endif
       endcase
    end
@@ -856,15 +876,15 @@ module lisa_core
          acc_load_val = {1'b1, dbg_di[7:0]};
       else
       case (1'b1)
-      op_ldi_r:   acc_load_val = {1'b1, inst[7:0]};
-      op_reti_r:  acc_load_val = {1'b1, inst[7:0]};
+      op_ldi_r:   acc_load_val = {1'b1, inst_r[7:0]};
+      op_reti_r:  acc_load_val = {1'b1, inst_r[7:0]};
       op_adc_r:   acc_load_val = {1'b1, acc_sum[7:0]};
       op_add_r:   acc_load_val = {1'b1, acc_sum[7:0]};
       op_mul_r:   acc_load_val = {1'b1, amode[1] ? acc_muls[7:0] : acc_mul[7:0]};
       op_mulu_r:  acc_load_val = {1'b1, amode[1] ? acc_muls[15:8] : acc_mul[15:8]};
       op_sub_r:   acc_load_val = {1'b1, acc_sum[7:0]};
       op_and_r:   acc_load_val = {1'b1, acc & d_i};
-      op_andi_r:  acc_load_val = {1'b1, acc & inst[7:0]};
+      op_andi_r:  acc_load_val = {1'b1, acc & inst_r[7:0]};
       op_or_r:    acc_load_val = {1'b1, acc | d_i};
       op_xor_r:   acc_load_val = {1'b1, acc ^ d_i};
       op_lda_r || op_ldax_r:  acc_load_val = {1'b1, d_i};
@@ -921,7 +941,7 @@ module lisa_core
       op_inx_r:  c_val                 = d_i == 8'hFF;         // inx
       op_shl_r:  c_val                 = acc[7];
       op_shr_r:  c_val                 = acc[0];
-      op_ldc_r:  c_val                 = inst[0];
+      op_ldc_r:  c_val                 = inst_r[0];
       op_cpi_r:  {signed_valid, c_val} = {1'b1, c_cpi};          // cpi: the signed inversion too
       op_cpx_ra: c_val                 = ix < ra;
       op_cpx_sp: c_val                 = ix < sp[D_BITS-1:0];
@@ -943,6 +963,25 @@ module lisa_core
             end
       endcase
    end
+
+   always @(posedge clk)
+   begin
+      if (~rst_n || reset)
+         kfetch_q <= 1'b0;
+      else if (decode_state)
+         kfetch_q <= op_ldk_r & cond[0];
+      else if (d_ok)
+         kfetch_q <= 1'b0;
+   end
+`ifndef SYNTHESIS
+   always @(posedge clk)
+      if (rst_n && !reset && kfetch_q != (exec_state & op_ldk_r & cond[0]))
+      begin
+         $display("lisa_core: ERROR kfetch_q %b but exec_state %b op_ldk_r %b cond[0] %b at %0t",
+                  kfetch_q, exec_state, op_ldk_r, cond[0], $time);
+         $finish;
+      end
+`endif
 
    // =================================================
    // Implement the pre-decode to generate flops
@@ -1293,7 +1332,7 @@ module lisa_core
             if (cond[0] && (jump_taken_r || ret_taken_r || ret_isr_r || br_taken_r || op_call_ix_r || op_jmp_ix_r))
             begin
                case (1'b1)
-                  jump_taken_r:             pc <= inst[PC_BITS-1:0];
+                  jump_taken_r:             pc <= inst_r[PC_BITS-1:0];
                   ret_taken_r:              pc <= ra[PC_BITS-1:0];   // the bank: cb_we / cb_val
                   ret_isr_r:                pc <= ia[PC_BITS-1:0];
                   br_taken_r:               pc <= pc_rel;
@@ -1348,7 +1387,7 @@ module lisa_core
                         signed_inv_isr <= (op_savec_r & cond[0]) ? signed_inversion : signed_inv_save;
                         cflag_save_isr <= (op_savec_r & cond[0]) ? cflag : cflag_save;
                         signed_inv_live_isr <= cflag_load ? signed_inv_val : signed_inversion;
-                        amode_isr <= (op_amode_r & cond[0]) ? inst[2:0] : amode;
+                        amode_isr <= (op_amode_r & cond[0]) ? inst_r[2:0] : amode;
                         casez (int_i & int_en)
                         9'b????????1: pc <= PC_BITS'(1);
                         9'b???????10: pc <= PC_BITS'(2);
@@ -1372,7 +1411,7 @@ module lisa_core
 
                         // Test for EI/DI
                         if (cond[0] && op_eidi_r)
-                           ie <= inst[0];
+                           ie <= inst_r[0];
 
                         // Test for load of zflag_isr / cflag_isr
                         if (cond[0] && op_stirq_r)
@@ -1454,11 +1493,11 @@ module lisa_core
       end
    end
 
-   wire  cflag_signed = (inst[5] & signed_inversion) ? ~cflag : cflag;
-   always @(inst[2:0], zflag, cflag, cflag_signed)
+   wire  cflag_signed = (inst_r[5] & signed_inversion) ? ~cflag : cflag;
+   always @(inst_r[2:0], zflag, cflag, cflag_signed)
    begin
       cond_load = 1'bx;
-      case (inst[2:0])
+      case (inst_r[2:0])
       3'h0: cond_load = zflag;                  // acc EQ  cmp
       3'h1: cond_load = ~zflag;                 // acc NE  cmp
       3'h2: cond_load = ~cflag;                 // NC
@@ -1483,7 +1522,7 @@ module lisa_core
          begin
             if (op_if_r & exec_state & ~ldx_stage_two & (ldxf_stage == 2'd0))
             begin
-               case (inst[4:3])
+               case (inst_r[4:3])
                2'h0: // IF
                   begin
                      cond[0] <= cond_load;
@@ -1516,7 +1555,7 @@ module lisa_core
             end
             else if (cond[0] && decode_state && ret_isr_r)
                cond <= 2'h3;           // an interrupt is only taken with cond == 11
-            else if (exec_state & cond[0] & (op_ldx_r | op_ldxf_r | op_lddiv_r | (op_any_div & inst[0] == 1'b0)))
+            else if (exec_state & cond[0] & (op_ldx_r | op_ldxf_r | op_lddiv_r | (op_any_div & inst_r[0] == 1'b0)))
                cond[0] <= 1'b0;
             else if (exec_state & ldxf_stage[1])
                cond[0] <= 1'b0;        // ldxf: the low word taken, the high word still to come (REV3.md)
@@ -1563,9 +1602,9 @@ module lisa_core
                op_tax_r | op_lddiv_r:    ix_val[7:0]       = acc;
                op_taxu_r:                ix_val[15:8]      = acc;                     // the middle byte (REV3.md)
                op_taxh_r:                {ix_cond_val, ix_val[22:16]} = acc;          // the top byte, the condition bit from bit 7
-               op_addax_r:               {ix_cond_val, ix_val} = {1'b1, ix + {{(D_BITS-9){1'b0}}, inst[2] & cflag, acc}};
+               op_addax_r:               {ix_cond_val, ix_val} = {1'b1, ix + {{(D_BITS-9){1'b0}}, inst_r[2] & cflag, acc}};
                op_addaxu_r:              {ix_cond_val, ix_val[D_BITS-1:8]} = {1'b1, ix[D_BITS-1:8] + {{(D_BITS-16){1'b0}}, acc}};
-               op_subax_r:               {ix_cond_val, ix_val} = {1'b1, ix - {{(D_BITS-9){1'b0}}, inst[2] & cflag, acc}};
+               op_subax_r:               {ix_cond_val, ix_val} = {1'b1, ix - {{(D_BITS-9){1'b0}}, inst_r[2] & cflag, acc}};
                op_subaxu_r:              {ix_cond_val, ix_val[D_BITS-1:8]} = {1'b1, ix[D_BITS-1:8] - {{(D_BITS-16){1'b0}}, acc}};
             endcase
          end
@@ -1574,19 +1613,19 @@ module lisa_core
       begin
          // ldx #imm16: a near value - the 16 bits as given, the bank 0, the condition bit set (REV3.md)
          ix_load = 1'b1;
-         {ix_cond_val, ix_val} = {1'b1, {(D_BITS-16){1'b0}}, inst[15:0]};
+         {ix_cond_val, ix_val} = {1'b1, {(D_BITS-16){1'b0}}, inst_r[15:0]};
       end
       else if (exec_state & ldxf_stage[1])
       begin
          // ldxf #imm24, the low word
          ix_load = 1'b1;
-         ix_val[15:0] = inst[15:0];
+         ix_val[15:0] = inst_r[15:0];
       end
       else if (exec_state & ldxf_stage[0])
       begin
          // ldxf #imm24, the high word: {cond, bits 22:16} as given
          ix_load = 1'b1;
-         {ix_cond_val, ix_val[22:16]} = inst[7:0];
+         {ix_cond_val, ix_val[22:16]} = inst_r[7:0];
       end
       else if (stg2_state || delayed_sp_dec)
       begin
@@ -1688,18 +1727,18 @@ module lisa_core
          // div_stage_two
          if (reset || (div_stage_two & div_ready))
             div_stage_two <= 1'b0;
-         else if (exec_state && cond[0] && op_div_r & inst[0] == 1'b0)
+         else if (exec_state && cond[0] && op_div_r & inst_r[0] == 1'b0)
             div_stage_two <= 1'b1;
 
          // rem_stage_two
          if (reset || (rem_stage_two & div_ready ))
             rem_stage_two <= 1'b0;
-         else if (exec_state && cond[0] && op_rem_r & inst[0] == 1'b0)
+         else if (exec_state && cond[0] && op_rem_r & inst_r[0] == 1'b0)
             rem_stage_two <= 1'b1;
 
          // Save div args
          if (decode_state && cond[0] && op_any_div)
-            div_args <= inst[1:0];
+            div_args <= inst_r[1:0];
       end
    end
 
@@ -1808,7 +1847,7 @@ module lisa_core
          if (reset)
             amode <= 3'h1;
          else if (exec_state && cond[0] && op_amode_r)
-            amode <= inst[2:0];
+            amode <= inst_r[2:0];
          else if (decode_state && cond[0] && ret_isr_r)
             amode <= amode_isr;
          else if (stop && dbg_we && dbg_a == 8'h1 && dbg_di[15])
@@ -1820,8 +1859,8 @@ module lisa_core
    // =================================================
    assign signed_inv_val = (decode_state & ret_isr_r) ? signed_inv_live_isr :
                            op_restc ?  signed_inv_save :  
-                           signed_valid ? (acc[7] ^ (inst[`PWORD_SIZE-1 -: 6] == 6'b101001 ?
-                                          inst[7] : d_i[7])) : 1'b0;
+                           signed_valid ? (acc[7] ^ (inst_r[`PWORD_SIZE-1 -: 6] == 6'b101001 ?
+                                          inst_r[7] : d_i[7])) : 1'b0;
 
    // =================================================
    // Implement the zflag logic
@@ -1837,16 +1876,16 @@ module lisa_core
          else if (d_ok)
             case (1'b1)
                acc_load_val[8]:     {zflag_load, zflag_val} = {1'b1, acc_load_val[7:0] == 8'h00};
-               op_btst_r:             {zflag_load, zflag_val} = {1'b1, acc[inst[2:0]]};
-               op_cpi_r:              {zflag_load, zflag_val} = {1'b1, acc == inst[7:0]};
+               op_btst_r:             {zflag_load, zflag_val} = {1'b1, acc[inst_r[2:0]]};
+               op_cpi_r:              {zflag_load, zflag_val} = {1'b1, acc == inst_r[7:0]};
                op_cmp_r:              {zflag_load, zflag_val} = {1'b1, acc == d_i};
                op_dcx_r:              {zflag_load, zflag_val} = {1'b1, d_i == 8'h01};
                op_inx_r:              {zflag_load, zflag_val} = {1'b1, d_i == 8'hFF};
                op_cpx_ra_r:           {zflag_load, zflag_val} = {1'b1, ix == ra};
                op_cpx_sp_r:           {zflag_load, zflag_val} = {1'b1, ix[D_BITS-1:0] == sp};
-               op_ldz_r:              {zflag_load, zflag_val} = {1'b1, inst[1] ?
-                                                               (inst[0] ? cflag : ~zflag) :
-                                                                inst[0]};
+               op_ldz_r:              {zflag_load, zflag_val} = {1'b1, inst_r[1] ?
+                                                               (inst_r[0] ? cflag : ~zflag) :
+                                                                inst_r[0]};
                op_notz_r:             {zflag_load, zflag_val} = {1'b1, acc != 8'h00};
                op_fcmp_r:             {zflag_load, zflag_val} = {1'b1, facc == fx[inst_r[1:0]]};
             endcase
@@ -2249,7 +2288,7 @@ module lisa_core
          case (1'b1)
          op_taf_r:
             begin
-               case (inst[0])
+               case (inst_r[0])
                1'h0:    facc[7:0]  <= facc_val[7:0];
                1'h1:    facc[15:8] <= facc_val[15:8];
                endcase

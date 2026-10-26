@@ -48,6 +48,7 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 35 | An extension: the WS2812B driver's DMA - a frame from a PSRAM buffer (BASE / LEN in the output flops) through the TTLC's fetch, two pixels a group, the data cache flushed first, FRAME / REPEAT; and the data cache served a core access during a flush from the flush's line | `lisa_ws2812.v`, `ttlc_fetch.v` ws_*, `tt_um_pettit_lisa.v` ttlc_addr / ce / flush, `data_cache8.v` cache_hit | done: test/progs/wsdma.c (make WSDMA=1), sdcc_test/test_wsdma.c, hw_wsdma.c |
 | 36 | An extension: a 32-bit cycle counter, a watchdog (resets the core and the peripherals, WDRST flag) and a PDM (first-order sigma-delta) mode for each of Timer 3's channels in place of its input capture, on the PWM pin - an 8-bit DAC through an RC filter | `lisa_cyccnt.v`, `lisa_wdt.v`, `lisa_timer3.v` IE [6:5], `lisa_periph.v` 0x48-0x4F, `tt_um_pettit_lisa.v` the core's and the peripherals' resets | done: test/progs/misc36.c (make MISC36=1), sdcc_test/test_misc36.c |
 | 37 | An option: DDR instruction reads - with 0x17 [6] the flash's instruction bursts and the debugger's single-word reads are DTR Fast Read Quad I/O (EDh, the W25Q128JV-DTR), a word every 4 clocks at clk/2 instead of 10; the read data through a capture pipeline whose point (0x17 [11:9], half clocks) the host finds by sweeping it; 0x17 [8] puts the SDR bursts through it too (8 clocks a word); off at reset | `lisa_qqspi.v` S13_RUN, dtr / run, cap_pipe, sclk_n / sio_neg, `debug_regs.v` 0x17 [15:6] | done: test/test.py test_ddr_sweep (make DDRSWEEP=1), DDR_CAP= / SEAMLESS= / DDR_TOGGLE= for any program |
+| 38 | Timing: the slow corner's worst paths (rc23 -8.7 ns): lda (ix++)'s kfetch -> the fetch address -> the window lookup -> inst -> the data address adders -> d_addr_good -> d_ok -> every register; and inst_r -> facc timed as one clock.  What an instruction does in its exec state reads inst_r (the window lookup stops at the decode flops), kfetch its own flop, 0x2B / 0x2E's TTLC flag bits registered (FLAG_O is a falling-edge flop), and lisa.sdc's missing multicycle sources (inst_r, the BF16 flags, facc and the f registers) | `lisa_core.v` inst_r, kfetch_q; `lisa_spi.v` scan_req_r; `lisa_periph.v` ttlc_wait_r; `lisa.sdc` | done: every suite as before, the kfetch_q check in simulation; rc27 -1.41 ns (9 endpoints, one real path) at the slow max corner against rc23's -8.74 (183) |
 
 Status: open / fixed (the test that shows it, in test/: a program of test/progs, a cocotb test of test/core or the fops bench).
 
@@ -1411,6 +1412,77 @@ runs at 3; the REV3 suite 27 of 27 in DDR, NuttX's nsh boots and runs
 **Cost.** 28 flops: in the engine `dtr`, `run`, `sclk_n`, `sio_neg` (4),
 `cap_pipe` (4), the nibble count (2), `word_full`, `inflight` (4); in
 debug_regs 0x17's ten bits.  The word is assembled in `spi_buf`.
+
+## 38. The slow corner: the data address and lda (ix++)'s fetch
+
+**Why.** rc23's slow max corner (Ken, 2026-10-25): 183 setup violators,
+all but 16 starting at op_ldk_r.  The path (rc23, -8.7 ns at 30 ns):
+op_ldk_r (5 ns of fanout tree) -> kfetch -> the fetch address mux and the
+code bank mux -> inst_stream's window subtract and hit (12 ns) ->
+inst_ready -> `inst = inst_ready ? inst_i : inst_r` -> the data address
+adders (sp + offset, ix + offset; 13 ns) -> d_addr -> tt_um's d_addr_good
+compare -> d_ok -> the enables of ia, pc, sp, ra, ix, acc and the rest.
+The other 16: inst_r -> the BF16 cone -> facc, timed as one clock because
+inst_r was in no lisa.sdc group (its comment of 2026-10-20 said the cone
+started at 3-cycle sources).
+
+**inst_r for what the instruction does.** `inst` differs from `inst_r` only in a
+fetch that has its word and in lda (ix++)'s constant fetch, and in neither
+is there a data access (d_valid 0; d_rd needs the exec state).  From the
+predecode state on they are the same word, so d_addr_r - registered every
+clock - holds the instruction's address from two clocks before its exec,
+as before.  d_addr_imm, d_addr's offsets, sp_adder, sp_addr, ix_addr and
+d_periph read inst_r now (rc24), then (rc25) the 40 other exec-time uses -
+ix_sum, pc_rel, the immediates of adc / cpi / ldi / andi / reti, ldc,
+ldz, btst, the if condition, the divider's arguments, amode, ei / di, the
+ldx words, taf / tfa, d_valid_rd's swapi / lda: the decoders (op_*,
+jump_taken ...) are what still reads `inst`, so the window lookup ends at
+their flops.
+
+**kfetch its own flop.** `kfetch_q` is set as an lda (ix++) with its
+predicate goes from decode to exec and cleared when its exec ends (d_ok)
+or on a reset - the value of exec_state & op_ldk_r & cond[0], without
+op_ldk_r's fanout and the AND in front of the fetch address.  A
+simulation check (lisa_core.v, not synthesized) stops the run if the two
+ever differ.
+
+**The TTLC flag in two status bits.** FLAG_O, the ICU's flag, is a
+falling-edge flop; read through SPI register 0x2B bit 3 (scan_req & owned)
+and TTLC I/O register 0x2E bit 3 (ttlc_wait) it was a half-clock path
+into the core's read data (rc24: -2.2 ns into the divider).  Both bits
+are read from a rising-edge copy now (`scan_req_r`, `ttlc_wait_r`): a
+clock late, status only - the interlock itself still uses the request.
+
+**lisa.sdc.** Sources that were in no group, so timed as one clock: inst_r
+(loaded as a fetch ends, or by lda (ix++)'s constant fetch as its exec
+ends) to core3 - the registers written at an instruction's end, in its
+decode state at the earliest, two clocks later (none is written in the
+predecode state) - `lisa_mcp 2 $inst_r $core3`; the BF16 operation flags
+(registered from the decoded word as the fetch ends) to facc; facc and
+f0-f3 to facc (written in an exec state: the next write is four clocks
+on at the least).  The f registers' nets carry the debugger's names in the
+netlist ($dbg.f0, as the breakpoint registers do), which rc26 missed.
+
+**Test.** Every suite as before with the check on: the default suite,
+TIMER3, WS2812, WSDMA, SPIM, TTLCIO, OVERRUN, I2C, MISC36, TTLC, DDRSWEEP,
+icarus, the REV3 SDCC suite 28 of 28 on the chip bench (and 28 of 28 in
+DDR) and 27 of 27 on the core bench (lda (ix++) is in most of them:
+test_strs 43 times); no kfetch_q mismatch.  The core bench's debugger
+tests: the breakpoint after a store and halt / resume pass, single step
+fails as it does at HEAD (rc23).  On the Arty (rc24's RTL,
+build/lisa_arty_r3_50_respin38.bit, setup +0.026 / hold +0.033 ns): the
+REV3 suite 27 of 27 in SDR and in DDR, NuttX's nsh and the OLED splash.
+
+**Hardened** (rc23's recipe; every run DRC / LVS / antenna clean, no cell
+on Calvin's pixels; the slow max corner's worst setup slack and violating
+endpoints): rc23 -8.74 (183), rc24 the address from inst_r and kfetch_q
+-5.27 (38), rc25 the other exec-time uses and the status bits -4.93 (45),
+rc26 inst_r -> core3 and facc -> facc -4.65 (29), rc27 the f registers'
+names -1.41 (9); nominal +5.25, nom_ss -0.43 (2), min_ss +0.73 (0).  Left:
+rem_stage_two -> sp_adder's select -> the stack-offset adder -> d_addr ->
+d_addr_good -> d_ready -> d_ok -> ra, a real one-clock path (the second
+stage of a divide changes the data address in the clock d_ok is
+decided).
 
 ## Verification (test/, see test/README.md)
 

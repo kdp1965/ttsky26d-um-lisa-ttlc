@@ -104,6 +104,8 @@ module lisa_spi
    reg            pend;
    reg            done;
    reg            own_r;               // owned, a clock later
+   reg            scan_req_r;          // scan_req a clock later: 0x2B's bit (RESPIN 38 - FLAG_O
+                                       // is the ICU's falling-edge flop, its read was a half clock)
    reg            sclk_hold;           // the mode-3 SCLK while not owned
    wire           miso;
    wire           claim;
@@ -143,9 +145,11 @@ module lisa_spi
          owned    <= 1'b0;
          own_r     <= 1'b0;
          sclk_hold <= 1'b0;
+         scan_req_r <= 1'b0;
       end
       else
       begin
+         scan_req_r <= scan_req;
          own_r <= owned;
          if (own_r)
             sclk_hold <= sclk;
@@ -227,7 +231,7 @@ module lisa_spi
       7'h28:   d_o = shreg;
       7'h29:   d_o = ctrl;
       7'h2A:   d_o = div;
-      7'h2B:   d_o = {4'h0, scan_req & owned, owned, done, busy | pend};
+      7'h2B:   d_o = {4'h0, scan_req_r & owned, owned, done, busy | pend};
       default: d_o = 8'h0;
       endcase
    end
