@@ -2084,6 +2084,16 @@ debug_regs 0x17's ten bits.  The word is assembled in `spi_buf`.
   No cell on Calvin's 997 pixels (367 blockages).  Promoted 2026-10-25
   (Ken; the precheck left to the gds workflow): gds/, lef/, pnl/ are this
   run's.
+* rc23 (2026-10-25, runs/macro-rc23 - RESPIN 37: the DDR instruction
+  reads; rc22's recipe): 79368 instances, 64.6%, 240735 um2 of standard
+  cells, 1244K um of wire, global-route overflow 830, routing DRC (clean at
+  the 105th detailed-route iteration) / Magic DRC / LVS / antenna 0, hold
+  +0.076, setup +5.24 nominal and -8.7 at the slow max corner: 183
+  endpoints, all but the 16 of inst_r -> facc from op_ldk_r (lda (ix++)'s
+  kfetch -> i_addr -> inst_stream's window subtract and hit -> k_ok ->
+  d_ok, the core's enables; rc22 -6.6 on the same paths) - none in the
+  QSPI.  No cell on Calvin's 997 pixels.  Promoted 2026-10-25 (Ken; the
+  precheck left to the gds workflow): gds/, lef/, pnl/ are this run's.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
