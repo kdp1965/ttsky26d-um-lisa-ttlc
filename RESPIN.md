@@ -2178,6 +2178,14 @@ address in the clock d_ok is decided.
   +0.73 min_ss.  No cell on Calvin's 997 pixels.  Promoted 2026-10-26
   (Ken; the precheck left to the gds workflow): gds/, lef/, pnl/ are this
   run's.
+* rc29 (2026-10-26, runs/macro-rc29 - RESPIN 38 with lisa.sdc's second-
+  stage and op_*_r exceptions; rc23's recipe): 79244 instances, 64.7%,
+  1248K um of wire, global-route overflow 684, routing DRC / Magic DRC /
+  LVS / antenna 0, hold +0.073, setup +5.23 nominal, +0.48 nom_ss, +1.49
+  min_ss, -0.44 at the slow max corner (1 endpoint: stage -> d_ok -> ra;
+  Ken: acceptable).  No cell on Calvin's 997 pixels.  Promoted 2026-10-26
+  (Ken; the precheck left to the gds workflow): gds/, lef/, pnl/ are this
+  run's.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
