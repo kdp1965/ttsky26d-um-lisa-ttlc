@@ -2166,6 +2166,13 @@ decided).
   d_ok, the core's enables; rc22 -6.6 on the same paths) - none in the
   QSPI.  No cell on Calvin's 997 pixels.  Promoted 2026-10-25 (Ken; the
   precheck left to the gds workflow): gds/, lef/, pnl/ are this run's.
+* rc27 (2026-10-26, runs/macro-rc27 - RESPIN 38: the slow corner; rc23's
+  recipe): 79242 instances, 64.7%, 1247K um of wire, routing DRC / Magic
+  DRC / LVS / antenna 0, hold +0.079, setup +5.25 nominal, -1.41 at the
+  slow max corner (9 endpoints: rem_stage_two -> d_ok -> ra), -0.43 nom_ss,
+  +0.73 min_ss.  No cell on Calvin's 997 pixels.  Promoted 2026-10-26
+  (Ken; the precheck left to the gds workflow): gds/, lef/, pnl/ are this
+  run's.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
