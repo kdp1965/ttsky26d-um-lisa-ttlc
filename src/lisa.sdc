@@ -144,6 +144,19 @@ lisa_mcp 2 $d_we_r $facc
 # is loaded (rc25: inst_r -> ra -2.3 ns, -> ia at the slow corner); facc
 # only in an exec state (or fdiv's second stage)
 lisa_mcp 2 $inst_r $core3
+# the divider's second-stage flags (lddiv / div / rem n(sp)): set as the
+# first word's exec ends, they hold through the second word's fetch,
+# predecode and decode, and clear as the stage ends (the next state a
+# fetch), so the registers written at an instruction's end see a change two
+# clocks later at the earliest (rc27: rem_stage_two -> the stack-offset
+# adder -> d_addr_good -> d_ok -> ra, -1.41 ns at the slow max corner)
+lisa_mcp 2 [lisa_regs {i_lisa_core.lddiv_stage_two} {i_lisa_core.div_stage_two} {i_lisa_core.rem_stage_two}] $core3
+# the decoded instruction flags (op_*_r): registered every clock from inst,
+# which changes only as a fetch ends or as lda (ix++)'s constant fetch ends
+# its exec, so to the registers written at an instruction's end they are
+# two clocks, as inst_r (rc28: op_shl16_r -> ra -0.49 ns at the slow max
+# corner)
+lisa_mcp 2 [lisa_regs {i_lisa_core.op_*_r}] $core3
 # ... and the BF16 operation flags (op_f*_r, op_taf_r, op_itof_r, op_ftoi_r),
 # registered from the decoded word as the fetch ends, as inst_r (rc24:
 # op_fadd_r -> facc -1.9 ns at the slow corner)
