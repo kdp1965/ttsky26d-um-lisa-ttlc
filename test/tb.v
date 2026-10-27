@@ -48,7 +48,11 @@ module tb
    output wire  [15:0]  i2c_count,          // bytes the I2C slave at 0x3C took ...
    output wire  [31:0]  i2c_hash,           // ... their hash (h = h * 33 ^ byte)
    output wire  [15:0]  i2c_txns,           // ... transactions addressed to it
-   output wire  [15:0]  i2c_nacks           // addresses not its own (not acknowledged)
+   output wire  [15:0]  i2c_nacks,          // addresses not its own (not acknowledged)
+   output reg   [31:0]  m3_su_ps,           // mode 3's CE latch at the Pmod (RESPIN 39): the least setup
+   output reg   [31:0]  m3_h_ps,            // ... hold and strobe width seen, in ps, of all the strobes ...
+   output reg   [31:0]  m3_w_ps,
+   output reg   [31:0]  m3_strobes          // ... and how many
 );
    wire     [2:0] ttlc_din;
    wire           spi_miso;           // the SPI devices' MISO (ui_in[2])
@@ -269,6 +273,41 @@ module tb
       if (m3_strobe)
          ce_l = uio_out[2:1];
    assign ce0 = m3 ? ce_l[0] : uio_out[0];
+
+   // The latch's timing (RESPIN 39): for each strobe, the time the CE values
+   // on uio[1] / [2] had been steady when it fell (setup), the time they
+   // stayed after (hold, up to the next strobe) and its width - the least of
+   // each over the run, in ps, for test.py to check against the part's (a
+   // 74LVC1G373 at 3.3 V: 2 ns setup, 1.5 ns hold, 3.3 ns pulse, roughly).
+   // At the chip's pins: the pads and the TT mux add skew on the silicon.
+   wire     [1:0] m3_d = uio_out[2:1];
+   realtime       m3_dchg = 0, m3_rise = 0, m3_fall = 0;
+   reg            m3_hold_open = 1'b0;
+   initial
+   begin
+      m3_su_ps = 32'hffffffff; m3_h_ps = 32'hffffffff; m3_w_ps = 32'hffffffff; m3_strobes = 0;
+   end
+   always @(m3_d)
+   begin
+      if (m3_hold_open && ($realtime - m3_fall) * 1000 < m3_h_ps)
+         m3_h_ps = ($realtime - m3_fall) * 1000;
+      m3_hold_open = 1'b0;
+      m3_dchg = $realtime;
+   end
+   always @(posedge m3_strobe)
+   begin
+      m3_hold_open = 1'b0;
+      m3_rise = $realtime;
+   end
+   always @(negedge m3_strobe)
+      if (m3)
+      begin
+         m3_fall = $realtime;
+         if ((m3_fall - m3_dchg) * 1000 < m3_su_ps) m3_su_ps = (m3_fall - m3_dchg) * 1000;
+         if ((m3_fall - m3_rise) * 1000 < m3_w_ps)  m3_w_ps  = (m3_fall - m3_rise) * 1000;
+         m3_hold_open = 1'b1;
+         m3_strobes = m3_strobes + 1;
+      end
    assign ce1 = m3 ? ce_l[1] : uio_out[4];
 
    // ==========================================================================

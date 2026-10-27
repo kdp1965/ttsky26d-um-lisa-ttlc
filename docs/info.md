@@ -214,7 +214,7 @@ resistor as indicated to allow CE updates if the FLASH/SRAM is driving DQ0/DQ1. 
 
  | Pin    | SPI/QSPI           | Notes                                        |
  | ------ | ------------------ | -------------------------------------------- |
- | uio[0] | ce_latch           | ce_latch HIGH at beginning of cycle          |
+ | uio[0] | ce_latch           | HIGH for one clock when a CE changes         |
  | uio[1] | ce0_latch/MOSI/DQ0 | Connection to FLASH/SRAM via series resistor |
  | uio[2] | ce1_latch/MISO/DQ1 | Connection to FLASH/SRAM via series resistor |
  | uio[3] | SCLK               |                                              |
@@ -222,6 +222,14 @@ resistor as indicated to allow CE updates if the FLASH/SRAM is driving DQ0/DQ1. 
  | uio[7] | -/DQ3              | Must be enabled via uio MUX bits             |
 
 This leaves uio[4]/uio[5] available for use as either UART or I2C.
+
+The latch timing: when a chip select changes, uio[0] goes high at that rising clock edge for one clock, and
+uio[1]/uio[2] carry CE0/CE1 from that edge until the falling edge half a clock after uio[0] drops - so at 50 MHz
+a 20 ns latch-enable pulse, 20 ns of setup and 10 ns of hold before the pins skew through the Tiny Tapeout mux
+and pads.  A 3.3 V LVC / AHC transparent latch (74LVC1G373, 74LVC573A, 74AHC373) has ample margin; a 74HC75 at
+3.3 V or a 5 V 7475 does not.  Keep the DQ0/DQ1 series resistors small (100-220 ohm): with the parts' input
+capacitance they delay every data bit.  The first command bit follows half a clock before SCLK's first rising
+edge.
 
 There is also a QSPI PSRAM PMOD mode that maps the QSPI signals to be compatible with the standard Tiny Tapeout
 PMOD.  In that mode (enabled using the psram_mod bit), the pinout becomes:

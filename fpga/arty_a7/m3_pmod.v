@@ -3,9 +3,10 @@
 // Tiny Tapeout QSPI Pmod) and JD (I2C).
 //
 // In mode 3 (debug register 0x1c [7:6] = 3) the chip has no pins for steady
-// chip selects: when they change it raises uio[0] for half a clock and puts
-// CE0 / CE1 on uio[1] / uio[2] (for the whole clock), and a 7475 on the
-// custom Pmod latches them - transparent while uio[0] is high.  The Pmod's
+// chip selects: when they change it raises uio[0] for a clock and puts CE0 /
+// CE1 on uio[1] / uio[2] for a clock and a half (RESPIN 39: half a clock and
+// one before), and a latch on the custom Pmod (two 74LVC1G373 on Ken's)
+// takes them - transparent while uio[0] is high.  The Pmod's
 // series resistors keep that from reaching the parts' DQ0 / DQ1; here the
 // chip's drive is simply not passed on during the strobe.  DQ2 / DQ3 are on
 // uio[6] / uio[7] (0x1c [5:4] = 3), which leaves uio[4] / uio[5] for the
@@ -26,10 +27,10 @@
 //            2 SDA           uio[5]   open drain, pulled up
 //
 // The latch is a real one (an LDPE, preset by reset to both deselected):
-// the strobe is the AND of two compares that change only on clock edges
-// and monotonically, so it does not glitch, and CE0 / CE1 are on uio[1] /
-// uio[2] from the clock edge that raises the strobe to the next rising
-// edge, half a clock past its falling one.
+// the strobe is a compare that changes only at rising clock edges, so it
+// does not glitch, and CE0 / CE1 are on uio[1] / uio[2] from the edge that
+// raises it to the falling edge after the one that drops it - a clock of
+// setup, half a clock of hold.
 module m3_pmod
 (
    input  wire          rst_n,

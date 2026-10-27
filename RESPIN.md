@@ -49,6 +49,7 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 36 | An extension: a 32-bit cycle counter, a watchdog (resets the core and the peripherals, WDRST flag) and a PDM (first-order sigma-delta) mode for each of Timer 3's channels in place of its input capture, on the PWM pin - an 8-bit DAC through an RC filter | `lisa_cyccnt.v`, `lisa_wdt.v`, `lisa_timer3.v` IE [6:5], `lisa_periph.v` 0x48-0x4F, `tt_um_pettit_lisa.v` the core's and the peripherals' resets | done: test/progs/misc36.c (make MISC36=1), sdcc_test/test_misc36.c |
 | 37 | An option: DDR instruction reads - with 0x17 [6] the flash's instruction bursts and the debugger's single-word reads are DTR Fast Read Quad I/O (EDh, the W25Q128JV-DTR), a word every 4 clocks at clk/2 instead of 10; the read data through a capture pipeline whose point (0x17 [11:9], half clocks) the host finds by sweeping it; 0x17 [8] puts the SDR bursts through it too (8 clocks a word); off at reset | `lisa_qqspi.v` S13_RUN, dtr / run, cap_pipe, sclk_n / sio_neg, `debug_regs.v` 0x17 [15:6] | done: test/test.py test_ddr_sweep (make DDRSWEEP=1), DDR_CAP= / SEAMLESS= / DDR_TOGGLE= for any program |
 | 38 | Timing: the slow corner's worst paths (rc23 -8.7 ns): lda (ix++)'s kfetch -> the fetch address -> the window lookup -> inst -> the data address adders -> d_addr_good -> d_ok -> every register; and inst_r -> facc timed as one clock.  What an instruction does in its exec state reads inst_r (the window lookup stops at the decode flops), kfetch its own flop, 0x2B / 0x2E's TTLC flag bits registered (FLAG_O is a falling-edge flop), and lisa.sdc's missing multicycle sources (inst_r, the BF16 flags, facc and the f registers) | `lisa_core.v` inst_r, kfetch_q; `lisa_spi.v` scan_req_r; `lisa_periph.v` ttlc_wait_r; `lisa.sdc` | done: every suite as before, the kfetch_q check in simulation; rc29 -0.44 ns (1 endpoint, a real path) at the slow max corner against rc23's -8.74 (183), nom_ss / min_ss clean |
+| 39 | Mode 3's CE latch strobe (the custom Pmod): half a clock wide with half a clock of setup and of hold (10 ns each at 50 MHz) - tight for the TT mux and pads' skew; now a clock wide with a clock of setup and half of hold, the CE values held to the falling edge after it, no clock added to a transaction | `lisa_io_mux.v` ce_latch / ce_hold / ce_window | done: tb.v measures the latch timing (test_i2c checks it), the REV3 suite in mode 3 (SDR and DDR), the Arty; rc30 |
 
 Status: open / fixed (the test that shows it, in test/: a program of test/progs, a cocotb test of test/core or the fops bench).
 
@@ -1488,6 +1489,40 @@ the slow max corner only: stage -> sp_adder's `2 - stage` (ldxx / stxx
 n(sp)) -> the stack-offset adder -> d_addr -> d_addr_good -> d_ok -> ra,
 a real one-clock path - each stage of a pair instruction moves the data
 address in the clock d_ok is decided.
+
+## 39. Mode 3's CE latch: a clock-wide strobe
+
+**Why.** Ken (2026-10-27), on the custom QSPI / I2C Pmod of io mux mode 3
+(two 74LVC1G373 on his TT07 board): would a 7475 do, and should the strobe
+be wider for the Tiny Tapeout mux and pads?  The strobe was `ce_latch &
+ce_latch_n`: high from the rising edge where a chip select changes to the
+next falling edge, with the CE values on uio[1] / uio[2] for that clock -
+10 ns of pulse, setup and hold at 50 MHz (TT07 the same), fine for LVC /
+AHC latches, too short for a 74HC75 at 3.3 V, and a 5 V 7475 is no use at
+all.  A whole extra clock of hold would put the first command bit on
+uio[1] at SCLK's first rising edge, or cost a clock per transaction.
+
+**The change.** The strobe is `ce_latch` alone, a clock from the change
+(a compare against a rising-edge copy: it changes only at rising edges,
+no glitch), and uio[1] / uio[2] carry the CE values until the falling
+edge after it ends (`ce_hold`, a falling-edge copy of the strobe;
+`ce_window = ce_latch | ce_hold` drives the mux and the output enables):
+20 ns of pulse, 20 ns of setup, 10 ns of hold.  The first command bit
+follows half a clock before SCLK's first rising edge (two clocks after the
+select), so no clock is added.  ce_last_n / last_mux_n go, ce_hold comes.
+
+**Test.** tb.v measures the latch at the chip's pins - the least setup,
+hold and pulse over the run - and test_i2c (mode 3, the cache on) checks
+them against a 74LVC1G373's (2 / 1.5 / 3.3 ns): 1278 strobes, 10.0 / 10.0
+/ 10.0 ns before, 20.0 / 10.0 / 20.0 after (icarus too).  The REV3 SDCC
+suite in mode 3 with the cache on, 28 of 28 in SDR and in DDR; every other
+suite as before.  On the Arty (build/lisa_arty_r3_50_respin39.bit, setup
++0.797 / hold +0.021 ns, m3_pmod.v): the REV3 suite in mode 3 27 of 27 in
+DDR and 26 of 27 in SDR - test_ldirq reported SOME FAILED once, then
+passed 26 runs in a row (not reproduced; the failing check not captured)
+- and NuttX with the OLED.  info.md has the latch timing and the parts.
+rc30: every corner clean (the slow max +0.68: rc29's last path closed in
+this draw).
 
 ## Verification (test/, see test/README.md)
 

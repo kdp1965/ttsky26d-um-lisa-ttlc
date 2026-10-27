@@ -197,12 +197,11 @@ module lisa_io_mux
    reg  [7:0]              s_uio_oe;
 
    // CE latch signals
-   wire                    ce_latch;
-   wire                    ce_latch_n;
+   wire                    ce_latch;            // the strobe: a clock from a CE change
+   reg                     ce_hold;             // ... and the CE values half a clock past it
+   wire                    ce_window;           // uio[1] / [2] carry the CE values
    reg  [1:0]              ce_last;
-   reg  [1:0]              ce_last_n;
    reg  [1:0]              last_mux;
-   reg  [1:0]              last_mux_n;
    wire                    custom_pmod;
 
    // ==========================================================================
@@ -315,9 +314,9 @@ module lisa_io_mux
 
    always @*
    begin
-      s_uio_out[0] = custom_pmod ? ce_latch & ce_latch_n : ce[0];
-      s_uio_out[1] = ce_latch ? ce[0] : sio0_si_mosi_o;
-      s_uio_out[2] = ce_latch ? ce[1] : sio1_so_miso_o;
+      s_uio_out[0] = custom_pmod ? ce_latch : ce[0];
+      s_uio_out[1] = ce_window ? ce[0] : sio0_si_mosi_o;
+      s_uio_out[2] = ce_window ? ce[1] : sio1_so_miso_o;
       s_uio_out[3] = sclk;
 
       // UIO bit 4
@@ -357,8 +356,8 @@ module lisa_io_mux
    always @*
    begin
       s_uio_oe[0] = 1'b1;                // CE[0]
-      s_uio_oe[1] = ce_latch ? 1'b1 : sio_oe[0];           // MOSI
-      s_uio_oe[2] = ce_latch ? 1'b1 : sio_oe[1];           // MOSI
+      s_uio_oe[1] = ce_window ? 1'b1 : sio_oe[0];          // MOSI
+      s_uio_oe[2] = ce_window ? 1'b1 : sio_oe[1];          // MISO
       s_uio_oe[3] = 1'b1;                // SCLK
 
       // UIO bit 4
@@ -405,7 +404,17 @@ module lisa_io_mux
                       1'b1;
 
    // ==============================================================
-   // Generate logic for latching CE outputs for custom PMOD
+   // The CE latch of the custom Pmod (mode 3).  When a chip select
+   // changes, uio[0] strobes the Pmod's latch for a clock - from the rising
+   // edge of the change to the next - and uio[1] / uio[2] carry CE0 / CE1
+   // from that edge to the falling edge after the strobe ends (ce_hold): a
+   // 20 ns pulse at 50 MHz with 20 ns of setup and 10 ns of hold at its
+   // falling edge (RESPIN 39; it was half a clock, ce_latch & ce_latch_n,
+   // with 10 ns of each - tight for the TT mux and pads' skew).  The first
+   // command bit is on uio[1] from that falling edge, half a clock before
+   // SCLK's first rising edge (two clocks after the select).  The strobe
+   // is one compare against a rising-edge copy, so it changes only at
+   // rising edges and does not glitch.
    // ==============================================================
    always @(posedge clk)
       if (~rst_n)
@@ -419,24 +428,15 @@ module lisa_io_mux
          last_mux <= io_mux_bits[7:6];
       end
 
-   // ==============================================================
-   // Generate logic for latching CE outputs for custom PMOD
-   // ==============================================================
    always @(negedge clk)
       if (~rst_n)
-      begin
-         ce_last_n  <= 2'h3;
-         last_mux_n <= 2'h0;
-      end
+         ce_hold <= 1'b0;
       else
-      begin
-         ce_last_n <= ce;
-         last_mux_n <= io_mux_bits[7:6];
-      end
-   assign ce_latch_n = custom_pmod && (ce_last_n != ce || io_mux_bits[7:6] != last_mux_n);
+         ce_hold <= ce_latch;
 
    assign custom_pmod = io_mux_bits[7:6] == 2'h3;
    assign ce_latch    = custom_pmod && (ce != ce_last || io_mux_bits[7:6] != last_mux);
+   assign ce_window   = ce_latch | (custom_pmod & ce_hold);
 
 endmodule // lisa_io_mux
 

@@ -525,6 +525,11 @@ async def test_i2c(dut):
         h = ((h * 33) ^ b) & 0xFFFFFFFF
     got = (int(dut.i2c_count.value), int(dut.i2c_hash.value), int(dut.i2c_txns.value), int(dut.i2c_nacks.value))
     dut._log.info('I2C slave: %d bytes, hash %08x, %d transactions, %d NAKed addresses' % got)
+    m3su, m3h, m3w, m3n = (int(dut.m3_su_ps.value), int(dut.m3_h_ps.value), int(dut.m3_w_ps.value),
+                           int(dut.m3_strobes.value))
+    dut._log.info('mode 3 CE latch: %d strobes, least setup %.1f ns, hold %.1f ns, width %.1f ns'
+                  % (m3n, m3su / 1000, m3h / 1000, m3w / 1000))
+    assert m3n > 100 and m3su >= 2000 and m3h >= 1500 and m3w >= 3300, 'the CE latch timing is short of a 74LVC1G373'
     assert got == (len(cmds) + len(data), h, 2, 1), 'expected %d bytes %08x, 2 transactions, 1 NAK' % (len(cmds) + len(data), h)
 
 
