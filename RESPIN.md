@@ -2221,6 +2221,13 @@ this draw).
   Ken: acceptable).  No cell on Calvin's 997 pixels.  Promoted 2026-10-26
   (Ken; the precheck left to the gds workflow): gds/, lef/, pnl/ are this
   run's.
+* rc30 (2026-10-27, runs/macro-rc30 - RESPIN 39: mode 3's clock-wide CE
+  latch strobe; rc23's recipe): 79464 instances, 64.6%, 1236K um of wire,
+  routing DRC / Magic DRC / LVS / antenna 0, hold +0.056, setup +4.87
+  nominal, +1.47 nom_ss, +1.96 min_ss, +0.68 at the slow max corner -
+  every corner clean.  No cell on Calvin's 997 pixels.  Promoted
+  2026-10-27 (Ken: the final run - nothing more planned; the precheck left
+  to the gds workflow): gds/, lef/, pnl/ are this run's.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
