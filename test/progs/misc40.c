@@ -167,15 +167,20 @@ void main(void)
 
   puts("misc40\n");
 
-  /* 1-4: the multiplier */
-  CHECK(1, mul(0x1234, 0x5678, 0x00) == 0x06260060UL);
-  CHECK(2, mul(0xFFFE, 0x0003, 0x01) == 0xFFFFFFFAUL);
-  CHECK(3, mul(0x8000, 0x8000, 0x01) == 0x40000000UL);
-  MUL_CTRL = 0x04;                      /* CLR */
-  mul(2, 3, 0x03);
-  mul(4, 5, 0x03);
-  mul(0xFFFF, 7, 0x03);                 /* -1 x 7 */
-  CHECK(4, mul(0, 0, 0x03) == 19UL && (MUL_CTRL & 0x80) == 0);
+  /* 1-4: the multiplier - when the chip has one (a build without it reads
+     0x70-0x78 as 0: WANT_MUL16 in lisa_periph.v) */
+  MUL_A_L = 0x5A;
+  if (MUL_A_L == 0x5A) {
+    CHECK(1, mul(0x1234, 0x5678, 0x00) == 0x06260060UL);
+    CHECK(2, mul(0xFFFE, 0x0003, 0x01) == 0xFFFFFFFAUL);
+    CHECK(3, mul(0x8000, 0x8000, 0x01) == 0x40000000UL);
+    MUL_CTRL = 0x04;                    /* CLR */
+    mul(2, 3, 0x03);
+    mul(4, 5, 0x03);
+    mul(0xFFFF, 7, 0x03);               /* -1 x 7 */
+    CHECK(4, mul(0, 0, 0x03) == 19UL && (MUL_CTRL & 0x80) == 0);
+  } else
+    puts("no mul16\n");
 
   /* 5: sleep until Timer 1's rollover: 1000 clocks a tick, 20 ticks */
   TIMER1_PREDIV_LO = 999 & 0xFF;
@@ -208,10 +213,13 @@ void main(void)
     ;
   CHECK(7, (UART2_STATUS & 0x10) && (UART2_STATUS & 0x40) == 0);
 
-  UART2_IDLE = 40;                      /* 40 bit times of silence (3.5 characters) */
   for (n = 0; n < 60000 && !(UART2_STATUS & 0x01); n++)
     ;
   b0 = UART2_DATA;
+  UART2_IDLE = 40;                      /* 40 bit times of silence (3.5 characters) - armed after
+                                           the first byte, so the check does not depend on when the
+                                           bench sends the bytes relative to the program (a build
+                                           without the multiplier gets here 2 ms earlier) */
   for (n = 0; n < 60000 && !(UART2_STATUS & 0x01); n++)
     ;
   b1 = UART2_DATA;

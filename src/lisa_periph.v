@@ -30,6 +30,9 @@ SUCH DAMAGE.
 
 `define TIMER2
 `define WANT_UART2
+// `define WANT_MUL16                     // the 16 x 16 multiplier (RESPIN 40, 0x70-0x78): off for the
+                                        // t6x4-16 trial (Ken, 2026-11-16: 4 + 4 timers / counters, no
+                                        // multiplier, the full-size Calvin)
 
 /*
 ==========================================================================================
@@ -963,7 +966,7 @@ module lisa_periph
    // RESPIN 40: the PLC timers / counters, the two
    // high-speed counters, the multiplier, the SP limit
    // ==============================================
-   lisa_plc i_lisa_plc
+   lisa_plc #(.NT(4), .NC(4)) i_lisa_plc    // t6x4-16: four timers, four counters (the module's default is 6 + 4)
    (
       .clk          ( clk             ),
       .rst_n        ( rst_n           ),
@@ -1011,6 +1014,7 @@ module lisa_periph
       .ge           ( hsc_ge[1]       )
    );
 
+`ifdef WANT_MUL16
    lisa_mul16 i_lisa_mul16
    (
       .clk          ( clk             ),
@@ -1022,6 +1026,9 @@ module lisa_periph
       .d_rd         ( d_rd            ),
       .d_o          ( mul_d_o         )
    );
+`else
+   assign mul_d_o = 8'h0;                  // no multiplier: 0x70-0x78 read 0
+`endif
 
    lisa_splim i_lisa_splim
    (

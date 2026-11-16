@@ -2772,6 +2772,48 @@ at 23 (now 31).
     the default programs, the PLC program with its ladder, and misc40 -
     the multiplier, sleep, UART2's FIFO / DE / idle timer, both HSCs with
     their interrupt, the SP limit's interrupt and its reset - at gate level.
+  - **rc31 (2026-11-16): PROMOTED as a release candidate** - commit 7692362
+    on branch tile6x4, tag rc31, pushed to GitHub (the gds / precheck, test
+    and docs workflows run there) - **all three green** (gds: build,
+    precheck and viewer; test; docs); Ken decides on the submission after
+    seeing it.  main still holds rc30 (the 5x4).
+  - t6x4-16 (Ken, 2026-11-16: "I like the large Calvin better of course" -
+    the PLC block back to 4 + 4 through the instance's parameters, the
+    multiplier out behind a new WANT_MUL16 define in lisa_periph.v (off:
+    0x70-0x78 read 0; misc40.c probes MUL_A_L and skips checks 1-4 when
+    there is none), the full-size Calvin at its t6x4-1 place, 12 x 2 pixels
+    at 12.42 / 97.92): to see the routing.  Against rc31 it drops the two
+    timers (4.5k um2 of cells) and the multiplier (6.9k) and puts back the
+    picture's 22.5k um2 of blockage and ~3k of taps: a net ~15k um2 more
+    occupied than t6x4-13, about where t6x4-7 (full Calvin, 4 + 4, with the
+    multiplier) stood at 82.3% padded - which routed, barely.
+    On the way: misc40's check 8 failed without the multiplier because it
+    armed UART2's idle timer before waiting for the bench's two bytes,
+    which come at a fixed time - two milliseconds of silence after arming
+    once checks 1-4 are skipped set the flag early.  The timer is armed
+    after the first byte now, so the check holds whenever the bytes come;
+    PLC / default / TTLC pass, MISC40 passes with and without the
+    multiplier.
+    Result: synthesis 223.6k um2 of cells (rc31 233.9k, t6x4-7 229.4k),
+    80.2% padded placement, global-route overflow 89 (wire 1.95M um), the
+    detailed route slow at the end - one met1 short between a signal and
+    the clock-tree net clknet_2_3_0_clk_regs at (573, 411) from iteration
+    25, half an hour an iteration at the end, 0 at iteration 55 (Ken watched
+    it go) - and 0 again after each of three antenna passes.  **Magic DRC
+    0, LVS 0, antenna 0 / 0**; 62.1% final utilization, 47307 cells, 284.7k
+    um2, 1.37M um of wire.  Timing **positive at every corner**, the first
+    6x4 run to be: hold +0.051 (max_ff); setup +4.87 nominal, +0.67 nom_ss,
+    +1.35 min_ss, **+0.04 max_ss** (the RAM32 write-enable half-cycle path
+    again, from d_addr[4]), the peripheral read into zflag_isr +0.99.  So
+    the full-size Calvin fits with 4 + 4 and no multiplier, at the router's
+    edge (one placement clears the last short, another may not), and the
+    slow corner closes by 41 ps.  **Ken took it (2026-11-16): rc32**, gds/
+    lef/ pnl/ from runs/macro-t6x4-16, the datasheet at four timers and four
+    counters with 0x70 - 0x79 reserved, committed and pushed on tile6x4 with
+    tag rc32 while its gate-level runs (default and PLC on the macro
+    netlist, misc40 on the behavioural RAM) were still going - "hedging
+    that it will pass"; their result is noted below when in.  rc31 stays as
+    the tagged alternative (half Calvin, 6 + 4, the multiplier).
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception

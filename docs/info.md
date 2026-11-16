@@ -40,7 +40,6 @@ The following is a block diagram of the design:
       * WS2812 pixel data "DMA" fetch (shared with TTLC instruction)
       * Quad or Single SPI.  Hereafter called QSPI, but supports either.
    - Hardware 8x8 integer multiplier (signed or unsigned)
-   - 16 x 16 multiplier peripheral: a 32-bit product in four clocks, signed or unsigned, with multiply-accumulate
    - Hardware 16/16 restoring integer divider: quotient and remainder, signed or unsigned, with a
      chained step for dividends of any width
    - Hardware Brain Float 16 (BF16) add / multiply / divide / negate / compare / int-to-float / float-to-int
@@ -48,7 +47,7 @@ The following is a block diagram of the design:
    - Data bus CACHE controller with 8 16-byte CACHE lines
    - Streaming QSPI instruction fetch with an 8-word window: sequential code runs at the QSPI word rate
    - Two 16-bit programmable timers (with pre-divide)
-   - Six PLC timers (on / off delay, 1 ms to 1 s ticks) and four PLC counters, function blocks in the TTLC's I/O
+   - Four PLC timers (on / off delay, 1 ms to 1 s ticks) and four PLC counters, function blocks in the TTLC's I/O
      space that LISA can use too
    - Two high-speed counters: pulses, pulses with a direction, or quadrature x1 / x4 on any pair of ui_in pins,
      with a compare, a glitch filter and an interrupt
@@ -872,8 +871,8 @@ The peripheral space is reached with the p bit of lda / sta / swapi (addresses 0
 0x200 + address).  The processor's own peripherals occupy 0x00 - 0x1E; the other blocks have their own sections:
 the I2C master at 0x20 - 0x26, the SPI master at 0x28 - 0x2B, the TTLC I/O at 0x2C - 0x2E, Timer 3 at
 0x30 - 0x3F, the WS2812B driver at 0x40 - 0x45, the cycle counter at 0x48 - 0x4B, the watchdog at 0x4C - 0x4F,
-the PLC timers and counters at 0x50 - 0x59, the high-speed counters at 0x60 - 0x6F, the multiplier at 0x70 - 0x78
-and the stack pointer limit at 0x7A - 0x7D.  Unlisted addresses read 0 and ignore writes.
+the PLC timers and counters at 0x50 - 0x59, the high-speed counters at 0x60 - 0x6F and the stack pointer limit
+at 0x7A - 0x7D.  Unlisted addresses (0x70 - 0x79 among them) read 0 and ignore writes.
 
  | ADDR | Register    | Bits  | Reset  | Description                                                              |
  | ----------------- | ----------------- | ----------- | ----------- | --------------------------------------------------------------- |
@@ -986,7 +985,7 @@ The I/O subsystem uses an 8-bit address and supports the following:
    - 48-Outputs plus 48-Inputs via external 74HC595 / 74HC165 chips
    - 128-Bit internal storage
    - 16 bit I/O to/from LISA (8 each direction)
-   - Six timers and four counters (the PLC block) and the two high-speed counters' compare bits
+   - Four timers and four counters (the PLC block) and the two high-speed counters' compare bits
    - Ability to send interrupt to LISA
    - Constant zero / one bits 
 
@@ -1001,7 +1000,7 @@ The 8-bit address selects one bit of the I/O space:
  | 136     | RR (the result register)                                   |
  | 137     | Constant 0                                                 |
  | 138     | Constant 1                                                 |
- | 139-146 | Timers T0-T5 at 139-144: a write (STO / STOC) is the timer's input IN, a read its output Q; 145-146 (no timer) read 0 |
+ | 139-146 | Timers T0-T3 at 139-142: a write (STO / STOC) is the timer's input IN, a read its output Q; 143-146 (no timer) read 0 |
  | 147-154 | Counters C0-C3 at 147-150: a write is the count input CU (its rising edge counts), a read its output Q; 151-154 (no counter) read 0 |
  | 155-156 | HSC0 / HSC1: count >= compare (a level, while the counter is enabled) |
  | 160-191 | Internal storage bits 32-63                                |
@@ -1068,7 +1067,7 @@ SPI byte in progress), so the two never collide.
 ## The PLC Timers and Counters
 
 The MC14500B does relay logic and nothing else: a ladder program cannot wait or count by itself.  The PLC
-block adds the function blocks of IEC ladder logic to the TTLC's I/O space: six timers and four counters,
+block adds the function blocks of IEC ladder logic to the TTLC's I/O space: four timers and four counters,
 each driven by a bit the program writes and read back as a bit, with their presets and current values in
 LISA's peripheral registers.  The register and I/O layout has room for eight of each (timer slots 0-7,
 counter slots 8-15); a slot with no block behind it reads 0 and takes no write.  LISA can drive and read the same blocks, so they serve it as general timers and
@@ -1084,13 +1083,13 @@ whose preset is 0 is off (Q = 0), so an unconfigured block reads 0.
 
  | ADDR | Register    | Description                                                                 |
  | ---------- | ----------------- | --------------------------------------------------------------- |
- | 0x50 | TC_IDX      | [3:0] the block the next five registers address: 0-7 timer n (0-5 present), 8-15 counter n - 8 (8-11 present); an empty slot reads 0 |
+ | 0x50 | TC_IDX      | [3:0] the block the next five registers address: 0-7 timer n (0-3 present), 8-15 counter n - 8 (8-11 present); an empty slot reads 0 |
  | 0x51 | TC_CTRL     | Timer: [0] MODE (0 TON, 1 TOF), [2:1] BASE (0 1 ms, 1 10 ms, 2 100 ms, 3 1 s), [3] Q (ro), [4] IN (ro: the ladder's bit OR LISA_IN), [5] LISA_IN.  Counter: [0] MODE (0 up, 1 down), [3] Q (ro), [4] CU (ro), [5] LISA_CU (a rising edge counts), [6] RST (write 1: reset; reads 0) |
  | 0x52 | TC_PRESET_L | The preset, low byte: ticks of the base for a timer, a count for a counter |
  | 0x53 | TC_PRESET_H | The preset, high byte                                                       |
  | 0x54 | TC_VALUE_L  | Read only: the timer's elapsed ticks or the count, low byte (latches the high byte) |
  | 0x55 | TC_VALUE_H  | Read only: the high byte latched by the last TC_VALUE_L read                |
- | 0x56 | T_DONE      | Read only: the timers' Q, bit n timer n ([7:6] 0)                           |
+ | 0x56 | T_DONE      | Read only: the timers' Q, bit n timer n ([7:4] 0)                           |
  | 0x57 | C_DONE      | Read only: the counters' Q, bit n counter n ([7:4] 0)                       |
  | 0x58 | TC_PRE_L    | Clocks per 1 ms tick, less one, low byte (reset 49999 = 0xC34F for 50 MHz)  |
  | 0x59 | TC_PRE_H    | ... high byte.  A write restarts the tick generator                         |
@@ -1131,32 +1130,9 @@ chip's other uses of ui_in in mind: ui_in[3] is the debug UART's RX on the demo 
 UART2's RX, ui_in[5:4] are Timer 3's captures and the TTLC's chain inputs in uo mux 3, and ui_in[7] held
 high at reset selects the fixed baud divider.
 
-## The 16 x 16 Multiplier
+## Reserved Registers 0x70 - 0x79
 
-C's int arithmetic goes through the core's 8 x 8 multiply four times.  The multiplier peripheral does a
-16 x 16 product in four clocks and is reached with one store or load per byte, so a 16-bit multiply is
-four stores and two loads; with ACC it accumulates products into a 32-bit sum for filters and dot
-products.  The compiler's library can be built on it without any change to the instruction set.
-
- | ADDR | Register | Description                                                                 |
- | ---------- | -------------- | --------------------------------------------------------------- |
- | 0x70 | A_L      | Operand A, low byte                                                         |
- | 0x71 | A_H      | Operand A, high byte                                                        |
- | 0x72 | B_L      | Operand B, low byte                                                         |
- | 0x73 | B_H      | Operand B, high byte: the write starts the multiply                         |
- | 0x74 | P0       | The product (or the running sum), bits 7:0 (read only)                      |
- | 0x75 | P1       | ... bits 15:8                                                               |
- | 0x76 | P2       | ... bits 23:16                                                              |
- | 0x77 | P3       | ... bits 31:24                                                              |
- | 0x78 | CTRL     | [0] SIGNED: two's-complement operands and product, [1] ACC: P <= P + A x B, [2] CLR (write 1: P <= 0; reads 0), [7] BUSY (read only) |
-
-BUSY reads 1 for the four clocks after the B_H write and P changes only in the last of them, so a read
-while BUSY returns the previous product; a program that stores the four operand bytes and then loads P
-never sees BUSY set, since each access takes longer than a clock.  A B_H write while BUSY restarts the
-multiply with the operands as they stand (a product completing in that same clock is still stored, so a
-stream of accumulations four clocks apart loses nothing); CLR while BUSY abandons the multiply in flight.
-A CTRL write always sets SIGNED and ACC from its bits, so CTRL = SIGNED | ACC | CLR is the one write that
-sets a signed dot product up.
+Peripheral addresses 0x70 - 0x79 are reserved: they read 0 and ignore writes.
 
 ## The Stack Pointer Limit
 

@@ -69,9 +69,9 @@
     "dir::../src/RAM32.v"
   ],
   "//art": "The chip art (Ken, 2026-10-24): Calvin as placement blockages, not metal - his two-colour 73 x 74 drawing (art/calvin_nocircle/source.png, png2pixels.py: black = blocked, 1016 pixels, with 7 filled where two blocked pixels touched only at a corner - Magic nwell.1) as hard placement blockages, each pixel two rows (5.44 um) by 12 sites (5.52 um), the picture 403 x 403 um at (12.42, 97.92), left of the RAM32 with Calvin's bottom about level with the RAM32's top: no cell of any kind on a pixel, the rows, rails and routing go on over them. Project.ArtPixels makes the blockages after the rows are cut; Project.ArtPixelTaps, after tapcell (which ignores blockages), re-taps the rows the picture crosses - the taps on pixels removed and taps added until every free segment of such a row has one within 7 um of every point (Magic nwell.4, LU.2 / LU.3). Tried on the 5x4 tile: runs/macro-calvin-nocircle-5x4 (at y 54.40) routed clean. The met4 Calvin (art/calvin, chip_art.py, on the 4x4 tile from rc4 to rc17) is dropped: on 5x4 its keep-out sat mid-tile, and one draw left 4 VGND shorts against its corner.",
-  "//": "Calvin at half size, centred along Y (t6x4-13, 2026-11-15): the same 73 x 74 picture with 6-site x 1-row pixels (2.76 x 2.72 um), 201 x 201 um from (12.42, 155.04) about the row area's centre 255.68 - 7.5k um2 of blockage instead of the 12 x 2 pixels' 30k. Full size at (12.42, 97.92) the 6x4 routed clean only without the PLC block's eight-and-eight (t6x4-1 .. -8); half size at the lower-left (t6x4-9 / -12) and centred (t6x4-13) routes clean, five rows under the top (t6x4-10 / -11) congests. trial_6x4_halfcalvin*.json are the overlays that were tried.",
+  "//": "t6x4-16 (Ken, 2026-11-16): the FULL-SIZE Calvin again (12 x 2 pixels, 403 x 403 um at 12.42 / 97.92, the t6x4-1 place) with the PLC block at 4 + 4 and no multiplier - to see the routing; rc31 = t6x4-13 was: Calvin at half size, centred along Y (t6x4-13, 2026-11-15): the same 73 x 74 picture with 6-site x 1-row pixels (2.76 x 2.72 um), 201 x 201 um from (12.42, 155.04) about the row area's centre 255.68 - 7.5k um2 of blockage instead of the 12 x 2 pixels' 30k. Full size at (12.42, 97.92) the 6x4 routed clean only without the PLC block's eight-and-eight (t6x4-1 .. -8); half size at the lower-left (t6x4-9 / -12) and centred (t6x4-13) routes clean, five rows under the top (t6x4-10 / -11) congests. trial_6x4_halfcalvin*.json are the overlays that were tried.",
   "CHIP_ART_PIXELS_JSON": "dir::art/calvin_nocircle/pixels.json",
-  "CHIP_ART_PIXELS_ORIGIN": [12.42, 155.04],
-  "CHIP_ART_PIXEL_SITES": 6,
-  "CHIP_ART_PIXEL_ROWS": 1
+  "CHIP_ART_PIXELS_ORIGIN": [12.42, 97.92],
+  "CHIP_ART_PIXEL_SITES": 12,
+  "CHIP_ART_PIXEL_ROWS": 2
 }

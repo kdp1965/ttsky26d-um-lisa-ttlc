@@ -2,8 +2,8 @@
 
 * The tile grows from 5x4 to 6x4 (1030.40 x 511.36 um), the RAM32 moved one
   more stripe pitch to the right (x 699.66).
-* PLC timers and counters (peripheral registers 0x50-0x59): six on / off
-  delay timers and four up / down counters in the TTLC's I/O space (139-144
+* PLC timers and counters (peripheral registers 0x50-0x59): four on / off
+  delay timers and four up / down counters in the TTLC's I/O space (139-142
   the timers' IN / Q, 147-150 the counters' CU / Q, storage bits 120-123
   their resets; the layout has eight slots of each, the empty ones read 0),
   usable from LISA too.
@@ -14,8 +14,6 @@
   pins: pulses, pulses with a direction, x1 or x4 quadrature, a compare with
   MATCH / OVF / UNF and interrupt vector 10, the compare level at TTLC
   addresses 155 / 156.
-* A 16 x 16 multiplier peripheral (0x70-0x78): a 32-bit product in four
-  clocks, signed or unsigned, with multiply-accumulate.
 * UART2 for Modbus RTU: an 8-byte transmit FIFO, an RS-485 direction output
   on uo[7] (mux 2), a frame-idle timer (0x16, 0x17; new bits of 0x13).
 * A stack pointer limit fault (0x7A-0x7D): below the limit, an interrupt
