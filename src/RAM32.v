@@ -16,6 +16,19 @@ module RAM32 (
 );
   reg [31:0] RAM[31:0];
 
+`ifndef SYNTHESIS
+  // Simulation only (2026-11-15): the array starts at zero, as the hardened
+  // macro's latches never do.  Under four-state simulation a byte read
+  // before it is written is X, and sdcc's 16-bit values travel through IX
+  // by a three-byte `ldxx n(sp)` whose third byte the code never wrote: the
+  // X in IX[22:16] then reaches the top's d_addr_c == d_addr_r compare
+  // while a load is acknowledged and stalls the core (misc40's HSC handler
+  // under icarus, RTL and gate level alike).  Silicon has a random byte
+  // there and the compare resolves in a cycle.
+  integer i;
+  initial for (i = 0; i < 32; i = i + 1) RAM[i] = 32'h0;
+`endif
+
   // Read during write of the same word: the DFFRAM macro's storage is
   // latches written in the clock after the inputs are sampled and read
   // through a combinational mux, so Do0 shows the byte just written

@@ -1,0 +1,6 @@
+{
+  "//": "Ken (2026-11-15): the half-size Calvin of trial_6x4_halfcalvin.json centred along the tile's Y axis: the rows run y 2.72 .. 508.64 (centre 255.68), the picture is 74 one-row pixels = 201.28 um tall, so its lower-left is y 255.68 - 100.64 = 155.04 (row 57); x stays 12.42. make macro TAG=t6x4-13 OVERLAY=trial_6x4_halfcalvin_mid.json (the 6 + 4 PLC block, the two-level read decode). The lower-left position (y 97.92, t6x4-9 / -12) routed clean, the top one (y 293.76, t6x4-10 / -11) congested.",
+  "CHIP_ART_PIXELS_ORIGIN": [12.42, 155.04],
+  "CHIP_ART_PIXEL_SITES": 6,
+  "CHIP_ART_PIXEL_ROWS": 1
+}

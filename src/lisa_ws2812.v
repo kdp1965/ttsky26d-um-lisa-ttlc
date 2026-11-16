@@ -346,13 +346,15 @@ module lisa_ws2812
 
    always @*
    begin
-      case (d_addr)
-      7'h40:   d_o = ctrl;
-      7'h41:   d_o = {frame_f, dst != D_IDLE, dma ? pg : next, underrun, done, busy, full};
-      7'h42:   d_o = t0h;
-      7'h43:   d_o = t1h;
-      7'h44:   d_o = tbit;
-      7'h45:   d_o = trst;
+   // the read decode is on d_addr[3:0]: lisa_periph.v gates d_o by the
+   // 16-register group d_addr[6:4] (the two-level read decode, t6x4-8)
+      case (d_addr[3:0])
+      4'h0:   d_o = ctrl;
+      4'h1:   d_o = {frame_f, dst != D_IDLE, dma ? pg : next, underrun, done, busy, full};
+      4'h2:   d_o = t0h;
+      4'h3:   d_o = t1h;
+      4'h4:   d_o = tbit;
+      4'h5:   d_o = trst;
       default: d_o = 8'h0;
       endcase
    end

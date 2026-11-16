@@ -76,8 +76,12 @@ class Lisa:
             if not int(d.rx_avail.value):
                 return None
         v = int(d.rx_d.value)
+        # the receiver pops on rd's rising edge (lisa_rx8n.v): hold rd two
+        # clocks - with another coroutine awaiting the clock each cycle a
+        # one-clock wait could end in the same step and the pulse vanish,
+        # so the byte was read twice (every character doubled, 2026-11-14)
         d.rx_rd.value = 1
-        await ClockCycles(self.clk, 1)
+        await ClockCycles(self.clk, 2)
         d.rx_rd.value = 0
         await ClockCycles(self.clk, 2)
         return v

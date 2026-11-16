@@ -1,5 +1,5 @@
 {
-  "//": "The RAM32 DFFRAM macro (macros/, the AND-OR read path built in DFFRAM.librelane models/ram_ao, 320.16 x 116.96) instead of the synthesized src/RAM32.v: on the core's bottom row at the right (x 505.31 = 13 x 38.87, the tile's stripe pitch, so its power pin columns lie on tile stripes; y 2.72, the row grid; its right edge 825.47 + the 2 um halo, short of the core's 853.76 - a pitch more would not fit). On the 4x4 tile until rc17 it was at 349.83, at the right; on the 5x4 tile rc18 had it at 427.57 (two pitches right, 423 um clear at the left for the pixel Calvin), and rc19 (2026-10-24, Ken: the draw at 427.57 did not route well) two more, as far right as it goes, halos 2 x 1 um (the macro keeps its own 2.72 / 1.38 um margins; cut_rows cuts the row overlapping the halo, a touching one survives) and FP_PRUNE_THRESHOLD dropping the 17-site row stubs between the macro and the core edge that pdngen could not power (PDN-0179; RESPIN.md, the halo trial). The tile's stripes are run over its met4 power pins by flow.py's Tile.ExtendPowerStripes, so pdngen's own connectivity check is not the verdict; src/RAM32.v stays as a model for lint (EXTRA_VERILOG_MODELS), the macro's netlist has no power pins",
+  "//": "The RAM32 DFFRAM macro (macros/, the AND-OR read path built in DFFRAM.librelane models/ram_ao, 320.16 x 116.96) instead of the synthesized src/RAM32.v: on the core's bottom row at the right (RESPIN 40, the 6x4 tile: x 699.66 = 18 x 38.87, the tile's stripe pitch, its right edge 1019.82 + the halo 5.8 um short of the core's 1027.64; on the 5x4 it was x 505.31 = 13 pitches, so its power pin columns lie on tile stripes; y 2.72, the row grid; its right edge 825.47 + the 2 um halo, short of the core's 853.76 - a pitch more would not fit). On the 4x4 tile until rc17 it was at 349.83, at the right; on the 5x4 tile rc18 had it at 427.57 (two pitches right, 423 um clear at the left for the pixel Calvin), and rc19 (2026-10-24, Ken: the draw at 427.57 did not route well) two more, as far right as it goes, halos 2 x 1 um (the macro keeps its own 2.72 / 1.38 um margins; cut_rows cuts the row overlapping the halo, a touching one survives) and FP_PRUNE_THRESHOLD dropping the 17-site row stubs between the macro and the core edge that pdngen could not power (PDN-0179; RESPIN.md, the halo trial). The tile's stripes are run over its met4 power pins by flow.py's Tile.ExtendPowerStripes, so pdngen's own connectivity check is not the verdict; src/RAM32.v stays as a model for lint (EXTRA_VERILOG_MODELS), the macro's netlist has no power pins",
   "REMOVE_SOURCES": [
     "RAM32.v"
   ],
@@ -25,10 +25,7 @@
     "RAM32": {
       "instances": {
         "ram1": {
-          "location": [
-            505.31,
-            2.72
-          ],
+          "location": [699.66, 2.72],
           "orientation": "N"
         }
       },
@@ -72,8 +69,9 @@
     "dir::../src/RAM32.v"
   ],
   "//art": "The chip art (Ken, 2026-10-24): Calvin as placement blockages, not metal - his two-colour 73 x 74 drawing (art/calvin_nocircle/source.png, png2pixels.py: black = blocked, 1016 pixels, with 7 filled where two blocked pixels touched only at a corner - Magic nwell.1) as hard placement blockages, each pixel two rows (5.44 um) by 12 sites (5.52 um), the picture 403 x 403 um at (12.42, 97.92), left of the RAM32 with Calvin's bottom about level with the RAM32's top: no cell of any kind on a pixel, the rows, rails and routing go on over them. Project.ArtPixels makes the blockages after the rows are cut; Project.ArtPixelTaps, after tapcell (which ignores blockages), re-taps the rows the picture crosses - the taps on pixels removed and taps added until every free segment of such a row has one within 7 um of every point (Magic nwell.4, LU.2 / LU.3). Tried on the 5x4 tile: runs/macro-calvin-nocircle-5x4 (at y 54.40) routed clean. The met4 Calvin (art/calvin, chip_art.py, on the 4x4 tile from rc4 to rc17) is dropped: on 5x4 its keep-out sat mid-tile, and one draw left 4 VGND shorts against its corner.",
+  "//": "Calvin at half size, centred along Y (t6x4-13, 2026-11-15): the same 73 x 74 picture with 6-site x 1-row pixels (2.76 x 2.72 um), 201 x 201 um from (12.42, 155.04) about the row area's centre 255.68 - 7.5k um2 of blockage instead of the 12 x 2 pixels' 30k. Full size at (12.42, 97.92) the 6x4 routed clean only without the PLC block's eight-and-eight (t6x4-1 .. -8); half size at the lower-left (t6x4-9 / -12) and centred (t6x4-13) routes clean, five rows under the top (t6x4-10 / -11) congests. trial_6x4_halfcalvin*.json are the overlays that were tried.",
   "CHIP_ART_PIXELS_JSON": "dir::art/calvin_nocircle/pixels.json",
-  "CHIP_ART_PIXELS_ORIGIN": [12.42, 97.92],
-  "CHIP_ART_PIXEL_SITES": 12,
-  "CHIP_ART_PIXEL_ROWS": 2
+  "CHIP_ART_PIXELS_ORIGIN": [12.42, 155.04],
+  "CHIP_ART_PIXEL_SITES": 6,
+  "CHIP_ART_PIXEL_ROWS": 1
 }

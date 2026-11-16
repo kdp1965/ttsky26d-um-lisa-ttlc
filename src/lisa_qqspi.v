@@ -185,7 +185,7 @@ module lisa_qqspi
 
    // RESPIN 37.  A read of a flash select with its 0x17 DDR bit, a burst or a
    // single word (the debugger's), is a DTR Fast Read Quad I/O (EDh, the
-   // W25Q128JV-DTR): the instruction on IO0 as before, then the address and
+   // W25Q128JV-DTR): the instruction on sio0 as before, then the address and
    // the mode byte a nibble on each SCLK edge, ddr_dummy dummy clocks, and
    // the data a nibble on each edge.  The address and mode go out with SCLK
    // half a clock late (sclk_n), so each nibble is on the lines half a clock

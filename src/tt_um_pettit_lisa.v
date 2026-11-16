@@ -36,27 +36,43 @@ SUCH DAMAGE.
 //                          |   tt_um_pettit_lisa    |
 //          On              |                        |
 //         Reset            |ui_in             uo_out|
-//           |          pa0 | 0                    0 | pb0
+//           |          pa0 | 0                    0 | pb0 / baud_ref
 //           |          pa1 | 1                    1 | pb1
 //     baud  |          pa2 | 2                    2 | pb2
 //      div -+     rx / pa3 | 3                    3 | pb3
 //           |          pa4 | 4                    4 | pb4 / tx
 //           |          pa5 | 5                    5 | pb5
 //           |          pa6 | 6                    6 | pb6
-//           baud_set / pa7 | 7                    7 | pb7 / baud_ref
+//           baud_set / pa7 | 7                    7 | pb7 / spi cs1
 //                          |                        |
 //                          |                   uio  |
-//                          |                      0 | cs    / ce_latch
-//                          |                      1 | mosi  / dq1 / ce0
-//                          |                      2 | miso  / dq2 / ce1
+//                          |                      0 | ce0  / ce_latch (mode 3)
+//                          |                      1 | sio0 (mosi) / ce0 while uio[0] strobes
+//                          |                      2 | sio1 (miso) / ce1 while uio[0] strobes
 //                          |                      3 | sclk
-//                          |                      4 | scl / rx  / portc_io[0]
-//                          |                      5 | sda / tx  / portc_io[1]
-//                          |                      6 | scl / dq3 / portc_io[2] / rx
-//                          |                      7 | sda / dp4 / portc_io[3]
+//                          |                      4 | portc_io[0] / scl / sio2 (psram_mod) / ce1 / debug rx
+//                          |                      5 | portc_io[1] / sda / sio3 (psram_mod) / debug tx
+//                          |                      6 | scl / portc_io[2] / sio2 / ce1 (psram_mod) / debug rx
+//                          |                      7 | sda / portc_io[3] / sio3
 //                          |                        |
 //                          +------------------------+
 //
+//   uo: output mux 0 (the defaults: baud_ref on uo[0], the debug UART's tx on
+//       uo[4] with rx_sel 1, the SPI master's CS1 on uo[7]) and mux 1 (Port B)
+//       shown; muxes 2 and 3 (UART2, Timer 3, the SPI master, the TTLC and
+//       WS2812B pins) are in lisa_io_mux.v
+//   uio[3:0]: the QSPI bus (lisa_qqspi.v's sio0-sio3 are the four data lines).
+//       In io mux mode 3 of uio[7] (the custom Pmod) uio[0] is the CE latch
+//       strobe and uio[1] / uio[2] carry ce0 / ce1 while it is active
+//   uio[7:4] (debug register 0x1c [7:0], two mode bits a pin; psram_mod = 0x1c
+//       bit 10, the Tiny Tapeout QSPI Pmod):
+//       mode 0: uio[4] / uio[5] inputs (not driven), uio[6] scl, uio[7] sda
+//       mode 1: portc_io[0..3]
+//       mode 2: uio[4] scl, uio[5] sda, uio[6] sio2, uio[7] sio3; with psram_mod
+//               uio[4] sio2, uio[5] sio3, uio[6] ce1, uio[7] driven high
+//       mode 3: uio[4] ce1, uio[5] low, uio[6] sio2, uio[7] sio3
+//       the debug UART's rx_sel 2 / 3 take uio[5] as its tx and uio[6] / uio[4]
+//       as its rx (inputs) over the mode
 //
 //   ui: Sampled at reset
 //      7: HIGH to sample ui[6:0] as BAUD divider at reset and disable AutoBaud
@@ -143,7 +159,7 @@ module tt_um_pettit_lisa
    // ==========================================================================
    // Processor Interrupts
    // ==========================================================================
-   wire   [8:0]         int_vec;             // bit 8: Timer 3 (RESPIN 32)
+   wire   [10:0]        int_vec;             // bit 8: Timer 3 (RESPIN 32), 9 the HSCs, 10 the SP fault (RESPIN 40)
    wire   [7:0]         int_en_vec;
    wire   [1:0]         t3_pwm;
    wire                 ws_en;               // RESPIN 33: the WS2812B driver
@@ -159,6 +175,17 @@ module tt_um_pettit_lisa
    wire   [15:0]        ws_base;
    wire                 dbg_cache_flush;     // the debugger's flush (the driver's ORed in)
    wire                 wdt_reset;           // RESPIN 36: the watchdog resets the core and the peripherals
+   wire                 splim_reset;         // RESPIN 40: the SP limit fault's reset, the same way
+   wire   [22:0]        core_sp;             // the core's SP for the SP limit compare
+   wire                 plc_we;              // RESPIN 40: the PLC block's bits in the TTLC's I/O space
+   wire   [3:0]         plc_addr;
+   wire                 plc_bit;
+   wire   [7:0]         cnt_rst;
+   wire   [7:0]         t_done;
+   wire   [7:0]         c_done;
+   wire   [1:0]         hsc_ge;
+   wire                 uart2_de;            // RESPIN 40: UART2's RS-485 direction on uo[7] (mux 2)
+   wire                 uart2_de_en;
    wire   [1:0]         t3_pwm_oe;
 
    // ==========================================================================
@@ -465,7 +492,7 @@ module tt_um_pettit_lisa
       .clk                       ( clk                       ),
       .rst_n                     ( rst_n_r[2]                ),
       .rst_async_n               ( rst_async_n_r[2]          ),
-      .reset                     ( dbg_reset | wdt_reset     ),  // the debugger's reset, or the watchdog's (RESPIN 36)
+      .reset                     ( dbg_reset | wdt_reset | splim_reset ),  // the debugger's reset, the watchdog's (RESPIN 36) or the SP fault's (RESPIN 40)
                                                              
       // Instruction bus                                     
       .inst_i                    ( core_inst                 ),
@@ -491,7 +518,7 @@ module tt_um_pettit_lisa
       .d_ready                   ( d_ready & d_addr_good     ),
 
       .int_i                     ( int_vec                   ),
-      .int_en                    ( {1'b1, int_en_vec}        ),   // Timer 3 gates its request with its own IE
+      .int_en                    ( {3'b111, int_en_vec}      ),   // Timer 3, the HSCs and the SP fault gate their requests with their own IEs
                                                              
       // Debug bus                                           
       .dbg_a                     ( dbg_a                     ),
@@ -500,7 +527,8 @@ module tt_um_pettit_lisa
       .dbg_we                    ( dbg_we                    ),
       .dbg_rd                    ( dbg_rd                    ),
       .dbg_ready                 ( dbg_ready_lisa            ),
-      .dbg_halted                ( dbg_halted                )
+      .dbg_halted                ( dbg_halted                ),
+      .sp_o                      ( core_sp                   )
    );
 
    // ==========================================================================
@@ -646,7 +674,7 @@ module tt_um_pettit_lisa
    lisa_periph i_lisa_periph
    (
       .clk                       ( clk                       ),
-      .rst_n                     ( rst_n_r[2] & ~wdt_reset   ),  // RESPIN 36: the watchdog resets the peripherals ...
+      .rst_n                     ( rst_n_r[2] & ~wdt_reset & ~splim_reset ),  // RESPIN 36: the watchdog resets the peripherals (RESPIN 40: the SP fault too) ...
       .rst_por_n                 ( rst_n_r[2]                ),  // ... but not itself
 `ifdef WANT_UART2
       .rst_async_n               ( rst_async_n_r[2]          ),
@@ -728,7 +756,19 @@ module tt_um_pettit_lisa
       .ws_adv                    ( ws_adv                    ),
       .ws_last_grp               ( ws_last_grp               ),
       .ws_base                   ( ws_base                   ),
-      .wdt_reset                 ( wdt_reset                 )
+      .wdt_reset                 ( wdt_reset                 ),
+      // RESPIN 40
+      .plc_we                    ( plc_we                    ),
+      .plc_addr                  ( plc_addr                  ),
+      .plc_bit                   ( plc_bit                   ),
+      .cnt_rst                   ( cnt_rst                   ),
+      .t_done                    ( t_done                    ),
+      .c_done                    ( c_done                    ),
+      .hsc_ge                    ( hsc_ge                    ),
+      .uart2_de                  ( uart2_de                  ),
+      .uart2_de_en               ( uart2_de_en               ),
+      .sp_i                      ( core_sp                   ),
+      .splim_reset               ( splim_reset               )
    );
 
    // ==========================================================================
@@ -1073,6 +1113,8 @@ module tt_um_pettit_lisa
       .uart2_rx                  ( uart2_rx                  ),
       .uart2_tx                  ( uart2_tx                  ),
 `endif
+      .uart2_de                  ( uart2_de                  ),  // RESPIN 40
+      .uart2_de_en               ( uart2_de_en               ),
 
       // QSPI I/O signals
       .sclk                      ( sclk                      ),
@@ -1235,7 +1277,14 @@ module tt_um_pettit_lisa
       .lisa_idx                  ( ttlcio_idx                ),
       .lisa_wdata                ( ttlcio_wdata              ),
       .lisa_we                   ( ttlcio_we                 ),
-      .lisa_rdata                ( ttlcio_rdata              )
+      .lisa_rdata                ( ttlcio_rdata              ),
+      .t_done                    ( t_done                    ),  // RESPIN 40
+      .c_done                    ( c_done                    ),
+      .hsc_ge                    ( hsc_ge                    ),
+      .plc_we                    ( plc_we                    ),
+      .plc_addr                  ( plc_addr                  ),
+      .plc_bit                   ( plc_bit                   ),
+      .cnt_rst                   ( cnt_rst                   )
    );
 
    assign rr_value  = RR;

@@ -37,18 +37,17 @@ Debug module:
                written { 13'h0, single_step, resume, halt }
                read    { D_BITS[4:0], PC_BITS[3:0], 6'h0, halted } (D_BITS 23: REV3.md)
       1:    Acc / flags
-               { 4'h0,  cond_code[1:0], cflag, zflag, acc }
+               { 1'b0, amode[2:0], cond[1:0], cflag, zflag, acc }
       2:    PC
       3:    SP
       4:    RA
       5:    IX
       6:    Data bus
       7:    Data Bus Address
-      8:    Breakpoint 0
-               [ en0, bkpt0 }
-      9:    Breakpoint 0
-               [ en1, bkpt1 }
+      8-d:  Breakpoints 0-5 (DBG_BRKPOINTS, SIX_BREAK)
+               { en, bkpt }
       f:    Current instruction word
+      30-34: f0, f1, f2, f3, facc            the BF16 registers (read only)
       38:   {8'h0, ix_cond, IX[22:16]}      the upper bytes of the 24-bit registers (REV3.md);
       39:   {9'h0, SP[22:16]}               2 / 3 / 4 / 5 read and write the low 16 bits
       3a:   {8'h0, ra_cond, RA[22:16]}

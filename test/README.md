@@ -1,8 +1,9 @@
 # The testbenches
 
-Three cocotb testbenches, Verilator where it is installed (5.036 or later;
-on this Mac cocotb's libraries are x86_64 builds and the Makefiles say so),
-icarus otherwise or with `make SIM=icarus` (what CI runs).
+Three cocotb testbenches, Verilator where it is installed (5.036 or later),
+icarus otherwise or with `make SIM=icarus` (what CI runs).  On this Mac the
+tools are arm64 (cocotb 2.1 in `~/venvs/cocotb`: `export PATH=~/venvs/cocotb/bin:$PATH`
+first; the Makefiles' x86_64 branch is for an Intel cocotb and no longer triggers).
 
 ## `test/` - the chip
 
@@ -34,6 +35,10 @@ make DDRSWEEP=1               # RESPIN 37: the DDR capture point swept through t
 make DDR_CAP=1 ...            # any test with DDR instruction reads (0x17 bit 6, that capture point);
                               # SEAMLESS=1 the SDR bursts through the pipeline; DDR_TOGGLE=<clocks>
                               # (with IHX=) flips both while the program runs
+make MISC40=1                 # RESPIN 40: progs/misc40.c - the 16 x 16 multiplier, sleep, UART2's FIFO / DE /
+                              # idle timer, the high-speed counters, the SP limit fault (and its reset)
+make PLC=1                    # RESPIN 40: progs/plc.c sets the PLC timers / counters up, then the ladder
+                              # progs/ttlc/ttlc_plc.asm runs them on the MC14500B against the chains
 make WSDMA=1                  # the WS2812B DMA (RESPIN 35): progs/wsdma.c - frames from the PSRAM on uo[1] /
                               # uo[2], the cache flushed, thrashed meanwhile, REPEAT; tb.v's receivers check them
 make TIMER3=1                 # Timer 3 (RESPIN 32): progs/timer3.c - the timer, captures of tb.v's
@@ -53,6 +58,12 @@ make SPI_TCO=24 SPI_REG=0x6010  # any of these with the flash's and PSRAM's data
                               # (test_bigframe, test_ptroff; with the TT07
                               # build also the cache tests)
 make SIM=icarus               # what CI runs
+make GATES=yes SIM=icarus MACRO_NETLIST=../macros/RAM32.pnl.v   # gate level: test/gate_level_netlist.v
+                              # (a run's final/pnl) with the RAM32's netlist; Verilator refuses the
+                              # netlist's power pins tied to constants, so icarus; PDK_ROOT set
+make GATES=yes SIM=icarus MACRO_NETLIST=../src/RAM32.v MISC40=1     # the same with the behavioural RAM
+                              # (zeroed at time 0): programs that load 16-bit values through IX
+                              # read a stack byte they never wrote, X with the macro's latches
 ```
 
 `TIMEOUT` is clocks of console silence (a program that computes for long

@@ -87,6 +87,7 @@ module tb
    reg [31:0] st_clocks = 0, st_insts = 0, st_wait = 0, st_xfers = 0, st_words = 0;
    reg        st_ready_r = 0;
    reg [3:0]  st_state_r = 0;
+`ifndef GL_TEST                        // the counts and the trace below read the RTL's hierarchy
    always @(posedge clk)
    begin
       st_clocks  <= st_clocks + 1;
@@ -97,6 +98,7 @@ module tb
       if (lisa.i_lisa_qqspi.ready & !st_ready_r) st_words <= st_words + 1;
       if (st_state_r == 4'd0 && lisa.i_lisa_qqspi.state == 4'd1) st_xfers <= st_xfers + 1;
    end
+`endif
 
    // ==========================================================================
    // +TRACE=<file>: an instruction trace to compare with lisa_sim's ("trace
@@ -111,6 +113,7 @@ module tb
    // X lines (an interrupt entry) are written from reset, so the bank
    // switches before the trigger can be compared too.
    // ==========================================================================
+`ifndef GL_TEST
    integer        tr_fd = 0;
    reg [1023:0]   tr_file;
    reg [31:0]     tr_pc = 32'hFFFF_FFFF, tr_cb = 32'hFFFF_FFFF, tr_count = 32'hFFFF_FFFF;
@@ -180,6 +183,89 @@ module tb
                     lisa.i_lisa_core.pc, lisa.int_vec);
       end
    end
+`endif
+
+   // +HSCPROBE (make HSCPROBE=1): HSC0's state - at gate level by the flat
+   // netlist's net names, at RTL by the hierarchy - and the interrupt entries
+   // (the misc40 hang of 2026-11-15 under icarus, RTL and gate level alike:
+   // the program waits for the count to leave 0 after check 8)
+`ifdef GL_TEST
+   wire [15:0] gl_hsc0_cnt  = {lisa.\i_lisa_periph.i_lisa_hsc0.cnt[15] , lisa.\i_lisa_periph.i_lisa_hsc0.cnt[14] , lisa.\i_lisa_periph.i_lisa_hsc0.cnt[13] , lisa.\i_lisa_periph.i_lisa_hsc0.cnt[12] , lisa.\i_lisa_periph.i_lisa_hsc0.cnt[11] , lisa.\i_lisa_periph.i_lisa_hsc0.cnt[10] , lisa.\i_lisa_periph.i_lisa_hsc0.cnt[9] , lisa.\i_lisa_periph.i_lisa_hsc0.cnt[8] , lisa.\i_lisa_periph.i_lisa_hsc0.cnt[7] , lisa.\i_lisa_periph.i_lisa_hsc0.cnt[6] , lisa.\i_lisa_periph.i_lisa_hsc0.cnt[5] , lisa.\i_lisa_periph.i_lisa_hsc0.cnt[4] , lisa.\i_lisa_periph.i_lisa_hsc0.cnt[3] , lisa.\i_lisa_periph.i_lisa_hsc0.cnt[2] , lisa.\i_lisa_periph.i_lisa_hsc0.cnt[1] , lisa.\i_lisa_periph.i_lisa_hsc0.cnt[0] };
+   wire [1:0]  gl_hsc0_sync = {lisa.\i_lisa_periph.i_lisa_hsc0.sync2[1] , lisa.\i_lisa_periph.i_lisa_hsc0.sync2[0] };
+   wire [1:0]  gl_hsc0_fab  = {lisa.\i_lisa_periph.i_lisa_hsc0.fab[1] , lisa.\i_lisa_periph.i_lisa_hsc0.fab[0] };
+   wire        gl_hsc0_en   = lisa.\i_lisa_periph.i_lisa_hsc0.en ;
+   wire        gl_hsc0_irq  = 1'b0;
+   wire        gl_isr_jump  = 1'b0;
+   wire [10:0] gl_int_vec   = 11'h0;
+   wire [14:0] gl_pc        = 15'h0;
+   wire        gl_fetch     = 1'b0;
+   wire [15:0] gl_inst      = 16'h0;
+`else
+   wire [15:0] gl_hsc0_cnt  = lisa.i_lisa_periph.i_lisa_hsc0.cnt;
+   wire [1:0]  gl_hsc0_sync = lisa.i_lisa_periph.i_lisa_hsc0.sync2;
+   wire [1:0]  gl_hsc0_fab  = lisa.i_lisa_periph.i_lisa_hsc0.fab;
+   wire        gl_hsc0_en   = lisa.i_lisa_periph.i_lisa_hsc0.en;
+   wire        gl_hsc0_irq  = lisa.i_lisa_periph.hsc0_irq;
+   wire        gl_isr_jump  = lisa.i_lisa_core.isr_jump;
+   wire [10:0] gl_int_vec   = lisa.int_vec;
+   wire [14:0] gl_pc        = lisa.i_lisa_core.pc;
+   wire        gl_fetch     = lisa.core_i_fetch & lisa.core_i_ready;
+   wire [15:0] gl_inst      = lisa.core_inst;
+`endif
+   integer     gl_after = 0;             // fetches still to print after an ISR entry
+   integer     gl_idle = 0;              // clocks since the last completed fetch (the stall detector)
+   reg [6:0]   gl_ix_hi_r = 0; reg [7:0] gl_acc_r = 0;
+   reg [15:0]  gl_cnt_r = 0; reg gl_en_r = 0, gl_irq_r = 0, gl_isr_r = 0; reg [1:0] gl_sync_r = 0; integer gl_n = 0;
+   always @(posedge clk)
+      if ($test$plusargs("HSCPROBE"))
+      begin
+         gl_cnt_r <= gl_hsc0_cnt; gl_en_r <= gl_hsc0_en; gl_sync_r <= gl_hsc0_sync; gl_irq_r <= gl_hsc0_irq; gl_isr_r <= gl_isr_jump;
+         if (gl_hsc0_en !== gl_en_r)
+            $display("[HSC0] %0t en=%b ui_in[1:0]=%b sync2=%b fab=%b cnt=%h", $time, gl_hsc0_en, ui_in[1:0], gl_hsc0_sync, gl_hsc0_fab, gl_hsc0_cnt);
+         if (gl_hsc0_en === 1'b1 && gl_hsc0_sync !== gl_sync_r && gl_n < 24)
+         begin
+            gl_n = gl_n + 1;
+            $display("[HSC0] %0t sync2 %b -> %b (ui_in[1:0]=%b) fab=%b cnt=%h", $time, gl_sync_r, gl_hsc0_sync, ui_in[1:0], gl_hsc0_fab, gl_hsc0_cnt);
+         end
+         if (gl_hsc0_cnt !== gl_cnt_r && gl_n < 48)
+         begin
+            gl_n = gl_n + 1;
+            $display("[HSC0] %0t cnt %h -> %h", $time, gl_cnt_r, gl_hsc0_cnt);
+         end
+         if (gl_hsc0_irq !== gl_irq_r)
+            $display("[HSC0] %0t irq=%b cnt=%h", $time, gl_hsc0_irq, gl_hsc0_cnt);
+         if (gl_isr_jump === 1'b1 && gl_isr_r !== 1'b1)
+         begin
+            $display("[ISR]  %0t int_vec %b pc=%h", $time, gl_int_vec, gl_pc);
+            gl_after = (gl_int_vec[9] === 1'b1) ? 80 : 12;
+         end
+`ifndef GL_TEST
+         // the first clock IX's upper byte (or the accumulator) turns X: who did it
+         if ((^lisa.i_lisa_core.ix[22:16]) === 1'bx && (^gl_ix_hi_r) !== 1'bx)
+            $display("[IXX]  %0t ix %h -> %h (upper byte X) pc=%h inst_r=%h acc=%h sp=%h d_addr=%h d_i=%h", $time, {gl_ix_hi_r, 16'h0}, lisa.i_lisa_core.ix, gl_pc, lisa.i_lisa_core.inst_r, lisa.i_lisa_core.acc, lisa.i_lisa_core.sp, lisa.d_addr, lisa.d_i);
+         if ((^lisa.i_lisa_core.acc) === 1'bx && (^gl_acc_r) !== 1'bx)
+            $display("[ACCX] %0t acc %h -> %h pc=%h inst_r=%h d_addr=%h d_i=%h", $time, gl_acc_r, lisa.i_lisa_core.acc, gl_pc, lisa.i_lisa_core.inst_r, lisa.d_addr, lisa.d_i);
+         gl_ix_hi_r <= lisa.i_lisa_core.ix[22:16]; gl_acc_r <= lisa.i_lisa_core.acc;
+         // the core stopped fetching: its bus and state
+         gl_idle = gl_fetch ? 0 : gl_idle + 1;
+         if (gl_idle == 5000 || gl_idle == 50000)
+         begin
+            $display("[STALL] %0t no fetch for %0d clocks: pc=%h state=%0d cond=%b ie=%b d_valid=%b d_ready=%b d_periph=%b d_we=%b d_rd=%b d_addr=%h sleep_hold=%b stop=%b",
+                     $time, gl_idle, gl_pc, lisa.i_lisa_core.state, lisa.i_lisa_core.cond, lisa.i_lisa_core.ie,
+                     lisa.d_valid, lisa.d_ready, lisa.d_periph, lisa.d_we, lisa.d_rd, lisa.d_addr,
+                     lisa.i_lisa_core.sleep_hold, lisa.i_lisa_core.stop);
+            $display("[STALL] regs: acc=%h ix=%h%s sp=%h ra=%h ia=%h inst_r=%h d_addr_c=%h d_addr_good=%b d_ok=%b",
+                     lisa.i_lisa_core.acc, lisa.i_lisa_core.ix, lisa.i_lisa_core.ix_cond ? "c" : " ", lisa.i_lisa_core.sp,
+                     lisa.i_lisa_core.ra, lisa.i_lisa_core.ia, lisa.i_lisa_core.inst_r, lisa.d_addr_c, lisa.d_addr_good,
+                     lisa.i_lisa_core.d_ok);
+         end
+`endif
+         if (gl_after > 0 && gl_fetch)
+         begin
+            gl_after = gl_after - 1;
+            $display("[PC]   %0t %h inst=%h", $time, gl_pc, gl_inst);
+         end
+      end
 
    initial begin
      if ($test$plusargs("DUMP"))
@@ -193,11 +279,15 @@ module tb
    // ==========================================================================
    // instantiate the DUT
    // ==========================================================================
+`ifdef GL_TEST
+   wire VPWR = 1'b1;                  // the netlist's power pins are inouts: wires, not literals
+   wire VGND = 1'b0;
+`endif
    tt_um_pettit_lisa lisa
    (
 `ifdef GL_TEST
-      .VPWR(1'b1),
-      .VGND(1'b0),
+      .VPWR(VPWR),
+      .VGND(VGND),
 `endif
       .ui_in   ( ui_in    ),
       .uo_out  ( uo_out   ),

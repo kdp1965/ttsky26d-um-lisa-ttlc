@@ -227,11 +227,13 @@ module lisa_spi
 
    always @*
    begin
-      case (d_addr)
-      7'h28:   d_o = shreg;
-      7'h29:   d_o = ctrl;
-      7'h2A:   d_o = div;
-      7'h2B:   d_o = {4'h0, scan_req_r & owned, owned, done, busy | pend};
+   // the read decode is on d_addr[3:0]: lisa_periph.v gates d_o by the
+   // 16-register group d_addr[6:4] (the two-level read decode, t6x4-8)
+      case (d_addr[3:0])
+      4'h8:   d_o = shreg;
+      4'h9:   d_o = ctrl;
+      4'hA:   d_o = div;
+      4'hB:   d_o = {4'h0, scan_req_r & owned, owned, done, busy | pend};
       default: d_o = 8'h0;
       endcase
    end

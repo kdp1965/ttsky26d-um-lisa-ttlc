@@ -1,0 +1,5 @@
+{
+  "//": "t6x4-3 candidate (2026-11-14): the corner keepouts of trial_6x4_keepout.json with GPL_CELL_PADDING 1 instead of 2. t6x4-1 (no keepouts) placed at 88.5% padded utilization and its detailed route crawled below 1000 violations at the macro's upper-left corner; t6x4-2 (keepouts) placed at 91.8% with more global-route overflow. The padding is what reserves room for the repair / CTS / hold buffers (macro.json's note: 60% -> 92-100% bins); a site each side instead of two frees about 15% of the padded area.",
+  "GPL_CELL_PADDING": 1,
+  "PL_SOFT_OBSTRUCTIONS": [[639.66, 119.68, 759.66, 189.68], [659.66, 60.0, 699.66, 119.68], [959.82, 119.68, 1027.6, 189.68]]
+}

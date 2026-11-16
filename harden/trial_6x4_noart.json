@@ -1,0 +1,4 @@
+{
+  "//": "t6x4-5 (2026-11-14): t6x4-1's recipe without Calvin's placement blockages, to measure what the art costs the 6x4 tile. t6x4-1 (no obstructions) placed at 88.5% padded utilization and its detailed route was at 600 violations after 26 iterations, all at the RAM32's pin corner; every keepout or channel variant (t6x4-2/-4) raised the density past 91% and routed worse, and lighter cell padding (t6x4-3) tripled the global-route overflow. Calvin's 997 pixels block 30k um2 (about 6% of the core): if the tile routes clean without them, the picture has to shrink, move or share the tile with fewer features.",
+  "CHIP_ART_PIXELS_JSON": null
+}

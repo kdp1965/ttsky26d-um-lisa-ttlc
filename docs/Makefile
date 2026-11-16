@@ -1,7 +1,8 @@
 SRCS = $(wildcard *.txt)
 PNGS = $(SRCS:.txt=.png)
 
-ASCEE = ../../../../ascee/ascee
+# The renderer: AscEE (ascee), Ken's ASCII-art to PNG/SVG generator, from PATH
+ASCEE ?= ascee
 
 all: $(PNGS)
 

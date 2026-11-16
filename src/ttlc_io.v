@@ -51,24 +51,44 @@ module ttlc_io
    input  wire [4:0]    lisa_idx,
    input  wire [7:0]    lisa_wdata,
    input  wire          lisa_we,
-   output wire [7:0]    lisa_rdata
+   output wire [7:0]    lisa_rdata,
+   // RESPIN 40: the PLC block's bits in the I/O space - 139-146 the timers
+   // (a write is the timer's IN, a read its Q), 147-154 the counters (a
+   // write its CU, a read its Q), 155 / 156 the HSCs' count >= compare;
+   // plc_we is the ICU's write level (WRITE) for 139-154, the block latches
+   // the bit; counter n's reset is storage bit 120 + n (I/O address 248 + n)
+   input  wire [7:0]    t_done,
+   input  wire [7:0]    c_done,
+   input  wire [1:0]    hsc_ge,
+   output wire          plc_we,
+   output wire [3:0]    plc_addr,      // address - 139: 0-7 the timers, 8-15 the counters
+   output wire          plc_bit,
+   output wire [7:0]    cnt_rst
 );
 
    // Internal memory for temporary storage and output register: 64 bits
    // since RESPIN 31 - bits 0-31 at addresses 96-127 as before, bits 32-63
    // at 160-191 (a block of 32 above the constants: one compare decodes it)
-   reg  [63:0]   temp_storage;
+   reg  [127:0]  temp_storage;         // 128 bits: 0-31 at 96-127, 32-63 at 160-191, 64-127 at 192-255 (RESPIN 40)
 
    // A large vector that contains all read back values: 0-47 the outputs,
    // 48-95 the inputs, 96-127 storage 0-31, 128-135 port_in, 136 RR, 137 0,
    // 138 1, 139-159 0, 160-191 storage 32-63; above 191 reads 0
-   wire [191:0] read_values;
+   wire [255:0] read_values;
    wire [255:0] read_all;
 
-   // Assign values to the large vector
-   assign read_values = {temp_storage[63:32], 21'h0, 1'b1, 1'b0, rr_value, port_in,
+   // Assign values to the large vector: 255-192 storage 64-127, 191-160
+   // storage 32-63, 159-157 0, 156-155 the HSCs' GE, 154-147 the counters'
+   // Q, 146-139 the timers' Q, 138 1, 137 0, 136 RR, 135-128 port_in,
+   // 127-96 storage 0-31, 95-48 the inputs, 47-0 the outputs
+   assign read_values = {temp_storage[127:64], temp_storage[63:32], 3'h0, hsc_ge, c_done, t_done,
+                         1'b1, 1'b0, rr_value, port_in,
                          temp_storage[31:0], input_pins, output_pins};
-   assign read_all    = {64'h0, read_values};
+   assign read_all    = read_values;
+   assign cnt_rst     = temp_storage[127:120];
+   assign plc_we      = mem_write && address >= 8'd139 && address <= 8'd154;
+   assign plc_addr    = address[3:0] - 4'd11;      // 139 = 0x8b: the low nibble less 11, 147 = 0x93 -> 8
+   assign plc_bit     = data_in;
    assign port_out = temp_storage[7:0];
    assign ttlc_int = temp_storage[8];
 
@@ -86,7 +106,7 @@ module ttlc_io
       if (rst)
       begin
          // Reset temporary storage and output registers when RST is high
-         temp_storage <= 64'h0;
+         temp_storage <= 128'h0;
          output_pins <= 48'h0;
       end
       else
@@ -96,9 +116,11 @@ module ttlc_io
          if (lisa_we && lisa_idx < 5'd6)
             output_pins[{lisa_idx[2:0], 3'b000} +: 8] <= lisa_wdata;
          if (lisa_we && lisa_idx[4:2] == 3'b011)       // 12-15: storage 0-31
-            temp_storage[{1'b0, lisa_idx[1:0], 3'b000} +: 8] <= lisa_wdata;
+            temp_storage[{2'b00, lisa_idx[1:0], 3'b000} +: 8] <= lisa_wdata;
          if (lisa_we && lisa_idx[4:2] == 3'b101)       // 20-23: storage 32-63
-            temp_storage[{1'b1, lisa_idx[1:0], 3'b000} +: 8] <= lisa_wdata;
+            temp_storage[{2'b01, lisa_idx[1:0], 3'b000} +: 8] <= lisa_wdata;
+         if (lisa_we && lisa_idx[4:3] == 2'b11)        // 24-31: storage 64-127 (RESPIN 40)
+            temp_storage[{1'b1, lisa_idx[2:0], 3'b000} +: 8] <= lisa_wdata;
 
          if (mem_write)
          begin
@@ -110,9 +132,11 @@ module ttlc_io
             // 32-63 (until RESPIN 31 address[6] & address[5], which also
             // took 224-255 as aliases of 96-127)
             else if (address[7:5] == 3'b011)
-               temp_storage[{1'b0, address[4:0]}] <= data_in;
+               temp_storage[{2'b00, address[4:0]}] <= data_in;
             else if (address[7:5] == 3'b101)
-               temp_storage[{1'b1, address[4:0]}] <= data_in;
+               temp_storage[{2'b01, address[4:0]}] <= data_in;
+            else if (address[7:6] == 2'b11)              // 192-255: bits 64-127 (RESPIN 40)
+               temp_storage[{1'b1, address[5:0]}] <= data_in;
          end
       end
    end

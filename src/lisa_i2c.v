@@ -108,20 +108,22 @@ module lisa_i2c
 
    always @*
    begin
-       case (d_addr)
-           `I2C_REG_CLK_PRE_LSB:
+    // the read decode is on d_addr[3:0]: lisa_periph.v gates d_o by the
+    // 16-register group d_addr[6:4] (the two-level read decode, t6x4-8)
+       case (d_addr[3:0])
+           4'h0:                    // `I2C_REG_CLK_PRE_LSB
                d_o = r_pre[7:0];
-           `I2C_REG_CLK_PRE_MSB:
+           4'h1:                    // `I2C_REG_CLK_PRE_MSB
                d_o = r_pre[15:8];
-           `I2C_REG_CTRL:
+           4'h2:                    // `I2C_REG_CTRL
                d_o = {7'b0, r_ctrl};
-           `I2C_REG_RX:
+           4'h3:                    // `I2C_REG_RX
                d_o = s_rx;
-           `I2C_REG_STATUS: 
+           4'h4:                    // `I2C_REG_STATUS
                d_o = s_status;
-           `I2C_REG_TX:    
+           4'h5:                    // `I2C_REG_TX
                d_o = r_tx;
-           `I2C_REG_CMD:
+           4'h6:                    // `I2C_REG_CMD
                d_o = r_cmd;
            default:
                d_o = 8'h0;

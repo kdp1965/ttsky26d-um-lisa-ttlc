@@ -3,7 +3,7 @@
 
 # defaults
 # Verilator when it is installed (cocotb needs 5.036 or later), else icarus:
-# make SIM=icarus.  On this Mac cocotb's libraries are x86_64 builds.
+# make SIM=icarus.  (The x86_64 branch below is for an Intel cocotb; this Mac's is arm64.)
 SIM ?= $(if $(shell which verilator),verilator,icarus)
 ifeq ($(SIM),verilator)
 # Verilator's own makefile runs python3 (its includer script) with cocotb's
@@ -33,6 +33,7 @@ PROJECT_SOURCES += data_cache8.v inst_stream.v
 PROJECT_SOURCES += i2c_master_byte_ctrl.v i2c_master_bit_ctrl.v lisa_uart.v
 PROJECT_SOURCES += fops.v lampFPU_div_top.sv lampFPU_div.sv lampFPU_fractDiv.sv lampFPU_utils.v
 PROJECT_SOURCES += mc14500b.v ttlc_io.v ttlc_fetch.v shift_reg_io.v
+PROJECT_SOURCES += lisa_plc.v lisa_hsc.v lisa_mul16.v lisa_splim.v
 
 ifneq ($(GATES),yes)
 
@@ -56,6 +57,8 @@ VERILOG_SOURCES += $(PDK_ROOT)/sky130A/libs.ref/sky130_fd_sc_hd/verilog/sky130_f
 
 # this gets copied in by the GDS action workflow
 VERILOG_SOURCES += $(PWD)/gate_level_netlist.v
+# the testbench's own host-side UART models and baud generator are RTL modules
+VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,lisa_tx8n.v lisa_rx8n.v debug_brg.v)
 # a locally hardened build with the RAM32 DFFRAM macro needs its netlist too:
 # make GATES=yes MACRO_NETLIST=../macros/RAM32.pnl.v
 VERILOG_SOURCES += $(MACRO_NETLIST)
@@ -131,6 +134,17 @@ else ifneq ($(WSDMA),)
 # the WS2812B driver's DMA (RESPIN 35): progs/wsdma.c - frames from the
 # PSRAM through the TTLC's fetch on uo[1] / uo[2], the cache on
 PLUSARGS += +FIRMWARE=$(PWD)/progs/wsdma.hex +PROGRAM=wsdma.hex +WSDMA
+else ifneq ($(MISC40),)
+# RESPIN 40: progs/misc40.c - the 16 x 16 multiplier, sleep (Timer 1 wakes
+# the core), UART2's FIFO / DE on uo[7] / idle timer, the high-speed
+# counters on ui_in[1:0] and ui_in[5:4], the SP limit fault (vector 11,
+# then the reset)
+PLUSARGS += +FIRMWARE=$(PWD)/progs/misc40.hex +PROGRAM=misc40.hex +MISC40
+else ifneq ($(PLC),)
+# RESPIN 40: the PLC timers / counters - progs/plc.c from the core, then
+# the ladder program progs/ttlc/ttlc_plc.asm on the MC14500B against the
+# chains (progs/plc_test.hex: plc at 0, the ladder at 0x10000)
+PLUSARGS += +FIRMWARE=$(PWD)/progs/plc_test.hex +PROGRAM=plc_test.hex +PLC
 else ifneq ($(TTLC),)
 # TTLC_IMAGE=<hex>: another flash image (the TTLC program at byte 0x10000);
 # TTLCTRACE=<clocks> logs the TTLC's fetch (SIM=icarus)
@@ -152,6 +166,9 @@ CUSTOM_SIM_DEPS += $(FIRMWARE)
 $(FIRMWARE): $(IHX) ihx2hex.py
 	mkdir -p $(dir $@)
 	$(PYTHON_BIN) ihx2hex.py $< $@
+endif
+ifneq ($(HSCPROBE),)
+PLUSARGS += +HSCPROBE            # tb.v's probe of HSC0 (RTL or gate level), for the misc40 hunt
 endif
 ifneq ($(CACHE),)
 PLUSARGS += +CACHE

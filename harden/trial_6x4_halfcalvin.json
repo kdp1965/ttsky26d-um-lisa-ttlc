@@ -1,0 +1,5 @@
+{
+  "//": "Ken (2026-11-15): Calvin at half size on the 6x4 tile - the same 73 x 74 picture (art/calvin_nocircle), each blocked pixel 6 sites (2.76 um) by 1 row (2.72 um) instead of 12 by 2, so the picture is 201 x 201 um from the same lower-left (12.42, 97.92) and a quarter of the blocked area. make macro TAG=t6x4-9 OVERLAY=trial_6x4_halfcalvin.json, on the RTL of t6x4-8 (the 4 + 4 PLC block, the two-level peripheral read decode).",
+  "CHIP_ART_PIXEL_SITES": 6,
+  "CHIP_ART_PIXEL_ROWS": 1
+}

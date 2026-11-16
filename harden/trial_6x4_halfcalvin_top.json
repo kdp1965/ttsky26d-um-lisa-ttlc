@@ -1,0 +1,6 @@
+{
+  "//": "Ken (2026-11-15): the half-size Calvin of trial_6x4_halfcalvin.json moved up so that his top is five standard-cell rows below the top of the macro's rows: the rows run y 2.72 .. 508.64 (186 rows of 2.72 um), the picture is 74 one-row pixels = 201.28 um tall, so its lower-left is y 508.64 - 5 x 2.72 - 201.28 = 293.76 (row 108); x stays 12.42. make macro TAG=t6x4-10 OVERLAY=trial_6x4_halfcalvin_top.json (the RTL of t6x4-9: the 4 + 4 PLC block, the two-level read decode); t6x4-11 adds two timers (6 + 4) on the same placement.",
+  "CHIP_ART_PIXELS_ORIGIN": [12.42, 293.76],
+  "CHIP_ART_PIXEL_SITES": 6,
+  "CHIP_ART_PIXEL_ROWS": 1
+}

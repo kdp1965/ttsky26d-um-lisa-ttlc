@@ -8,7 +8,7 @@ project:
   clock_hz:     50000000       # Clock frequency in Hz (or 0 if not applicable)
 
   # How many tiles your design occupies? A single tile is about 167x108 uM.
-  tiles: "5x4"          # 856.52 x 511.36 um since 2026-10-24 (rc17 and before: 4x4, 682.64 x 511.36; the TT07 chip was an 8x2, 1378.16 x 225.76)
+  tiles: "6x4"          # 1030.40 x 511.36 um since 2026-11-14 (branch tile6x4, RESPIN 40); 5x4 856.52 x 511.36 since 2026-10-24 (rc17 and before: 4x4, 682.64 x 511.36; the TT07 chip was an 8x2, 1378.16 x 225.76)
 
   # Your top module name must start with "tt_um_". Make it unique by including your github username:
   top_module:  "tt_um_pettit_lisa"
@@ -33,6 +33,10 @@ project:
     - "lisa_ws2812.v"
     - "lisa_cyccnt.v"
     - "lisa_wdt.v"
+    - "lisa_plc.v"
+    - "lisa_hsc.v"
+    - "lisa_mul16.v"
+    - "lisa_splim.v"
     - "debug_ctrl.v"
     - "debug_autobaud.v"
     - "debug_brg.v"
@@ -59,30 +63,30 @@ pinout:
   ui[1]: "pa[1]/b_div[1]/rx2/miso"
   ui[2]: "pa[2]/b_div[2]/rx2/miso"
   ui[3]: "pa[3]/b_div[3]/rx"
-  ui[4]: "pa[4]/b_div[4]/t3_cap0"
-  ui[5]: "pa[5]/b_div[5]/t3_cap1"
-  ui[6]: "pa[6]/b_div[6]"
+  ui[4]: "pa[4]/b_div[4]/t3_cap0/ttlc_in0"
+  ui[5]: "pa[5]/b_div[5]/t3_cap1/ttlc_in1"
+  ui[6]: "pa[6]/b_div[6]/ttlc_in2"
   ui[7]: "pa[7]/b_set(autobaud_disable)/miso"
 
   # Outputs
-  uo[0]: "pb[0]/tx2/ttlc_d0/m3_mosi/ws"
+  uo[0]: "baud_clk/pb[0]/tx2/ttlc_d0/m3_mosi/ws"
   uo[1]: "pb[1]/tx2/pwm0/ttlc_d1/m3_cs0/ws"
   uo[2]: "pb[2]/tx2/pwm1/ttlc_d2/m3_cs1/ws"
-  uo[3]: "pb[3]/spi_cs0"
-  uo[4]: "pb[4]/tx"
-  uo[5]: "pb[5]/spi_sclk/ws"
-  uo[6]: "pb[6]/spi_mosi/ws"
-  uo[7]: "pb[7]/baud_clk/spi_cs1/m3_sclk"
+  uo[3]: "pb[3]/spi_cs0/ttlc_reset"
+  uo[4]: "tx/pb[4]"
+  uo[5]: "pb[5]/spi_sclk/ttlc_latch/ws"
+  uo[6]: "pb[6]/spi_mosi/ttlc_shclk/ws"
+  uo[7]: "spi_cs1/pb[7]/tx2/de/m3_sclk"
 
   # Bidirectional pins
   uio[0]: "ce0/ce_latch"
-  uio[1]: "mosi/dq1/ce0_latch"
-  uio[2]: "miso/dq2/ce1_latch"
+  uio[1]: "mosi/sio0/ce0_latch"
+  uio[2]: "miso/sio1/ce1_latch"
   uio[3]: "sclk"
-  uio[4]: "rx  /pc_io[0]/scl/ce1"
-  uio[5]: "tx  /pc_io[1]/sda"
-  uio[6]: "scl /pc_io[2]/dq2/rx"
-  uio[7]: "sda/pc_io[3]/dq3"
+  uio[4]: "rx/pc_io[0]/scl/sio2/ce1"
+  uio[5]: "tx/pc_io[1]/sda/sio3"
+  uio[6]: "scl/pc_io[2]/sio2/ce1/rx"
+  uio[7]: "sda/pc_io[3]/sio3"
 
 # Do not change!
 yaml_version: 6

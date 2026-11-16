@@ -123,11 +123,13 @@ module lisa_wdt
 
    always @*
    begin
-      case (d_addr)
-      7'h4C:   d_o = {4'h0, scale, en};
-      7'h4D:   d_o = ticks;
-      7'h4E:   d_o = timeout;
-      7'h4F:   d_o = {7'h0, wdrst};
+   // the read decode is on d_addr[3:0]: lisa_periph.v gates d_o by the
+   // 16-register group d_addr[6:4] (the two-level read decode, t6x4-8)
+      case (d_addr[3:0])
+      4'hC:   d_o = {4'h0, scale, en};
+      4'hD:   d_o = ticks;
+      4'hE:   d_o = timeout;
+      4'hF:   d_o = {7'h0, wdrst};
       default: d_o = 8'h0;
       endcase
    end

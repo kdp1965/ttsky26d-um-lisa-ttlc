@@ -72,11 +72,13 @@ module lisa_cyccnt
 
    always @*
    begin
-      case (d_addr)
-      7'h48:   d_o = cnt[7:0];
-      7'h49:   d_o = hold[7:0];
-      7'h4A:   d_o = hold[15:8];
-      7'h4B:   d_o = hold[23:16];
+   // the read decode is on d_addr[3:0]: lisa_periph.v gates d_o by the
+   // 16-register group d_addr[6:4] (the two-level read decode, t6x4-8)
+      case (d_addr[3:0])
+      4'h8:   d_o = cnt[7:0];
+      4'h9:   d_o = hold[7:0];
+      4'hA:   d_o = hold[15:8];
+      4'hB:   d_o = hold[23:16];
       default: d_o = 8'h0;
       endcase
    end

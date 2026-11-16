@@ -89,15 +89,15 @@ SUCH DAMAGE.
 //     uio[2] - MISO
 //     uio[3] - SCLK
 //
-//  Custom QSPI SRAM / QSPI Flash / UART board:
-//     uio[0] - CE_CLK
-//     uio[1] - MOSI / CE0
-//     uio[2] - MISO
-//     uio[3] - SCLK / CE1
-//     uio[4] - DEBUG_RX (input)
-//     uio[5] - DEBUG_TX (output)
-//     uio[6] - Q2 / WP
-//     uio[7] - Q3 / HOLD
+//  Custom QSPI SRAM / QSPI Flash / UART board (io mux mode 3 on uio[7]):
+//     uio[0] - CE_CLK (the latch strobe, ce_latch)
+//     uio[1] - sio0 (MOSI) / CE0 while the strobe is active
+//     uio[2] - sio1 (MISO) / CE1 while the strobe is active
+//     uio[3] - SCLK
+//     uio[4] - DEBUG_RX (input, rx_sel 3) or CE1 (its mode 3)
+//     uio[5] - DEBUG_TX (output, rx_sel 2 / 3)
+//     uio[6] - sio2 (the flash's WP)
+//     uio[7] - sio3 (the flash's HOLD)
 //
 // ==============================================================================
 
@@ -133,6 +133,8 @@ module lisa_io_mux
    // UART2 signals
    output wire             uart2_rx,
    input  wire             uart2_tx,
+   input  wire             uart2_de,           // RESPIN 40: UART2's RS-485 direction ...
+   input  wire             uart2_de_en,        // ... on uo[7] in mux 2 while UART2_CTRL [0] is set (else tx2)
 `endif
 
    // QSPI I/O signals
@@ -273,7 +275,7 @@ module lisa_io_mux
    assign periph_sel1[4] = rx_sel == 2'h1 ? debug_tx : 1'b1;
    assign periph_sel1[5] = spi_sclk;
    assign periph_sel1[6] = spi_mosi;
-   assign periph_sel1[7] = uart2_tx;
+   assign periph_sel1[7] = uart2_de_en ? uart2_de : uart2_tx;   // RESPIN 40
 
    // Assign peripheral select 2 signals
    assign periph_sel2[0] = spi_owned ? spi_mosi    : ws_en ? ws_pins[0] : ttlc_out_data[0];
@@ -380,7 +382,7 @@ module lisa_io_mux
       case (io_mux_bits[5:4])
          2'h0:    s_uio_oe[6] = scl_padoen_o;
          2'h1:    s_uio_oe[6] = lisa_portc_dir_i[2];
-         2'h2:    s_uio_oe[6] = psram_mod ? 1'b1 : sio_oe[2];            // DQ2 / Pmod CS1
+         2'h2:    s_uio_oe[6] = psram_mod ? 1'b1 : sio_oe[2];            // sio2 / Pmod CS1
          2'h3:    s_uio_oe[6] = sio_oe[2];
       endcase
 
@@ -388,7 +390,7 @@ module lisa_io_mux
       case (io_mux_bits[7:6])
          2'h0:    s_uio_oe[7] = sda_padoen_o;
          2'h1:    s_uio_oe[7] = lisa_portc_dir_i[3];
-         2'h2:    s_uio_oe[7] = psram_mod ? 1'b1 : sio_oe[3];            // DQ3 / Pmod CS2 (high)
+         2'h2:    s_uio_oe[7] = psram_mod ? 1'b1 : sio_oe[3];            // sio3 / Pmod CS2 (high)
          2'h3:    s_uio_oe[7] = sio_oe[3];
       endcase
    end

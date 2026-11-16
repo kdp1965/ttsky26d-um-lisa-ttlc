@@ -38,9 +38,9 @@ when it is 3 words ahead of the one the core is on.  The core takes the
 words as it fetches them; the words behind the one it is on stay in the
 window as long as there is room (up to 4 of them), so a loop of five
 instructions or fewer, a polling loop above all, runs from the window.  A
-fetch of the word the burst delivers next is waited for; a fetch of any
-other word the window does not hold (a jump, a return) ends the burst and
-starts one there.  The burst also ends when another client wants the QSPI
+fetch of the word the burst delivers next, or of one of the two after it
+(REACH), is waited for; a fetch of any other word the window does not hold
+(a jump, a return) ends the burst and starts one there.  The burst also ends when another client wants the QSPI
 (the arbiter's yield: the data cache, the debugger, the TTLC), once the
 words ahead are in, and goes on from where it was once the bus is free;
 and on the debugger's invalidate.  Once a burst is requested its first

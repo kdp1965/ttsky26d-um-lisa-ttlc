@@ -1,0 +1,16 @@
+{
+  "//": "Ken's experiment (2026-10-23): Calvin as placement blockages on the 5x4 tile (make macro TILES=5x4 OVERLAY=trial_art_pixels.json; macro_5x4.json moves the RAM32 to x 427.57). The picture is Ken's two-colour art/calvin_small/source.png, 73 x 74: its black pixels (the circle and the lines, 1302 after Ken thickened the eyes, plus 6 filled where two touched only at a corner: Magic nwell.1, png2pixels.py) blocked (art/calvin_small/pixels.json), each two rows (5.44 um) by 12 sites (5.52 um), 403 x 403 um centred left of the RAM32. The taps tapcell puts on the pixels are slid off them (Project.ArtPixelTaps). Earlier: on the 4x4 tile two-row pixels of the met4 Calvin did not place (GPL-0301, 100.5%) and one-row pixels did not converge (global-route overflow 608 vs rc17's 93); on 5x4 with the met4 Calvin's lines and outline (art/calvin_pixels, runs/macro-artpix-5x4) it routed clean. A free draw like trial_anchor_free.json; the met4 Calvin keeps its box (mid-right on this tile). The met4 Calvin is left out of this trial (Ken, 2026-10-24): on the 5x4 tile its keep-out sits mid-tile, and runs/macro-calvin-small-5x4's router left 4 VGND shorts against its corner (5 LVS errors). Then (Ken, 2026-10-24) Calvin without the circle: art/calvin_nocircle/source.png, the same 73 x 74 at the same place, 1016 pixels with 7 corner fills.",
+  "ANCHOR_CELLS_TABLE": null,
+  "ANCHOR_SEQ_TABLE": null,
+  "CHIP_ART_PIXELS_JSON": "dir::art/calvin_nocircle/pixels.json",
+  "CHIP_ART_PIXELS_ORIGIN": [
+    12.42,
+    54.4
+  ],
+  "CHIP_ART_PIXEL_SITES": 12,
+  "CHIP_ART_PIXEL_ROWS": 2,
+  "CHIP_ART_JSON": null,
+  "CHIP_ART_CUT_ROWS": false,
+  "CHIP_ART_KEEPOUT_BOX": null,
+  "ROUTING_OBSTRUCTIONS": null
+}

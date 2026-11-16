@@ -120,7 +120,7 @@ void main(void)
       TIDX = 23;
       (void) TDATA;
       st = TIDX;
-      CHECK(1, a == 3 && b == 4 && c == 18 && st == 0);   /* 24 bytes since RESPIN 31: 23 wraps */
+      CHECK(1, a == 3 && b == 4 && c == 18 && st == 24);  /* 32 bytes since RESPIN 40 (24 since 31): 31 wraps */
 
       TIDX = 17;
       a = TDATA;                               /* {.., 1, 0, RR} */

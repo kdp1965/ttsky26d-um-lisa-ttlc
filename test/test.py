@@ -186,7 +186,8 @@ async def test_ttlc_debug(dut):
 @cocotb.test(skip=plusarg('DEFAULT') is not None or plusarg('TTLC') is not None or plusarg('BANK') is not None or plusarg('OVERRUN') is not None
              or plusarg('SPIM') is not None or plusarg('TTLCIO') is not None or plusarg('TIMER3') is not None
              or plusarg('WS2812') is not None or plusarg('WSDMA') is not None or plusarg('I2C') is not None
-             or plusarg('MISC36') is not None or plusarg('DDRSWEEP') is not None)
+             or plusarg('MISC36') is not None or plusarg('DDRSWEEP') is not None
+             or plusarg('MISC40') is not None or plusarg('PLC') is not None)
 async def test_program(dut):
     """+FIRMWARE=<hex>: run it (the data cache on with +CACHE) and expect ALL PASSED;
     +STATS counts the fetch clocks"""
@@ -601,3 +602,177 @@ async def test_ttlc_trace(dut):
             last = cur
     out = int(dut.ttlc_out.value)
     dut._log.info('outputs %012x' % out)
+
+
+# ---------------------------------------------------------------------------
+# RESPIN 40 (branch tile6x4): the PLC block, the high-speed counters, the
+# multiplier, UART2 for Modbus, the SP limit fault, sleep, 128 storage bits
+# ---------------------------------------------------------------------------
+UART2_BITCLKS = 32                       # misc40.c: UART2_DIV 0, a bit of 32 clocks
+
+
+def _porta(dut, **bits):
+    """set bits of the testbench's porta_in (ui_in) by number, keeping the rest -
+    except bit 7, always cleared: ui_in[7] high makes the debug UART take its
+    baud divider from ui_in[6:0] live (debug_brg.v), so the pins can only be
+    driven in autobaud mode (the generator keeps the rate it has).  A shadow
+    of the value is kept: a write lands at the end of the step, so a read
+    back right after one still shows the old value"""
+    v = getattr(dut, '_porta_shadow', int(dut.porta_in.value) & 0x7f)
+    for k, b in bits.items():
+        n = int(k[1:])
+        v = (v | (1 << n)) if b else (v & ~(1 << n))
+    dut._porta_shadow = v
+    dut.porta_in.value = v
+
+
+async def uart2_send(dut, byte, bitclks=UART2_BITCLKS):
+    """bit-bang a byte into UART2's RX (ui_in[2] with uo[2] the first mux-2 pin)"""
+    for bit in [0] + [(byte >> i) & 1 for i in range(8)] + [1]:
+        _porta(dut, b2=bit)
+        await ClockCycles(dut.clk, bitclks)
+
+
+async def uart2_capture(dut, nbytes, bitclks=UART2_BITCLKS, timeout=400_000):
+    """decode UART2's transmit on uo[2] (mux 2): nbytes bytes, and whether DE on
+    uo[7] was high during them; returns (bytes, de_high_during, de_after)"""
+    got = []
+    de_seen = True
+    for _ in range(timeout // 4):
+        await ClockCycles(dut.clk, 4)
+        if (int(dut.uo_out.value) >> 2) & 1 == 0:          # a start bit (seen within 4 clocks of a 32-clock bit)
+            await ClockCycles(dut.clk, bitclks // 2 - 4)
+            v = 0
+            for i in range(9):
+                await ClockCycles(dut.clk, bitclks)
+                bit = (int(dut.uo_out.value) >> 2) & 1
+                if i < 8:
+                    v |= bit << i
+                de_seen = de_seen and ((int(dut.uo_out.value) >> 7) & 1 == 1)
+            got.append(v)
+            if len(got) == nbytes:
+                break
+    await ClockCycles(dut.clk, 3 * bitclks)
+    de_after = (int(dut.uo_out.value) >> 7) & 1
+    return got, de_seen, de_after
+
+
+async def hsc_stimulus(dut, delay, steps_fwd, steps_back, period, pulses_up, pulses_down):
+    """after delay clocks: quadrature on ui_in[1:0] (A = bit 0, B = bit 1),
+    steps_fwd forward then steps_back back, a step every period clocks; and
+    pulses on ui_in[4] with ui_in[5] the direction (low up, high down)"""
+    await ClockCycles(dut.clk, delay)
+    seq = [(0, 0), (1, 0), (1, 1), (0, 1)]                 # A, B: forward = this order
+    k = 0
+    for _ in range(steps_fwd):
+        k = (k + 1) % 4
+        _porta(dut, b0=seq[k][0], b1=seq[k][1])
+        await ClockCycles(dut.clk, period)
+    for _ in range(steps_back):
+        k = (k - 1) % 4
+        _porta(dut, b0=seq[k][0], b1=seq[k][1])
+        await ClockCycles(dut.clk, period)
+    _porta(dut, b5=0)
+    for _ in range(pulses_up):
+        _porta(dut, b4=1)
+        await ClockCycles(dut.clk, period)
+        _porta(dut, b4=0)
+        await ClockCycles(dut.clk, period)
+    _porta(dut, b5=1)
+    for _ in range(pulses_down):
+        _porta(dut, b4=1)
+        await ClockCycles(dut.clk, period)
+        _porta(dut, b4=0)
+        await ClockCycles(dut.clk, period)
+    _porta(dut, b5=0)
+
+
+async def misc40_stimulus(dut):
+    """the pins for progs/misc40.c: two UART2 bytes once the program waits for
+    them, then the first HSC burst (100 transitions forward and 25 back: 75
+    in x4; HSC1: 50 pulses up and 20 down), then the second burst for the x1
+    test (one count per cycle of four transitions: 25 up, 6 down, 19)"""
+    await ClockCycles(dut.clk, 250_000)
+    await uart2_send(dut, 0x55)
+    await uart2_send(dut, 0xAA)
+    await hsc_stimulus(dut, 250_000, 100, 25, 40, 50, 20)
+    await hsc_stimulus(dut, 400_000, 100, 25, 40, 0, 0)
+
+
+@cocotb.test(skip=plusarg('MISC40') is None)
+async def test_misc40(dut):
+    """+MISC40 (make MISC40=1): progs/misc40.c - RESPIN 40: the multiplier,
+    sleep, UART2's FIFO / DE / idle timer, the high-speed counters and the SP
+    limit fault (its interrupt, then its reset: the program restarts and finds
+    FAULT).  uo[2] (tx2) and uo[7] (DE) in mux 2; the inputs from misc40_stimulus"""
+    lisa = await start(dut)
+    await lisa.setup(cache=False, quad=True)
+    _porta(dut, b2=1)                                                # UART2's RX idles high
+    await lisa.write_reg(0x1b, 0x8020 if os.environ.get('MISC40_UO7', '1') == '1' else 0x0020)   # uo[2] and uo[7] to mux 2
+    cocotb.start_soon(misc40_stimulus(dut))
+    cap = cocotb.start_soon(uart2_capture(dut, 8))
+    text = await lisa.run(timeout=3_000_000)
+    assert 'ALL PASSED' in text and 'FAIL' not in text and 'sp fault reset' in text, \
+        'the RESPIN 40 test did not pass: %r' % text[-500:]
+    got, de_during, de_after = await cap
+    dut._log.info('UART2 sent %s, DE during %s, after %d' % (bytes(got), de_during, de_after))
+    assert got == list(b'ABCDEFGH'), 'UART2 transmitted %r' % bytes(got)
+    assert de_during and de_after == 0, 'DE on uo[7]: during the bytes %s, after %d' % (de_during, de_after)
+
+
+async def plc_outputs(dut, wait):
+    await ClockCycles(dut.clk, wait)
+    return int(dut.ttlc_out.value)
+
+
+@cocotb.test(skip=plusarg('PLC') is None)
+async def test_plc(dut):
+    """+PLC (make PLC=1): progs/plc.c sets the PLC block up from the core and
+    checks it, then the ladder progs/ttlc/ttlc_plc.asm runs on the MC14500B:
+    input 0 through a TON of 50000 clocks to output 0, input 1 through a TOF
+    to output 1, three pulses on input 2 count to output 2 and input 3 resets
+    the counter, inputs 4 / 5 pass through storage bits 64 / 127 to outputs 3 / 4"""
+    lisa = await start(dut)
+    await ttlcio_setup(dut, lisa, 0)
+    dut.ttlc_in.value = 0
+    await lisa.write_reg(0x40, 1)                                    # the ladder runs from the start: once
+    text = await lisa.run(timeout=800_000)                           # the UART is the program's, the debugger is deaf
+    assert 'ALL PASSED' in text and 'FAIL' not in text, 'plc.c did not pass: %r' % text[-300:]
+    await ClockCycles(dut.clk, 30000)
+    assert int(dut.ttlc_out.value) == 0, 'outputs %012x before any input' % int(dut.ttlc_out.value)
+    # TON: output 0 follows input 0 after 100 ticks of 500 clocks
+    dut.ttlc_in.value = 1 << 0
+    out = await plc_outputs(dut, 15000)
+    assert out & 1 == 0, 'the TON fired within 15000 clocks (%012x)' % out
+    out = await plc_outputs(dut, 120000)
+    assert out & 1 == 1, 'the TON did not fire by 135000 clocks (%012x)' % out
+    dut.ttlc_in.value = 0
+    out = await plc_outputs(dut, 15000)
+    assert out & 1 == 0, 'the TON did not clear with its input (%012x)' % out
+    # TOF: output 1 follows input 1 at once and holds 100 ticks after it drops
+    dut.ttlc_in.value = 1 << 1
+    out = await plc_outputs(dut, 15000)
+    assert (out >> 1) & 1 == 1, 'the TOF did not follow its input (%012x)' % out
+    dut.ttlc_in.value = 0
+    out = await plc_outputs(dut, 15000)
+    assert (out >> 1) & 1 == 1, 'the TOF dropped within 15000 clocks (%012x)' % out
+    out = await plc_outputs(dut, 120000)
+    assert (out >> 1) & 1 == 0, 'the TOF did not drop by 135000 clocks (%012x)' % out
+    # the counter: three pulses on input 2, then input 3 resets it
+    for n in range(3):
+        dut.ttlc_in.value = 1 << 2
+        await ClockCycles(dut.clk, 15000)
+        dut.ttlc_in.value = 0
+        out = await plc_outputs(dut, 15000)
+        assert ((out >> 2) & 1) == (1 if n == 2 else 0), 'counter output after pulse %d: %012x' % (n + 1, out)
+    dut.ttlc_in.value = 1 << 3
+    out = await plc_outputs(dut, 15000)
+    assert (out >> 2) & 1 == 0, 'the counter did not reset (%012x)' % out
+    dut.ttlc_in.value = 0
+    # storage bits 64 and 127
+    dut.ttlc_in.value = (1 << 4) | (1 << 5)
+    out = await plc_outputs(dut, 15000)
+    assert (out >> 3) & 3 == 3, 'the storage loopback (64, 127): %012x' % out
+    dut.ttlc_in.value = 0
+    out = await plc_outputs(dut, 15000)
+    assert out == 0, 'outputs %012x after all inputs cleared' % out

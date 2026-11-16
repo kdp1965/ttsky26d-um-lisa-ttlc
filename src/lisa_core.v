@@ -54,7 +54,7 @@ Uses a 14 (or 16) bit program word.  Shown is the 14-bit version.  For 16-bit, e
     10 0010 10110100   cpx  ra              Compare ix and ra
     10 0010 10110110   cpx  sp              Compare ix and sp
                                             
-    10 0001 siiiiiii   mulu  [ix/sp+imm7]   {dstack[0] , a} <= a * M[ix/sp+#imm7]
+    10 0001 siiiiiii   mulu  [ix/sp+imm7]   a <= (a * M[ix/sp+#imm7])[15:8], the product signed if amode[1]
     10 0100 iiiiiiii   adc #imm8            a <= a + imm8 + c, c and z set appropriately
     10 0101 iiiiiiii   ads #imm8            sp <= sp + signed(imm8)
     10 0110 iiiiiiii   adx #imm8            ix <= ix + signed(imm8)
@@ -67,7 +67,7 @@ Uses a 14 (or 16) bit program word.  Shown is the 14-bit version.  For 16-bit, e
     10 1000 000010ii   shl16                {a,temp} <<= 1
     10 1000 000011ii   shr16                {a,temp} >>= 1
     10 1000 000001ux   txa                  Transfer IX[7:0]/IX[14:8] to A based on u
-    10 1000 00010bbb   btst  a,#b           Bit test:  c = a[#b] 
+    10 1000 00010bbb   btst  a,#b           Bit test:  z = a[#b] (c unchanged)
     10 1000 000110cb   ldz                  Load zflag: Complement if C, otherwise zflag = b
     10 1000 00011100   nop
     10 1000 00011101   notz
@@ -79,11 +79,11 @@ Uses a 14 (or 16) bit program word.  Shown is the 14-bit version.  For 16-bit, e
     10 1000 01001000   ldirq                A <= {irq_z, irq_c}
     10 1000 01001001   stirq                {irq_z, irq_c} <= A
     10 1000 01010000mm amode                Set arithemetc mode ([signed:shift])
-    10 1000 01010010xx ldamode              A <= amode
-    10 1000 01010011xx ldamode              lda (ix++)
-    10 1000 01011000   sra                  Save Return Address: M[sp-1] <= ra[7:0], M[sp-2] <= {cond, ra[14:8]}, sp -= 2
-    10 1000 01011001   lra                  Load Return Address: {cond, ra[14:8]} <= M[sp], ra[7:0] <= M[sp+1], sp += 2
-    10 1000 01011010   push ix              Push ix to stack (as sra: ix[7:0] at sp-1, {ix_cond, ix[14:8]} at sp-2)
+    10 1000 01010010xx ldamode              A <= {ie, amode}
+    10 1000 01010011xx lda (ix++)           A <= the byte at IX of code space (word IX[15:1] of bank IX[22:16]), ix++ (REV3.md)
+    10 1000 01011000   sra                  Save Return Address, 3 bytes (REV3.md): M[sp-1] <= ra[7:0], M[sp-2] <= ra[15:8], M[sp-3] <= {cond, ra[22:16]}, sp -= 3
+    10 1000 01011001   lra                  Load Return Address: {cond, ra[22:16]} <= M[sp], ra[15:8] <= M[sp+1], ra[7:0] <= M[sp+2], sp += 3
+    10 1000 01011010   push ix              Push ix to stack (as sra: ix[7:0] at sp-1, ix[15:8] at sp-2, {ix_cond, ix[22:16]} at sp-3)
     10 1000 01011011   pop ix               Pop ix from stack (as lra)
     10 1000 01011100   lddiv                Load dividend from stack: ra[7:0]<=n(sp) (n in the 2nd word) ix[7:0]<=a
     10 1000 01011101   divc                 Chained divide step: {ix, a} / the last divisor; a <= the quotient byte, ix <= the remainder (RESPIN 27)
@@ -101,7 +101,7 @@ Uses a 14 (or 16) bit program word.  Shown is the 14-bit version.  For 16-bit, e
     10 1000 110001dv   rem                  Do signed/unsigned remainder (depending on amode[1])
     10 1001 xxxxxxxx   cpi   a,#imm8        Compare A with immediate data, signed/unsigned depending on amode[1]
 
-  Floating Point ops
+  Floating Point ops (the BF16 unit, WANT_BF16: fops.v, the lampFPU divider)
     10 1000 01111000 0h tfa                 Transfer facc (half) to acc
     10 1000 01111000 1h taf                 Transfer a to facc (half)
 
@@ -110,40 +110,41 @@ Uses a 14 (or 16) bit program word.  Shown is the 14-bit version.  For 16-bit, e
     10 1000 01111011 ff fneg                Negate fx.  Result in fx
     10 1000 01111100 ff fswqp               Swap facc and fx.
     10 1000 01111101 ff fcmp                Compare facc and fx
-    10 1000 01111110 ff fdiv                Divide facc / fx (reserved for future, not implemented yet)
+    10 1000 01111110 ff fdiv                Divide facc / fx (the lampFPU divider, a 2-cycle op)
     10 1000 1100100000  itof                Convert 16-bit facc to bfloat facc
-    10 1000 1100100001  ftoi                Convert 16-bit facc to bfloat facc
+    10 1000 1100100001  ftoi                Convert bfloat facc to a 16-bit integer facc
     10 1000 1100100010  fclr                facc <= 0
 
   Relative branch
-    10 101b bbbbbbbb   bz    #imm9          Branch (+255 / -256) if zflag == 0
+    10 101b bbbbbbbb   bnz   #imm9          Branch (+255 / -256) if zflag == 0
     10 110b bbbbbbbb   br    #imm9          Branch (+255 / -256)
-    10 111b bbbbbbbb   bnz   #imm9          Branch (+255 / -256) if zflag != 0
+    10 111b bbbbbbbb   bz    #imm9          Branch (+255 / -256) if zflag == 1
 
   Indirect, Arithmetic and logical ops
-    11 0000 siiiiiii   add   a,[ix/sp+#imm7]    Unsigned add:  a <= a + M[ix/sp+#imm7] + c
-    11 0001 siiiiiii   mul   [ix/sp+imm7]       {dstack[0] , a} <= a * M[ix/sp+#imm7]
+    11 0000 siiiiiii   add   a,[ix/sp+#imm7]    Unsigned add:  a <= a + M[ix/sp+#imm7] (no carry in, by design; c = the carry out)
+    11 0001 siiiiiii   mul   [ix/sp+imm7]       a <= (a * M[ix/sp+#imm7])[7:0], the product signed if amode[1]
     11 0010 siiiiiii   sub   a,[ix/sp+#imm7]    Unsigned subtract  a <= a - M[ix/sp+#imm7] - c
     11 0011 0iiiiiii   ldxx  #imm7              ix <= M[sp + #imm7]
     11 0011 1iiiiiii   stxx  #imm7              M[sp + #imm7] <= ix
     11 0100 siiiiiii   and   a,[ix/sp+#imm7]
     11 0101 iiiiiiii   andi  a,#imm8            a <= a AND #imm7
     11 0110 siiiiiii   or    a,[ix/sp+#imm7]
-    11 0111 piiiiiii   swapi a,[#imm8]          a <=> mem[#imm7]
+    11 0111 piiiiiii   swapi a,[#imm8]          a <=> mem[#imm7] (p as lda)
     11 1000 siiiiiii   xor   a,[ix/sp+#imm7]
     11 1001 siiiiiii   inx   #imm7(ix/sp)       M[ix/sp + #imm7]++
     11 1010 siiiiiii   cmp   a,[ix/sp+#imm7]    Unsigned compare: c = a<M[ix+#imm7], z = a==M[ix+#imm7]
     11 1011 siiiiiii   swap  a,[ix/sp+#imm7]    a <=> mem[ix+#imm7]
     11 1100 siiiiiii   ldax  [ix/sp+imm7]       a <= mem[ix+#imm7]
-    11 1101 piiiiiii   lda   [imm8]             a <= mem[#imm7], p specifies upper 128 or lower 128 bytes
+    11 1101 piiiiiii   lda   [imm8]             a <= mem[#imm7], p = 1: a peripheral register (d_periph, lisa_periph.v) instead of data memory
     11 1110 siiiiiii   stax  [ix/sp+imm7]       M[ix+#imm7] <= a
-    11 1111 piiiiiii   sta   [imm8]             M[ix+#imm7] <= a
+    11 1111 piiiiiii   sta   [imm8]             mem[#imm7] <= a (p as lda)
 
-  States
-    00  Fetch Instruction
-    01  Decode
-    10  Execute / increment PC
-    11  Stage 2 execute for 2-cycle opcodes
+  States (state[2:0])
+    000  Fetch Instruction
+    001  Predecode
+    010  Decode
+    011  Execute / increment PC
+    100  Stage 2 execute for 2-cycle opcodes
 
   Signed Comparisions:
     acc      cmp(b)    unsigned   cflag   signed    inverted
@@ -207,8 +208,8 @@ module lisa_core
    (* keep = "true" *)
    input  wire                d_ready,
 
-   input  wire [8:0]          int_i,      // NEW Interrupt inputs (bit 8: Timer 3, vector 9 - RESPIN 32)
-   input  wire [8:0]          int_en,     // NEW Interrupt inputs
+   input  wire [10:0]         int_i,      // Interrupt inputs (bit 8: Timer 3, vector 9 - RESPIN 32; 9 the HSCs, 10 the SP fault - RESPIN 40)
+   input  wire [10:0]         int_en,     // Interrupt enables (bits 10:8 come as 1: those sources gate themselves)
 
    input  wire [7:0]          dbg_a,
    input  wire [15:0]         dbg_di,
@@ -216,7 +217,8 @@ module lisa_core
    input  wire                dbg_we,
    input  wire                dbg_rd,
    output wire                dbg_ready,
-   output wire                dbg_halted
+   output wire                dbg_halted,
+   output wire [D_BITS-1:0]   sp_o        // the stack pointer, for the SP limit fault (RESPIN 40)
 );
 
    localparam  D_INST = D_BITS > 10 ? 10 : D_BITS;
@@ -387,7 +389,8 @@ module lisa_core
    wire                       op_amode;
    wire                       op_ldamode;
    wire                       op_ldk;                 // lda (ix++): A <= byte IX[0] of the code word at IX[15:1] of bank IX[22:16], IX++ (RESPIN 26, REV3.md)
-   wire                       op_txah;                // A <= {cond, IX[22:16]} (REV3.md)
+   wire                       op_txah;                 // A <= {cond, IX[22:16]} (REV3.md)
+   wire                       op_sleep;                // sleep (RESPIN 40)
    wire                       op_taxh;                // {cond, IX[22:16]} <= A
    wire                       op_ldxf;                // ldxf #imm24: the two words after it
    (* keep="true" *)
@@ -468,6 +471,7 @@ module lisa_core
    reg                        op_ldamode_r;
    reg                        op_ldk_r;
    reg                        op_txah_r;
+   reg                        op_sleep_r;
    reg                        op_taxh_r;
    reg                        op_ldxf_r;
    (* keep="true" *)
@@ -664,6 +668,7 @@ module lisa_core
    assign op_ldamode  = inst[`PWORD_SIZE-1 -: 14] == 14'b10100001010010;    // ldamode: A <= {ie, amode}, 0xa148 (14 bits: 0xa14c is lda (ix++))
    assign op_ldk      = inst[`PWORD_SIZE-1 -: 14] == 14'b10100001010011;    // lda (ix++), 0xa14c
    assign op_txah     = inst[`PWORD_SIZE-1 -: 14] == 14'b10100000000101;    // txah, 0xa014 (REV3.md)
+   assign op_sleep    = inst[`PWORD_SIZE-1 -: 14] == 14'b10100000000111;    // sleep, 0xa01c (RESPIN 40): exec stalls until an enabled source is pending
    assign op_taxh     = inst[`PWORD_SIZE-1 -: 13] == 13'b1010000100010;     // taxh, 0xa110
    assign op_ldxf     = inst[`PWORD_SIZE-1 -: 12] == 12'b101000011001;      // ldxf #imm24, 0xa190
 `ifdef WANT_BF16
@@ -797,7 +802,13 @@ module lisa_core
    // add read conditions to d_valid
    assign d_valid    = (d_we & ~d_periph) | (d_valid_rd & (exec_state | stg2_state) && !ldx_stage_two && ldxf_stage == 2'd0) |
                        (dbg_d_access && !dbg_d_periph) ;
-   assign d_ok       = (d_ready || !d_valid) && k_ok;
+   // sleep (RESPIN 40): the instruction's exec state holds, through d_ok as a
+   // data wait does, until an enabled interrupt source is pending (ie or not:
+   // with ie the handler is taken at this exec's end, without it the next
+   // instruction runs) or the debugger halts the core
+   wire   sleep_hold = exec_state & cond[0] & op_sleep_r & ~(|(int_i & int_en)) & ~stop;
+   assign d_ok       = (d_ready || !d_valid) && k_ok && !sleep_hold;
+   assign sp_o       = sp;                   // the SP limit fault's compare (RESPIN 40)
    assign d_we       = dbg_d_access ? dbg_we : d_we_r;
    assign d_periph   = ((op_sta_r | op_lda_r | op_swapi_r) & inst_r[9] & !dbg_d_access) | dbg_d_periph;
    assign d_valid_rd = op_mul_r | op_mulu_r | op_pop_ix_r | div_stage_two | rem_stage_two | //(op_any_div & inst[0] == 1'b0) |
@@ -1064,6 +1075,7 @@ module lisa_core
          op_ldamode_r <= 1'b0;
          op_ldk_r     <= 1'b0;
          op_txah_r    <= 1'b0;
+         op_sleep_r   <= 1'b0;
          op_taxh_r    <= 1'b0;
          op_ldxf_r    <= 1'b0;
          op_add_r <= 1'b0;
@@ -1160,6 +1172,7 @@ module lisa_core
          op_ldamode_r <= op_ldamode;
          op_ldk_r     <= op_ldk;
          op_txah_r    <= op_txah;
+         op_sleep_r   <= op_sleep;
          op_taxh_r    <= op_taxh;
          op_ldxf_r    <= op_ldxf;
          op_add_r <= op_add;
@@ -1389,15 +1402,18 @@ module lisa_core
                         signed_inv_live_isr <= cflag_load ? signed_inv_val : signed_inversion;
                         amode_isr <= (op_amode_r & cond[0]) ? inst_r[2:0] : amode;
                         casez (int_i & int_en)
-                        9'b????????1: pc <= PC_BITS'(1);
-                        9'b???????10: pc <= PC_BITS'(2);
-                        9'b??????100: pc <= PC_BITS'(3);
-                        9'b?????1000: pc <= PC_BITS'(4);
-                        9'b????10000: pc <= PC_BITS'(5);
-                        9'b???100000: pc <= PC_BITS'(6);
-                        9'b??1000000: pc <= PC_BITS'(7);
-                        9'b?10000000: pc <= PC_BITS'(8);
-                        default:     pc <= PC_BITS'(9);    // Timer 3 (bit 8, RESPIN 32), or no source
+                        11'b??????????1: pc <= PC_BITS'(1);
+                        11'b?????????10: pc <= PC_BITS'(2);
+                        11'b????????100: pc <= PC_BITS'(3);
+                        11'b???????1000: pc <= PC_BITS'(4);
+                        11'b??????10000: pc <= PC_BITS'(5);
+                        11'b?????100000: pc <= PC_BITS'(6);
+                        11'b????1000000: pc <= PC_BITS'(7);
+                        11'b???10000000: pc <= PC_BITS'(8);
+                        11'b??100000000: pc <= PC_BITS'(9);    // Timer 3 (bit 8, RESPIN 32)
+                        11'b?1000000000: pc <= PC_BITS'(10);   // the high-speed counters (RESPIN 40)
+                        11'b10000000000: pc <= PC_BITS'(11);   // the SP limit fault (RESPIN 40)
+                        default:         pc <= PC_BITS'(9);    // no source
                         endcase
                      end
                      else
@@ -2224,7 +2240,7 @@ module lisa_core
     op_tfa                 Transfer facc (half) to acc
     op_taf                 Transfer a to facc (half)
     op_fmul                Float mult facc * fx.  Result in facc
-    op_fdiv                Float mult facc / fx.  Result in facc
+    op_fdiv                Float divide facc / fx.  Result in facc
     op_fadd                Float add  facc + fx.  Result in facc
     op_fswqp               Swap facc and fx.
    ==================================================

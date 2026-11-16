@@ -1,0 +1,4 @@
+{
+  "//": "t6x4-2 (2026-11-14): soft placement keepouts at the RAM32's corners on the 6x4 tile. t6x4-1's detailed route stalled around 1000 violations, met1 shorts and spacing in the 30 um bins over the macro's left end (x 630-750, y 120-240: cells packed against the halo where the macro's pins are) - the GF180 tile's pattern, which its PL_SOFT_OBSTRUCTIONS at the corners relieved. The macro is at x 699.66-1019.82, y 2.72-119.68: a 120 x 70 um box above its left end, a 40 um column beside its upper left half, and a box above its right end to the core's right edge.",
+  "PL_SOFT_OBSTRUCTIONS": [[639.66, 119.68, 759.66, 189.68], [659.66, 60.0, 699.66, 119.68], [959.82, 119.68, 1027.6, 189.68]]
+}

@@ -54,29 +54,38 @@ Address Map:
    0x09:       Pre Divisor High
    0x0A:       Divisor Low
    0x0B:       Divisor High
-   0x0C:       Control / Status
-   0x0D:       Timer tick
+   0x0C:       Control / Status: [0] enable (r/w), [7] rollover (a read of
+               0x0C or a write of 0x0D clears it)
+   0x0D:       Timer tick (a write loads it and restarts the period)
 
    Interrupt
    =========
-   0x0E:       Interrupt Enable Register
-   0x0F:       Interrupt Status/ACK Register
+   0x0E:       INT_ENABLE: bit n enables source n of INT_STATUS (Timer 3,
+               source 8, is gated by its own IE at 0x3E instead)
+   0x0F:       INT_STATUS: read {7 SPI, 6 I2C, 5 TTLC toggle (or the WS2812B
+               driver while its IE is set), 4 PORT A, 3 UART2, 2 UART1,
+               1 Timer 2, 0 Timer 1}; a 1 written to bit 0, 1, 4 or 5 clears
+               that latched request (the UARTs' are levels: a write to bits
+               2 / 3 does nothing, RESPIN 25)
 
    UART
    ====
-   0x10:       TX/RX register
-   0x11:       Status register: bit 0 RX data available, 1 TX buffer empty,
+   0x10:       UART1 TX (write) / RX (read) data
+   0x11:       UART1 status: bit 0 RX data available, 1 TX buffer empty,
                2 RX overrun (a byte arrived with the 8-byte FIFO full; sticky until it is read empty)
-   0x12:       UART2 TX/RX register
-   0x13:       UART2 status: bits 0-1 as 0x11, 2 autobaud disable (r/w), 3 RX overrun
-   0x1E:       UART2 baud divisor (write): a bit is 32 x (d + 1) clocks
-   0x14:       UART interrupt enables
-
-   BANKS (revision 2, RESPIN 22)
-   =============================
-   0x15:       Code bank  [5:0]: fetches above word 0x4000             (reset 1)
-   0x16:       Data bank  [3:0]: IX-relative and debugger accesses above 0x4000 (reset 1)
-   0x17:       Stack bank [3:0]: SP-relative accesses above 0x4000     (reset 1)
+   0x12:       UART2 TX / RX data
+   0x13:       UART2 status: bits 0-1 as 0x11, 3 RX overrun; bit 2 (r/w,
+               reset 0) disables UART2's autobaud (lisa_uart.v's
+               debug_autobaud): set, only 0x1E's divisor sets the baud
+   0x14:       UART interrupt enables: [0] UART1 RX, [1] UART1 TX, [2] UART2
+               RX, [3] UART2 TX (bits 7:4 read 0)
+   0x15:       CB [6:0]: the code bank, 128 banks of 16K words (RESPIN 22,
+               REV3.md; reset 1, bit 7 reads 0): fetches above word 0x4000
+               come from it; call ix / jmp ix / ret / rets load it from the
+               pointer or the return address.  Revision 2's data and stack
+               banks (0x16, 0x17) are gone - the data space is flat - and
+               those addresses read 0
+   0x1E:       UART2 baud divisor (write only, reads 0): a bit is 32 x (d + 1) clocks
 
    TIMER2
    =====
@@ -176,7 +185,7 @@ module lisa_periph
    input  wire          cb_we,
    input  wire [6:0]    cb_val,
 
-   output wire [8:0]    int_o,               // bit 8: Timer 3 (RESPIN 32), gated by its own IE
+   output wire [10:0]   int_o,               // bit 8: Timer 3 (RESPIN 32), 9 the HSCs, 10 the SP fault (RESPIN 40): gated by their own IEs
    output reg  [7:0]    int_en,
    input  wire          ttlc_int,
 
@@ -242,7 +251,22 @@ module lisa_periph
    output wire [15:0]   ws_base,
 
    // The watchdog (RESPIN 36, lisa_wdt.v): resets the core and the peripherals
-   output wire          wdt_reset
+   output wire          wdt_reset,
+
+   // RESPIN 40: the PLC timers / counters and the HSCs' bits in the TTLC's
+   // I/O space (ttlc_io.v), UART2's RS-485 direction (lisa_io_mux.v), the
+   // SP limit fault (the core's SP in, its reset out)
+   input  wire          plc_we,
+   input  wire [3:0]    plc_addr,
+   input  wire          plc_bit,
+   input  wire [7:0]    cnt_rst,
+   output wire [7:0]    t_done,
+   output wire [7:0]    c_done,
+   output wire [1:0]    hsc_ge,
+   output wire          uart2_de,
+   output wire          uart2_de_en,
+   input  wire [22:0]   sp_i,
+   output wire          splim_reset
 );
 
    reg   [15:0]         ms_count;
@@ -288,6 +312,14 @@ module lisa_periph
    wire  [7:0]          ws_d_o;
    wire  [7:0]          cyc_d_o;             // RESPIN 36: the cycle counter, the watchdog
    wire  [7:0]          wdt_d_o;
+   wire  [7:0]          plc_d_o;             // RESPIN 40
+   wire  [7:0]          hsc0_d_o;
+   wire  [7:0]          hsc1_d_o;
+   wire  [7:0]          mul_d_o;
+   wire  [7:0]          splim_d_o;
+   wire                 hsc0_irq;
+   wire                 hsc1_irq;
+   wire                 splim_irq;
    wire                 ws_ie;
    wire                 ws_irq;
    wire                 t3_irq;
@@ -306,6 +338,13 @@ module lisa_periph
    wire          uart2_brg_wr;
    wire [7:0]    uart2_brg_d;
    reg           uart2_autobaud_disable;
+   reg  [7:0]    uart2_idle_thresh;      // RESPIN 40: 0x16, bit times of silence (0: off)
+   reg           uart2_de_en_r;          // 0x17 [0]
+   reg           uart2_de_pol;           // 0x17 [1]
+   reg           uart2_idle_ie;          // 0x17 [3]
+   wire          uart2_idle_clr;         // 0x17 [2] written 1
+   wire          uart2_tx_idle;
+   wire          uart2_idle_flag;
    reg           uart2_tx_ie;
    reg           uart2_rx_ie;
 `endif
@@ -352,6 +391,10 @@ module lisa_periph
 `endif
 `ifdef WANT_UART2
          uart2_autobaud_disable <= 1'b0;
+         uart2_idle_thresh <= 8'h0;
+         uart2_de_en_r <= 1'b0;
+         uart2_de_pol  <= 1'b0;
+         uart2_idle_ie <= 1'b0;
          uart2_tx_ie  <= 1'b0;
          uart2_rx_ie  <= 1'b0;
 `endif
@@ -580,6 +623,15 @@ module lisa_periph
          // UART2 autobaud disable
          if (d_periph && d_we && d_addr == 7'h13)
             uart2_autobaud_disable <= d_i[2];
+         // RESPIN 40: the Modbus idle threshold and UART2's control
+         if (d_periph && d_we && d_addr == 7'h16)
+            uart2_idle_thresh <= d_i;
+         if (d_periph && d_we && d_addr == 7'h17)
+         begin
+            uart2_de_en_r <= d_i[0];
+            uart2_de_pol  <= d_i[1];
+            uart2_idle_ie <= d_i[3];
+         end
 
 `endif
       end
@@ -611,57 +663,63 @@ module lisa_periph
    end
    endgenerate 
 
+   // The read decode is two-level (t6x4-8): d_addr[6:4] picks the 16-register
+   // group below (grp), each block decodes d_addr[3:0]; d_o_r holds groups 0
+   // and 1 (0x00-0x1F) and so decodes d_addr[4:0].
    always @*
    begin
-      case (d_addr)
+      case (d_addr[4:0])
       // GPIO readback
-      7'h00:   d_o_r = porta_in;
-      7'h01:   d_o_r = portb;
-      7'h02:   d_o_r = {4'h0, portc_read};
-      7'h03:   d_o_r = {4'h0, portc_dir};
-      7'h04:   d_o_r = portd_in;
-      7'h05:   d_o_r = porte;
-      7'h06:   d_o_r = porta_int0;
-      7'h07:   d_o_r = porta_int1;
+      5'h00:   d_o_r = porta_in;
+      5'h01:   d_o_r = portb;
+      5'h02:   d_o_r = {4'h0, portc_read};
+      5'h03:   d_o_r = {4'h0, portc_dir};
+      5'h04:   d_o_r = portd_in;
+      5'h05:   d_o_r = porte;
+      5'h06:   d_o_r = porta_int0;
+      5'h07:   d_o_r = porta_int1;
 
       // Timer readback
-      7'h08:   d_o_r = ms_prediv[7:0];
-      7'h09:   d_o_r = ms_prediv[15:8];
-      7'h0A:   d_o_r = ms_preload[7:0];
-      7'h0B:   d_o_r = ms_preload[15:8];
-      7'h0C:   d_o_r = { ms_rollover, 6'h0, ms_enable};
-      7'h0D:   d_o_r = ms_tick;
+      5'h08:   d_o_r = ms_prediv[7:0];
+      5'h09:   d_o_r = ms_prediv[15:8];
+      5'h0A:   d_o_r = ms_preload[7:0];
+      5'h0B:   d_o_r = ms_preload[15:8];
+      5'h0C:   d_o_r = { ms_rollover, 6'h0, ms_enable};
+      5'h0D:   d_o_r = ms_tick;
 
       // Int EN readback
-      7'h0E:   d_o_r = int_en;
-      7'h0F:   d_o_r = {spi_irq, i2c_irq, int_req};
+      5'h0E:   d_o_r = int_en;
+      5'h0F:   d_o_r = {spi_irq, i2c_irq, int_req};
 
       // UART read
-      7'h10:   d_o_r = uart_rx_d;
+      5'h10:   d_o_r = uart_rx_d;
       // bit 2 (RESPIN 14): a byte arrived with the 8-byte receive FIFO full;
       // clears when the FIFO has been read empty
-      7'h11:   d_o_r = {5'h0, uart_rx_overrun, uart_tx_buf_empty, uart_rx_data_avail};
+      5'h11:   d_o_r = {5'h0, uart_rx_overrun, uart_tx_buf_empty, uart_rx_data_avail};
 
 `ifdef WANT_UART2
       // UART2 read
-      7'h12:   d_o_r = uart2_rx_d;
-      7'h13:   d_o_r = {4'h0, uart2_rx_overrun, uart2_autobaud_disable, uart2_tx_buf_empty, uart2_rx_data_avail};
-      7'h14:   d_o_r = {4'h0, uart2_tx_ie, uart2_rx_ie, uart_tx_ie, uart_rx_ie};
+      5'h12:   d_o_r = uart2_rx_d;
+      5'h13:   d_o_r = {1'b0, uart2_de, uart2_idle_flag, uart2_tx_idle,      // RESPIN 40: [6] DE, [5] IDLE_FLAG, [4] TX_IDLE
+                        uart2_rx_overrun, uart2_autobaud_disable, uart2_tx_buf_empty, uart2_rx_data_avail};
+      5'h16:   d_o_r = uart2_idle_thresh;
+      5'h17:   d_o_r = {4'h0, uart2_idle_ie, 1'b0, uart2_de_pol, uart2_de_en_r};
+      5'h14:   d_o_r = {4'h0, uart2_tx_ie, uart2_rx_ie, uart_tx_ie, uart_rx_ie};
 `else
-      7'h14:   d_o_r = {6'h0, uart_tx_ie, uart_rx_ie};
+      5'h14:   d_o_r = {6'h0, uart_tx_ie, uart_rx_ie};
 `endif
 
       // The code bank register
-      7'h15:   d_o_r = {1'h0, code_bank};
+      5'h15:   d_o_r = {1'h0, code_bank};
 
       // Timer2 readback
 `ifdef TIMER2
-      7'h18:   d_o_r = ms2_prediv[7:0];
-      7'h19:   d_o_r = ms2_prediv[15:8];
-      7'h1A:   d_o_r = ms2_preload[7:0];
-      7'h1B:   d_o_r = ms2_preload[15:8];
-      7'h1C:   d_o_r = { ms2_rollover, 6'h0, ms2_enable};
-      7'h1D:   d_o_r = ms2_tick;
+      5'h18:   d_o_r = ms2_prediv[7:0];
+      5'h19:   d_o_r = ms2_prediv[15:8];
+      5'h1A:   d_o_r = ms2_preload[7:0];
+      5'h1B:   d_o_r = ms2_preload[15:8];
+      5'h1C:   d_o_r = { ms2_rollover, 6'h0, ms2_enable};
+      5'h1D:   d_o_r = ms2_tick;
 `endif
 
       default: d_o_r = 8'h00;
@@ -835,7 +893,17 @@ module lisa_periph
       .wdt_reset    ( wdt_reset       )
    );
 
-   assign d_o = d_o_r | i2c_d_o | spi_d_o | ttlcio_d_o | t3_d_o | ws_d_o | cyc_d_o | wdt_d_o;
+   // the two-level read decode (t6x4-8): the one-hot group of d_addr[6:4]
+   // gates the blocks' read data; the blocks decode d_addr[3:0] only.  Until
+   // then every block compared the whole address and the 13 buses were ORed.
+   wire [7:0] grp = 8'h1 << d_addr[6:4];
+   assign d_o = ({8{grp[0] | grp[1]}} & d_o_r) |                            // 0x00-0x1F
+                ({8{grp[2]}} & (i2c_d_o | spi_d_o | ttlcio_d_o)) |          // 0x20-0x2E
+                ({8{grp[3]}} & t3_d_o) |                                    // 0x30-0x3F
+                ({8{grp[4]}} & (ws_d_o | cyc_d_o | wdt_d_o)) |              // 0x40-0x4F
+                ({8{grp[5]}} & plc_d_o) |                                   // 0x50-0x59
+                ({8{grp[6]}} & (hsc0_d_o | hsc1_d_o)) |                     // 0x60-0x6D
+                ({8{grp[7]}} & (mul_d_o | splim_d_o));                      // 0x70-0x7D
    // The requests to the core and INT_STATUS.  The timers' rollovers, the
    // port's edges and the TTLC's toggle are instants: latched (int_o_r) until
    // a 1 is written to their bit of INT_STATUS.  The UARTs' are states - a
@@ -848,14 +916,15 @@ module lisa_periph
    // until then an edge was latched - and the enables had no write decode).
    assign uart_req  = (uart_rx_data_avail & uart_rx_ie) | (uart_tx_buf_empty & uart_tx_ie);
 `ifdef WANT_UART2
-   assign uart2_req = (uart2_rx_data_avail & uart2_rx_ie) | (uart2_tx_buf_empty & uart2_tx_ie);
+   assign uart2_req = (uart2_rx_data_avail & uart2_rx_ie) | (uart2_tx_buf_empty & uart2_tx_ie) |
+                      (uart2_idle_flag & uart2_idle_ie);                      // RESPIN 40
 `else
    assign uart2_req = 1'b0;
 `endif
    // source 5 is the TTLC's toggle, or the WS2812B driver's free half while
    // its IE is set (RESPIN 33: the TTLC's I/O is not in use then)
    assign int_req = {ws_ie ? ws_irq : int_o_r[5], int_o_r[4], uart2_req, uart_req, int_o_r[1:0]};
-   assign int_o   = {t3_irq, spi_irq, i2c_irq, int_req};
+   assign int_o   = {splim_irq, hsc0_irq | hsc1_irq, t3_irq, spi_irq, i2c_irq, int_req};   // RESPIN 40: bits 10, 9
 
 `ifdef WANT_UART2
    lisa_uart i_lisa_uart_2
@@ -874,8 +943,99 @@ module lisa_periph
       .rx_overrun       ( uart2_rx_overrun       ),
       .brg_wr           ( uart2_brg_wr           ),
       .brg_d            ( uart2_brg_d            ),
-      .autobaud_disable ( uart2_autobaud_disable )
+      .autobaud_disable ( uart2_autobaud_disable ),
+      .idle_thresh      ( uart2_idle_thresh      ),   // RESPIN 40
+      .de_en            ( uart2_de_en_r          ),
+      .de_pol           ( uart2_de_pol           ),
+      .idle_clr         ( uart2_idle_clr         ),
+      .tx_idle          ( uart2_tx_idle          ),
+      .de               ( uart2_de               ),
+      .idle_flag        ( uart2_idle_flag        )
    );
+   assign uart2_idle_clr = d_periph && d_we && d_addr == 7'h17 && d_i[2];
+   assign uart2_de_en    = uart2_de_en_r;
+`else
+   assign uart2_de       = 1'b0;
+   assign uart2_de_en    = 1'b0;
 `endif
+
+   // ==============================================
+   // RESPIN 40: the PLC timers / counters, the two
+   // high-speed counters, the multiplier, the SP limit
+   // ==============================================
+   lisa_plc i_lisa_plc
+   (
+      .clk          ( clk             ),
+      .rst_n        ( rst_n           ),
+      .d_addr       ( d_addr          ),
+      .d_i          ( d_i             ),
+      .d_periph     ( d_periph        ),
+      .d_we         ( d_we            ),
+      .d_rd         ( d_rd            ),
+      .d_o          ( plc_d_o         ),
+      .plc_we       ( plc_we          ),
+      .plc_addr     ( plc_addr        ),
+      .plc_bit      ( plc_bit         ),
+      .cnt_rst      ( cnt_rst         ),
+      .t_done       ( t_done          ),
+      .c_done       ( c_done          )
+   );
+
+   lisa_hsc #(.BASE(7'h60)) i_lisa_hsc0
+   (
+      .clk          ( clk             ),
+      .rst_n        ( rst_n           ),
+      .d_addr       ( d_addr          ),
+      .d_i          ( d_i             ),
+      .d_periph     ( d_periph        ),
+      .d_we         ( d_we            ),
+      .d_rd         ( d_rd            ),
+      .d_o          ( hsc0_d_o        ),
+      .ui_in        ( porta_in        ),
+      .irq          ( hsc0_irq        ),
+      .ge           ( hsc_ge[0]       )
+   );
+
+   lisa_hsc #(.BASE(7'h68)) i_lisa_hsc1
+   (
+      .clk          ( clk             ),
+      .rst_n        ( rst_n           ),
+      .d_addr       ( d_addr          ),
+      .d_i          ( d_i             ),
+      .d_periph     ( d_periph        ),
+      .d_we         ( d_we            ),
+      .d_rd         ( d_rd            ),
+      .d_o          ( hsc1_d_o        ),
+      .ui_in        ( porta_in        ),
+      .irq          ( hsc1_irq        ),
+      .ge           ( hsc_ge[1]       )
+   );
+
+   lisa_mul16 i_lisa_mul16
+   (
+      .clk          ( clk             ),
+      .rst_n        ( rst_n           ),
+      .d_addr       ( d_addr          ),
+      .d_i          ( d_i             ),
+      .d_periph     ( d_periph        ),
+      .d_we         ( d_we            ),
+      .d_rd         ( d_rd            ),
+      .d_o          ( mul_d_o         )
+   );
+
+   lisa_splim i_lisa_splim
+   (
+      .clk          ( clk             ),
+      .rst_por_n    ( rst_por_n       ),
+      .d_addr       ( d_addr          ),
+      .d_i          ( d_i             ),
+      .d_periph     ( d_periph        ),
+      .d_we         ( d_we            ),
+      .d_rd         ( d_rd            ),
+      .d_o          ( splim_d_o       ),
+      .sp           ( sp_i            ),
+      .irq          ( splim_irq       ),
+      .rst_o        ( splim_reset     )
+   );
 endmodule
 

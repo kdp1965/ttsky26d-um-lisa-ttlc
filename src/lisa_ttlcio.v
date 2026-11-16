@@ -31,11 +31,11 @@ storage bits, port_in, RR and the constants) as 24 bytes to the LISA core,
 byte n = bits 8n+7..8n, through an index and a data register,
 and a scan of the 74HC595 / 74HC165 chains the core can start itself:
 
-   0x2C  TIDX    the byte index, 0-23 (r/w)
+   0x2C  TIDX    the byte index, 0-31 (r/w)
    0x2D  TDATA   read: byte TIDX; write: byte TIDX of the outputs (0-5)
                  or of the storage bits (12-15: bits 0-31, 20-23: bits
                  32-63, RESPIN 31), others ignored; a read or a write moves
-                 TIDX to the next byte (23 wraps to 0)
+                 TIDX to the next byte (31 wraps to 0)
    0x2E  TCTRL   write: [0] START a scan (and clear DONE)
                  read:  [0] BUSY, [1] DONE (a scan has ended since the
                  last read: cleared by the read), [2] START pending,
@@ -109,7 +109,7 @@ module lisa_ttlcio
          if (d_periph && d_we && d_addr == 7'h2C)
             idx <= d_i[4:0];
          else if (acc)
-            idx <= idx == 5'd23 ? 5'h0 : idx + 5'h1;
+            idx <= idx + 5'h1;                  // 0-31 (RESPIN 40: 24-31 storage 64-127), 31 wraps to 0
 
          // shift_reg_io takes a start only while idle: the START waits
          // until the scan it asks for begins
@@ -131,10 +131,12 @@ module lisa_ttlcio
 
    always @*
    begin
-      case (d_addr)
-      7'h2C:   d_o = {3'h0, idx};
-      7'h2D:   d_o = rdata;
-      7'h2E:   d_o = {3'h0, owned, ttlc_wait, pend, done, scan_busy};
+   // the read decode is on d_addr[3:0]: lisa_periph.v gates d_o by the
+   // 16-register group d_addr[6:4] (the two-level read decode, t6x4-8)
+      case (d_addr[3:0])
+      4'hC:   d_o = {3'h0, idx};
+      4'hD:   d_o = rdata;
+      4'hE:   d_o = {3'h0, owned, ttlc_wait, pend, done, scan_busy};
       default: d_o = 8'h0;
       endcase
    end

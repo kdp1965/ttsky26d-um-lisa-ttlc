@@ -8,9 +8,9 @@ SDCC      ?= ../../../lisa-tools/sdcc-lisa/build/bin/sdcc
 SDCC_TEST ?= ../../../lisa-tools/sdcc_test
 CFLAGS    ?= -mlisa --rev3 --debug -I$(SDCC_TEST)
 
-PROGS = hello alu2 reti div16 cache14 dbg swap bank uartov spi ttlcio timer3 ws2812 wsdma i2c misc36
+PROGS = hello alu2 reti div16 cache14 dbg swap bank uartov spi ttlcio timer3 ws2812 wsdma i2c misc36 misc40 plc
 
-all: $(PROGS:%=%.hex) ttlc_test.hex ttlc_jump_test.hex ttlc_storage_test.hex bank_test.hex spi_test.hex ttlcio_test.hex
+all: $(PROGS:%=%.hex) ttlc_test.hex ttlc_jump_test.hex ttlc_storage_test.hex bank_test.hex spi_test.hex ttlcio_test.hex plc_test.hex
 
 # the TTLC programs (ttlc/*.asm, assembled by ttlc/mc14500_as.py into the
 # slot format of ttlc_fetch.v) at byte 0x10000 of the flash, behind hello:
@@ -37,6 +37,11 @@ spi_test.hex: spi.hex ttlc/ttlc_loopback.hex ../hexcat.py
 # the TTLC's I/O from the core (RESPIN 30): ttlcio.c, with the loopback
 ttlcio_test.hex: ttlcio.hex ttlc/ttlc_loopback.hex ../hexcat.py
 	python3 ../hexcat.py $@ 0 ttlcio.hex 10000 ttlc/ttlc_loopback.hex
+
+# the PLC block (RESPIN 40): plc.c sets the timers / counters up, the ladder
+# program ttlc/ttlc_plc.asm runs them from the chains' inputs
+plc_test.hex: plc.hex ttlc/ttlc_plc.hex ../hexcat.py
+	python3 ../hexcat.py $@ 0 plc.hex 10000 ttlc/ttlc_plc.hex
 
 %.ihx: %.c $(SDCC_TEST)/harness.h
 	$(SDCC) $(CFLAGS) -o $@ $<

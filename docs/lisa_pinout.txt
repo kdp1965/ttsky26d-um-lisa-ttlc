@@ -1,18 +1,40 @@
-         tt_um_pettit_lisa (846)                                tt_um_pettit_lisa (846)              
-          +-------------------+                                  +-------------------+           
- pa[0] ---| in[0]      out[0] |--- pb[0]                  rx2 ---| in[0]      out[0] |--- tx2    
- pa[1] ---| in[1]      out[1] |--- pb[1]                pa[1] ---| in[1]      out[1] |--- pb[1]  
- pa[2] ---| in[2]      out[2] |--- pb[2]                pa[2] ---| in[2]      out[2] |--- pb[2]  
-    rx ---| in[3]      out[3] |--- pb[3]                   rx ---| in[3]      out[3] |--- pb[3]  
- pa[3] ---| in[4]      out[4] |--- tx                   pa[3] ---| in[4]      out[4] |--- tx     
- pa[4] ---| in[5]      out[5] |--- pb[5]                pa[4] ---| in[5]      out[5] |--- pb[5]  
- pa[5] ---| in[6]      out[6] |--- pb[6]                pa[5] ---| in[6]      out[6] |--- pb[6]  
- pa[6] ---| in[7]      out[7] |--- pb[7]                pa[6] ---| in[7]      out[7] |--- pb[7]  
-          |                   |                                  |                   |           
-   ce0 ---| io[0]       io[4] |--- scl               ce_latch ---| io[0]       io[4] |--- scl    
-  mosi ---| io[1]       io[5] |--- sda      mosi/DQ0/ce0_latch---| io[1]       io[5] |--- sda    
-  miso ---| io[2]       io[6] |--- pc[3]    miso/DQ1/ce1_latch---| io[2]       io[6] |--- DQ3    
-  sclk ---| io[3]       io[7] |--- pc[4]                 sclk ---| io[3]       io[7] |--- DQ4    
-          +-------------------+                                  +-------------------+           
-           RP2040 Only Config                                       Mux Mode 3 Config                 
-                                                                                              
+  tt_um_pettit_lisa pins by mux mode (0x1b uo_out mux, 0x1c uio mux, two bits per pin)
+
+          uo mux 0, uio mux 0 (reset default)                    uo mux 1, uio mux 1 (GPIO)
+                 +-------------------+                              +-------------------+
+        pa[0] ---| in[0]      out[0] |--- baud_clk         pa[0] ---| in[0]      out[0] |--- pb[0]
+        pa[1] ---| in[1]      out[1] |--- io[1]            pa[1] ---| in[1]      out[1] |--- pb[1]
+        pa[2] ---| in[2]      out[2] |--- io[2]            pa[2] ---| in[2]      out[2] |--- pb[2]
+           rx ---| in[3]      out[3] |--- io[3]         rx/pa[3] ---| in[3]      out[3] |--- pb[3]
+        pa[4] ---| in[4]      out[4] |--- tx               pa[4] ---| in[4]      out[4] |--- tx/pb[4]
+        pa[5] ---| in[5]      out[5] |--- 0                pa[5] ---| in[5]      out[5] |--- pb[5]
+        pa[6] ---| in[6]      out[6] |--- 0                pa[6] ---| in[6]      out[6] |--- pb[6]
+  pa[7]/b_set ---| in[7]      out[7] |--- spi_cs1          pa[7] ---| in[7]      out[7] |--- pb[7]
+                 |                   |                              |                   |
+          ce0 ---| io[0]       io[4] |--- rx3                ce0 ---| io[0]       io[4] |--- pc[0]
+         sio0 ---| io[1]       io[5] |--- tx                sio0 ---| io[1]       io[5] |--- pc[1]
+         sio1 ---| io[2]       io[6] |--- scl/rx2           sio1 ---| io[2]       io[6] |--- pc[2]
+         sclk ---| io[3]       io[7] |--- sda               sclk ---| io[3]       io[7] |--- pc[3]
+                 +-------------------+                              +-------------------+
+   b_set HIGH at reset: in[6:0] load the baud divisor    pc[3:0]: direction per bit (PORTC DIR, 0x03)
+   out[3:1] echo io[3:1]; the debug UART by autobaud     out[4] stays tx while the debug UART is on rx
+
+  uo mux 2, uio mux 2 (SPI master, UART2, PWM, I2C)         uo mux 3, uio mux 3 (TTLC, custom QSPI Pmod)
+                +-------------------+                                   +-------------------+
+    rx2/miso ---| in[0]      out[0] |--- tx2              pa[0]/miso ---| in[0]      out[0] |--- ttlc_d0/m3_mosi/ws
+  pa[1]/miso ---| in[1]      out[1] |--- pwm0/tx2         pa[1]/miso ---| in[1]      out[1] |--- ttlc_d1/m3_cs0/ws
+  pa[2]/miso ---| in[2]      out[2] |--- pwm1/tx2         pa[2]/miso ---| in[2]      out[2] |--- ttlc_d2/m3_cs1/ws
+    rx/pa[3] ---| in[3]      out[3] |--- spi_cs0            rx/pa[3] ---| in[3]      out[3] |--- ttlc_reset
+     t3_cap0 ---| in[4]      out[4] |--- tx                 ttlc_in0 ---| in[4]      out[4] |--- tx
+     t3_cap1 ---| in[5]      out[5] |--- spi_sclk           ttlc_in1 ---| in[5]      out[5] |--- ttlc_latch/ws
+       pa[6] ---| in[6]      out[6] |--- spi_mosi           ttlc_in2 ---| in[6]      out[6] |--- ttlc_shclk/ws
+  pa[7]/miso ---| in[7]      out[7] |--- tx2/de           pa[7]/miso ---| in[7]      out[7] |--- m3_sclk
+                |                   |                                   |                   |
+         ce0 ---| io[0]       io[4] |--- scl (sio2)         ce_latch ---| io[0]       io[4] |--- ce1
+        sio0 ---| io[1]       io[5] |--- sda (sio3)   sio0/ce0_latch ---| io[1]       io[5] |--- tx
+        sio1 ---| io[2]       io[6] |--- sio2 (ce1)   sio1/ce1_latch ---| io[2]       io[6] |--- sio2
+        sclk ---| io[3]       io[7] |--- sio3 (1)               sclk ---| io[3]       io[7] |--- sio3
+                +-------------------+                                   +-------------------+
+   rx2: first of in[0..2] in mux 2; miso: CTRL[6:5]    m3_sclk/mosi/cs: the SPI master owning the TTLC pins
+   in parentheses: psram_mod set (TT QSPI Pmod)        ws: the WS2812B line (WS_CTRL PIN); io[5] tx: Pmod UART
+

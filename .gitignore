@@ -21,3 +21,4 @@ test/**/__pycache__/
 test/**/*.xml
 test/**/*.vcd
 test/**/*.fst
+test/unit/*.vvp

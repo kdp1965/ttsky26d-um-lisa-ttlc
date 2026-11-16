@@ -1,0 +1,5 @@
+{
+  "//": "t6x4-4 (2026-11-14): the RAM32's 32 data-out pins are on its LEFT edge and 32 address pins on its top (macros/RAM32.lef), and t6x4-1's detailed route crawled at that upper-left corner (met1 shorts: cells packed onto the pin fan-out). GF180's recipe for the same corner: a hard 20 um channel kept free of cells along the pin edges (FP_OBSTRUCTIONS) plus a soft box above the corner. Here: a 20 um channel above the whole macro top (y 119.68-139.68), a 20 um column along its left edge, and the soft 120 x 70 box above the left end; cell padding stays 2 (t6x4-3's padding 1 tripled the global-route overflow).",
+  "FP_OBSTRUCTIONS": [[679.66, 119.68, 1027.6, 139.68], [679.66, 0.0, 699.66, 139.68]],
+  "PL_SOFT_OBSTRUCTIONS": [[619.66, 139.68, 759.66, 209.68]]
+}

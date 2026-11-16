@@ -10,3 +10,4 @@
 *.adb
 *.mem
 *.noi
+!ttlc/*.asm

@@ -191,23 +191,25 @@ module lisa_timer3
 
    always @*
    begin
-      case (d_addr)
-      7'h30:   d_o = pre;
-      7'h31:   d_o = top[7:0];
-      7'h32:   d_o = top[15:8];
-      7'h33:   d_o = cnt[7:0];
-      7'h34:   d_o = cnt_hold;
-      7'h35:   d_o = cmp0[7:0];
-      7'h36:   d_o = cmp0[15:8];
-      7'h37:   d_o = cmp1[7:0];
-      7'h38:   d_o = cmp1[15:8];
-      7'h39:   d_o = cap0[7:0];
-      7'h3A:   d_o = cap0[15:8];
-      7'h3B:   d_o = cap1[7:0];
-      7'h3C:   d_o = cap1[15:8];
-      7'h3D:   d_o = ctrl;
-      7'h3E:   d_o = {1'h0, ie};
-      7'h3F:   d_o = {3'h0, status};
+   // the read decode is on d_addr[3:0]: lisa_periph.v gates d_o by the
+   // 16-register group d_addr[6:4] (the two-level read decode, t6x4-8)
+      case (d_addr[3:0])
+      4'h0:   d_o = pre;
+      4'h1:   d_o = top[7:0];
+      4'h2:   d_o = top[15:8];
+      4'h3:   d_o = cnt[7:0];
+      4'h4:   d_o = cnt_hold;
+      4'h5:   d_o = cmp0[7:0];
+      4'h6:   d_o = cmp0[15:8];
+      4'h7:   d_o = cmp1[7:0];
+      4'h8:   d_o = cmp1[15:8];
+      4'h9:   d_o = cap0[7:0];
+      4'hA:   d_o = cap0[15:8];
+      4'hB:   d_o = cap1[7:0];
+      4'hC:   d_o = cap1[15:8];
+      4'hD:   d_o = ctrl;
+      4'hE:   d_o = {1'h0, ie};
+      4'hF:   d_o = {3'h0, status};
       default: d_o = 8'h0;
       endcase
    end

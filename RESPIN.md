@@ -50,6 +50,7 @@ the list for this revision: what the silicon does, where it is in the RTL
 | 37 | An option: DDR instruction reads - with 0x17 [6] the flash's instruction bursts and the debugger's single-word reads are DTR Fast Read Quad I/O (EDh, the W25Q128JV-DTR), a word every 4 clocks at clk/2 instead of 10; the read data through a capture pipeline whose point (0x17 [11:9], half clocks) the host finds by sweeping it; 0x17 [8] puts the SDR bursts through it too (8 clocks a word); off at reset | `lisa_qqspi.v` S13_RUN, dtr / run, cap_pipe, sclk_n / sio_neg, `debug_regs.v` 0x17 [15:6] | done: test/test.py test_ddr_sweep (make DDRSWEEP=1), DDR_CAP= / SEAMLESS= / DDR_TOGGLE= for any program |
 | 38 | Timing: the slow corner's worst paths (rc23 -8.7 ns): lda (ix++)'s kfetch -> the fetch address -> the window lookup -> inst -> the data address adders -> d_addr_good -> d_ok -> every register; and inst_r -> facc timed as one clock.  What an instruction does in its exec state reads inst_r (the window lookup stops at the decode flops), kfetch its own flop, 0x2B / 0x2E's TTLC flag bits registered (FLAG_O is a falling-edge flop), and lisa.sdc's missing multicycle sources (inst_r, the BF16 flags, facc and the f registers) | `lisa_core.v` inst_r, kfetch_q; `lisa_spi.v` scan_req_r; `lisa_periph.v` ttlc_wait_r; `lisa.sdc` | done: every suite as before, the kfetch_q check in simulation; rc29 -0.44 ns (1 endpoint, a real path) at the slow max corner against rc23's -8.74 (183), nom_ss / min_ss clean |
 | 39 | Mode 3's CE latch strobe (the custom Pmod): half a clock wide with half a clock of setup and of hold (10 ns each at 50 MHz) - tight for the TT mux and pads' skew; now a clock wide with a clock of setup and half of hold, the CE values held to the falling edge after it, no clock added to a transaction | `lisa_io_mux.v` ce_latch / ce_hold / ce_window | done: tb.v measures the latch timing (test_i2c checks it), the REV3 suite in mode 3 (SDR and DDR), the Arty; rc30 |
+| 40 | An extension (branch tile6x4, 2026-11-14): the 6x4 tile with the RAM32 at its far right; a PLC timer / counter block (8 + 8) and two high-speed / quadrature counters for the TTLC and the core; a 16 x 16 multiplier; UART2's transmit FIFO, RS-485 direction and Modbus idle timer; an SP limit fault; a `sleep` instruction; the TTLC's storage doubled again to 128 bits | `lisa_plc.v`, `lisa_hsc.v`, `lisa_mul16.v`, `lisa_uart.v`, `lisa_splim.v`, `lisa_core.v`, `ttlc_io.v`, `lisa_periph.v` | section 40; `make PLC=1`, `make MISC40=1` |
 
 Status: open / fixed (the test that shows it, in test/: a program of test/progs, a cocotb test of test/core or the fops bench).
 
@@ -1524,6 +1525,280 @@ passed 26 runs in a row (not reproduced; the failing check not captured)
 rc30: every corner clean (the slow max +0.68: rc29's last path closed in
 this draw).
 
+## 40. The 6x4 tile: a PLC block, high-speed counters, a multiplier, UART2 for Modbus, an SP fault, sleep, 128 storage bits
+
+Ken, 2026-11-14 (branch `tile6x4`): four more tiles (5x4 -> 6x4, 1030.40 x
+511.36 um) with the RAM32 slid to the far right, and the features a
+microcontroller / PLC user would miss (the review of the datasheet against
+the RTL, 2026-10-31).  What was NOT added, and why: an instruction cache
+(lisa_sim's fetch model: the streaming window already gives 1.7-2.6x of
+the 2.0-2.6x a 64-word cache would, 86% of the misses are sequential),
+fail-safe TTLC outputs, edge-detect bits and interrupt priorities (not in
+Ken's list).
+
+### The tile
+
+`info.yaml` tiles 6x4; `harden/tt_block_6x4_pg.def` from tt-support-tools;
+`harden/macro.json`: the RAM32 at x = 18 x 38.87 = 699.66 (the stripe
+pitch: its power pin columns on tile stripes, as x 505.31 = 13 pitches was
+on the 5x4), y 2.72 as before; its right edge 1019.82 + the 2 um halo is
+5.8 um short of the core's right (1027.64).  Calvin's pixels stay where
+they were (the left of the tile).
+
+### The peripheral map (lisa_periph.v, the 0x50-0x7F block that was free)
+
+| Address | Block | Registers |
+|---|---|---|
+| 0x50-0x59 | PLC timers / counters (`lisa_plc.v`) | TC_IDX, TC_CTRL, TC_PRESET_L/H, TC_VALUE_L/H, T_DONE, C_DONE, TC_PRE_L/H |
+| 0x60-0x67 | HSC0 (`lisa_hsc.v`, BASE 0x60) | CTRL, STAT, CNT_L/H, CMP_L/H, -, - |
+| 0x68-0x6F | HSC1 (BASE 0x68) | the same |
+| 0x70-0x78 | MUL16 (`lisa_mul16.v`) | A_L, A_H, B_L, B_H, P0-P3, CTRL |
+| 0x7A-0x7D | SP limit (`lisa_splim.v`) | LIM_L, LIM_M, LIM_H, CTRL |
+| 0x16, 0x17 | UART2 (in lisa_periph.v / lisa_uart.v) | UART2_IDLE, UART2_CTRL; new bits in 0x13 |
+
+Every block has the lisa_timer3.v interface: `d_addr[6:0], d_i, d_periph,
+d_we, d_rd, d_o` with `d_o` 0 when not addressed (ORed in lisa_periph.v),
+a write is `d_periph & d_we`.  Unlisted addresses read 0.
+
+### The TTLC's I/O space (ttlc_io.v)
+
+| Address | Contents |
+|---|---|
+| 139-146 | Timer T0-T7: a write (STO / STOC) is the timer's input IN, a read (LD ...) its output Q |
+| 147-154 | Counter C0-C7: a write is the count input CU (its rising edge counts), a read its output Q |
+| 155, 156 | HSC0 / HSC1: count >= compare (GE, a level) |
+| 157-159 | read 0 |
+| 192-255 | storage bits 64-127 (bytes 24-31 of the core's view; TIDX 0-31) |
+
+Counter n's reset input R is storage bit 120 + n (I/O address 248 + n): a
+rung writes it like any storage bit.  ttlc_io.v gives the PLC block a
+one-clock `plc_we` with `plc_addr[3:0]` (0-7 timers, 8-15 counters) and
+`plc_bit` for a write to 139-154, and `cnt_rst[7:0]` = storage[127:120];
+the PLC block returns `t_done[7:0]`, `c_done[7:0]`; the HSCs `ge`.
+
+### The PLC timer / counter block (lisa_plc.v)
+
+Eight timers and eight counters, the function blocks of IEC ladder logic
+that the MC14500B's bit logic cannot do by itself.
+
+- **0x50 TC_IDX** [3:0]: which block the next five registers address: 0-7
+  timer n, 8-15 counter n - 8.
+- **0x51 TC_CTRL** (of the selected block).  Timer: [0] MODE (0 TON
+  on-delay, 1 TOF off-delay), [2:1] BASE (0: 1 ms, 1: 10 ms, 2: 100 ms,
+  3: 1 s), [3] Q (read only), [4] IN (read only: the TTLC's bit OR
+  LISA_IN), [5] LISA_IN (r/w: the core's own input to the timer).
+  Counter: [0] MODE (0 up, 1 down), [3] Q (ro), [4] CU (ro: the TTLC's bit
+  OR LISA_CU), [5] LISA_CU (r/w: a rising edge counts), [6] RST (write 1:
+  reset; reads 0).
+- **0x52 / 0x53 TC_PRESET_L / H** (r/w, reset 0): the preset in ticks of
+  the timer's base, or the counter's preset.
+- **0x54 / 0x55 TC_VALUE_L / H** (ro): the timer's elapsed ticks or the
+  count.  Reading L latches H.
+- **0x56 T_DONE**: the eight timers' Q.  **0x57 C_DONE**: the counters' Q.
+- **0x58 / 0x59 TC_PRE_L / H** (r/w, reset 49999 = 0xC34F): clocks per
+  1 ms tick, less one (50 MHz).  A /10 chain makes the 10 ms, 100 ms and
+  1 s ticks from it.
+
+TON: while IN is high the value counts the ticks of the base up to the
+preset and stops there; Q = (value == preset) (a preset of 0: Q follows
+IN); IN low clears the value and Q.  TOF: IN high: Q = 1, value 0; when
+IN falls the value counts up to the preset and Q stays 1 until it gets
+there (Q falls PRESET ticks after IN; a preset of 0: Q follows IN).
+Counter up: a rising edge of CU adds one (saturating at 0xFFFF); Q =
+(count >= preset); R (the storage bit, or RST) clears the count.  Counter
+down: R loads the preset, an edge subtracts one (saturating at 0), Q =
+(count == 0).  A counter's R held high holds it in reset.
+
+### The high-speed / quadrature counters (lisa_hsc.v, two instances)
+
+- **CTRL** (BASE + 0): [1:0] MODE: 0 pulses (A's rising edges count up),
+  1 pulses with direction (B high counts down), 2 quadrature x1 (A's
+  rising edge, B's level the direction: B low up), 3 quadrature x4 (every
+  edge of A and B).  [3:2] PINS: the input pair, A the lower: 0 ui_in[1:0],
+  1 ui_in[3:2], 2 ui_in[5:4], 3 ui_in[7:6].  [4] EN.  [5] IE.  [6] CLR
+  (write 1: count <= 0; reads 0).  [7] FILT: an input must hold for four
+  clocks to count (a glitch filter).
+- **STAT** (BASE + 1): [0] MATCH (sticky: the count reached CMP; a 1
+  written clears it), [1] OVF (wrapped past 0xFFFF, sticky, W1C), [2] UNF
+  (wrapped below 0, sticky, W1C), [3] DIR (the last step was down),
+  [4] A, [5] B (synchronized), [6] GE (count >= CMP, a level: the TTLC's
+  bit), [7] 0.
+- **CNT_L / CNT_H** (BASE + 2 / 3): reading CNT_L latches CNT_H; writing
+  CNT_H holds the byte, writing CNT_L loads {held H, L}.
+- **CMP_L / CMP_H** (BASE + 4 / 5, reset 0).
+- BASE + 6 / 7 read 0.  irq = IE & (MATCH | OVF | UNF): HSC0 and HSC1 ORed
+  on interrupt source 9, vector 10.
+The inputs go through two synchronizer flops; x4 decoding uses the
+four-state table and ignores a step where both inputs changed.
+
+### The 16 x 16 multiplier (lisa_mul16.v)
+
+A peripheral, not an opcode: it is reached with one `sta` / `lda` per
+byte, needs no decode or toolchain change and its timing is its own
+(4 bits a clock, so 4 clocks a product; the reads come later than that).
+
+- **0x70-0x73 A_L, A_H, B_L, B_H**: the operands; a write to B_H starts a
+  multiply.
+- **0x74-0x77 P0-P3**: the 32-bit product (P0 the low byte), or with ACC
+  the running sum.  Read while BUSY: the previous value.
+- **0x78 CTRL**: [0] SIGNED (two's complement operands and product),
+  [1] ACC (P <= P + A x B), [2] CLR (write 1: P <= 0; reads 0), [7] BUSY
+  (read only).
+
+sdcc's `__mulint` / `__muluint` (and the 32-bit multiply) can be rewritten
+over it: four stores and two loads against the 8 x 8 sequence.
+
+### UART2 for Modbus RTU (lisa_uart.v, lisa_periph.v, lisa_io_mux.v)
+
+- An 8-byte transmit FIFO.  0x13 bit 1 (TX_EMPTY until now) means "the
+  FIFO has room" - the meaning a polling putc relies on - and a new bit
+  [4] TX_IDLE is "FIFO empty and the shifter idle".
+- RS-485 direction DE: with **0x17 UART2_CTRL** [0] DE_EN, uo[7] in uo mux
+  2 carries DE instead of tx2: asserted from the first byte queued until
+  TX_IDLE (through the last stop bit); [1] DE_POL = 1 makes it active low.
+  0x13 [6] reads DE.
+- The idle timer: **0x16 UART2_IDLE** is a silence threshold in bit times
+  (0: off).  A counter of bit times restarts at every receive activity;
+  when it reaches the threshold **IDLE_FLAG** (0x13 [5]) is set and stays
+  set until UART2_CTRL [2] IDLE_CLR is written as 1.  3.5 characters is
+  39 bit times (at 19200 baud and below; above it Modbus fixes the gap at
+  1.75 ms, which the program sets in bit times for its rate).  [3] IDLE_IE
+  makes IDLE_FLAG part of UART2's interrupt request (source 3, vector 4)
+  beside the RX / TX enables of 0x14.
+
+### The SP limit fault (lisa_splim.v, lisa_core.v's sp_o)
+
+The stack grows down from 0x7FFFFF; a stack overflow walks into the data
+below it and is the classic silent failure of an 8-bit RTOS port.
+
+- **0x7A / 0x7B / 0x7C LIM_L / M / H**: the 23-bit limit (H holds bits
+  22:16).
+- **0x7D CTRL**: [0] EN, [1] RST_ACT (0: interrupt, 1: reset the core and
+  the peripherals like the watchdog), [2] IE, [3] FAULT (sticky: SP went
+  below the limit; a 1 written clears it).  A fault with RST_ACT resets
+  the chip the way the watchdog does and clears EN; FAULT and the limit
+  survive the reset (rst_por_n), so the restarted program can tell.
+  Without RST_ACT the request (IE & FAULT) is interrupt source 10, vector
+  11.  The core exports `sp_o` for the compare.
+
+### sleep (lisa_core.v)
+
+`sleep` = 0xA01C (`1010_0000_0001_11xx`, the free code beside txa /
+txah / txau): the core stays in the instruction's execute state, fetching
+nothing, until an interrupt source that is enabled is pending (whether or
+not ie is set) or the debugger halts it.  With ie set the handler runs
+before the next instruction; with ie clear execution continues after the
+sleep.  An idle loop that was `br .` becomes `sleep; br .`, which also
+quiets the QSPI.  (sdas: the mnemonic; lisa_sim: the opcode - follow-ups.)
+
+### Interrupt vectors 10 and 11
+
+`int_i` / `int_en` grow to 11 bits (bit 9 the HSCs, bit 10 the SP fault,
+both gated by their own IE like Timer 3's bit 8); the vector table gains
+words 10 and 11, so sdcc's `lisa_genIVT` emits 11 slots (words 1-11) - a
+two-line change in sdcc-lisa's src/lisa/main.c; images built before run
+unchanged on this core (they never enable the new sources).
+
+### Implementation notes (the blocks as built, 2026-11-14)
+
+- **lisa_plc.v** (668 flops, 512 of them presets and values): the timers
+  compare `value >= preset` and stop at the preset (a preset lowered under
+  a running value gives Q at once instead of a wrap); TOF has an `armed`
+  flop so the off delay starts only at a real fall of IN (no Q pulse when
+  a timer is put into TOF mode with IN low), and after it expires the value
+  holds the preset until IN rises again; a counter with preset 0 is off
+  (Q = 0, unlike IEC's CTU with PV 0), so an unconfigured block reads 0 in
+  the I/O space; a TC_PRE write restarts the tick generator;
+  the Q bits are flops, a clock behind the compare, so TON's Q comes
+  PRESET - 1 to PRESET tick periods after IN; a down counter's R loads the
+  preset in the mode being written, so MODE | RST configures and loads in
+  one write; CU is the OR of the TTLC's bit and LISA_CU, edge-detected
+  after the OR (a held 1 from either masks the other).
+- **lisa_hsc.v** (69 flops an instance): the pair mux feeds two
+  synchronizer flops, then (with FILT) a 4-clock agreement counter, so a
+  step reaches the count 3 clocks after the pin, 6 with FILT; modes 1 and 2
+  are the same decode (A's rising edge, B's level the direction); x4 is a
+  four-state table, a step where both inputs changed is ignored; MATCH sets
+  only when a counting step lands on CMP (not a CNT load or a CMP write
+  equal to the count); GE and the `ge` bit are the live compare gated by
+  EN (a disabled counter reads 0 in the I/O space); a load or
+  CLR in the clock of a step drops that step; DIR follows every counted
+  step; EN gates counting only, the synchronizers run always.
+- **lisa_mul16.v** (97 flops, about 7000 um2 in sky130): radix-16
+  shift-add, 4 clocks a product (BUSY reads 1 after the B_H write's clock
+  and the three after it), SIGNED by sign-extension of A and the running
+  sum and a negative weight on B's top digit, no negate; ACC's carry out of
+  bit 31 is the 32-bit wrap; a B_H write while BUSY restarts with the
+  operands as they are then (a product completing in that same clock is
+  still stored, so an accumulating stream of B_H writes four clocks apart
+  loses nothing); CTRL with CLR while BUSY abandons the multiply in flight;
+  a CTRL write always sets SIGNED and ACC from its bits.
+- **lisa_uart.v** (98 flops added): the FIFO hands a byte to the
+  transmitter's own one-byte buffer, so a back-to-back burst fills the FIFO
+  on the ninth write and a write while full is dropped; `tx_wr` is edge
+  detected (one byte a write); the frame end is timed from the start bit on
+  the wire (lisa_tx8n.v is UART1's too, debug_ctrl.v, and was not touched),
+  DE is a flop (no glitch) that falls exactly after the last stop bit; the
+  idle timer counts bit times from the BRG's own tick and restarts at any
+  transition of the synchronized RX or a byte completing, so a byte of
+  0x00 or 0xFF shows up to about 9.5 bit times without activity: thresholds
+  of 10 and more are safe for any data (Modbus's 39 is).
+- **lisa_splim.v**: the compare is `sp < LIM` every clock while EN; with
+  RST_ACT the reset pulse is one clock, ORed into the watchdog's at the top
+  level, and EN clears with it.  A CTRL write wins over the level in its
+  clock, so a handler's single write (FAULT cleared, EN off) ends the
+  request while SP is still below the limit (the first RTL set FAULT back
+  in that clock: misc40.c's check 14 found it).
+- **lisa_core.v**: `sleep` holds the exec state through `d_ok` (as a data
+  wait does), so no flag, PC or cond update happens while it waits; the
+  wake condition is any enabled source pending, or the debugger's stop;
+  `sp_o` is the SP register; int_i / int_en 11 bits.  **sdas** has the
+  `sleep` mnemonic (lisapst.c) and **sdcc**'s `lisa_genIVT` emits vectors
+  1-11 (both in lisa-tools/sdcc-lisa, uncommitted there).
+
+### Area (yosys + abc on sky130_fd_sc_hd, standalone, 2026-11-14)
+
+| Block | um2 | of the 5x4 chip's 187.8k |
+|---|---|---|
+| lisa_plc (8 timers + 8 counters) | 37014 | 19.7% |
+| lisa_mul16 | 7010 | 3.7% |
+| lisa_hsc x 2 | 7764 | 4.1% |
+| UART2's FIFO / DE / idle timer (98 flops) | ~2500 | 1.3% |
+| lisa_splim | 1521 | 0.8% |
+| 64 more storage bits and their muxes | ~1500 | 0.8% |
+| total | ~57000 | +30% (the top synthesized to 246.1k against rc30's 187.8k) |
+
+The PLC block is two thirds of it: sixteen 16-bit presets and values with their
+incrementers and comparators (for scale, Timer 3 is 8.0k and the whole UART2
+15.1k).  Halving it to 4 + 4 blocks, or 8-bit presets with a per-block
+prescale, are the levers if the tile will not route with everything.
+
+### Verification
+
+`test/progs/misc40.c` (`make MISC40=1`): MUL16 unsigned, signed and
+accumulate; the SP limit in interrupt mode (vector 11) then in reset mode
+(the restart finds FAULT); sleep woken by Timer 1 (the cycle counter shows
+the core slept); UART2's FIFO (eight bytes back to back, TX_IDLE, DE on
+uo[7] measured by tb.v), the idle timer against bytes tb.v sends with a
+gap; HSC0 counting tb.v's quadrature on ui_in[1:0] (x1 and x4, forward and
+back), HSC1 counting pulses with direction on ui_in[3:2].
+`test/progs/ttlc/ttlc_plc.asm` + `plc.c` (`make PLC=1`): a ladder program
+with a TON timer, a TOF timer and an up counter on the chains' inputs, its
+outputs checked by test.py at the expected times; storage bits 64-127.
+
+Results (2026-11-14): the unit benches (`test/unit`, `make all`: hsc 117,
+mul16 11 groups, uart2 61, plc 114 checks) and the chip bench's 13
+configurations pass on the final RTL (default, MISC40, PLC, TTLC, the
+storage image, TTLCIO, TIMER3, MISC36, SPIM, WS2812, WSDMA, I2C, OVERRUN);
+BANK fails as it does on main (progs/bank.c is the revision-2 data / stack
+bank test, 0x216 / 0x217, gone since REV3).  Found on the way: the SP limit's
+W1C lost to the level in its clock (fixed, above); `lisa.py`'s receive strobe
+was a one-clock pulse that a second coroutine awaiting the clock could
+collapse, so every character read twice (now two clocks); ui_in[7] high makes
+the debug UART's divider ui_in[6:0] live, so a test that drives Port A pins
+must keep bit 7 low (test.py `_porta`); a TTLC I/O test expected TIDX to wrap
+at 23 (now 31).
+
 ## Verification (test/, see test/README.md)
 
 * `test/core/`: tb_core.v, the core with the chip's registered data bus, the
@@ -2228,6 +2503,275 @@ this draw).
   every corner clean.  No cell on Calvin's 997 pixels.  Promoted
   2026-10-27 (Ken: the final run - nothing more planned; the precheck left
   to the gds workflow): gds/, lef/, pnl/ are this run's.
+* The 6x4 tile (branch tile6x4, RESPIN 40, 2026-11-14, runs/macro-t6x4-*;
+  the design synthesizes to 246.1k um2 of cells against rc30's 187.8k):
+  - t6x4-1 (rc30's recipe, the RAM32 at x 699.66 = 18 stripe pitches, its
+    power columns all on tile stripes, Calvin in place): global placement at
+    88.5% padded utilization (rc30 84.4%), global route finished with
+    overflow 1038 against about 650, the detailed route tracked rc30's curve
+    to about 1000 violations and then crawled - 600 after 26 iterations,
+    429 after 30, still running at 20:15 - every one of them in the 30 um
+    bins over the RAM32's upper-left corner (x 630-750, y 120-240: met1
+    shorts and spacing), where its 32 data-out pins (left edge) and 32
+    address pins (top) meet the cells.  It flattened out at 416 / 415 /
+    384 / 356 / 422 over iterations 31-35 (stopped at 20:45): a stall.
+  - t6x4-2 (soft keepouts at the macro's corners, trial_6x4_keepout.json):
+    91.8% padded utilization, overflow 1431, 18087 violations at iteration
+    8 against t6x4-1's 5613 - stopped.  t6x4-4 (hard 20 um channels along
+    the pin edges plus a soft box, trial_6x4_channel.json): 92.8%, 12333
+    violations at iteration 8 - stopped.  On this tile every obstruction raises the density past
+    where the router copes.
+  - t6x4-3 (GPL_CELL_PADDING 1 with the keepouts, trial_6x4_pad1.json):
+    68.6% padded utilization but global-route overflow 4180 (three times
+    t6x4-1's) and 130K violations at the first detailed-route iteration -
+    stopped.  The padding is what keeps the routing space.
+  - t6x4-5 (t6x4-1 without Calvin's 997 placement-blockage pixels,
+    trial_6x4_noart.json): 81.7% padded utilization, the detailed route
+    ahead of rc30's curve (11601 / 3937 / 1810 / 1039 / 624 at iterations
+    4-8, 0 at 19, 0 again after each antenna-repair pass), **DRC 0, LVS 0,
+    antenna 0**, 66.2% final utilization (45744 standard cells + 55002
+    fills), 1.49M um of wire, hold +0.078 ns (ff), setup +5.10 nominal,
+    +6.30 ff, but the slow corner -1.05 (nom_ss) and **-2.26 (max_ss)**,
+    +0.23 min_ss (rc30: +1.47 / +0.68 / +1.96).  The worst paths end in the
+    core's flags (i_lisa_div.zflag, zflag_isr, div_rs2) from d_addr[6]: the
+    peripheral read - 4.3 ns of fanout and slew buffers on the address
+    (five more decoders now hang on it), 5.6 ns through the blocks' read
+    OR-tree, the top's data mux, then the ALU adder and flag logic.  So the
+    logic fits a 6x4 and routes clean without the art, 7 points of padded
+    density, and the slow corner wants either a wait state on peripheral
+    reads (the blocks' d_o registered, d_ready low a clock) or a shallower
+    address decode (block selects from d_addr[6:4]), or a 45 MHz slow-corner
+    spec.  Calvin: a smaller picture, or the PLC block halved (37k um2).
+  - t6x4-6 (2026-11-15, Calvin kept, the TTLC storage cut from 128 to 96
+    bits - 32 of RESPIN 40's 64 new bits dropped, the counter resets moved
+    to storage 88-95): 88.0% padded utilization against t6x4-1's 88.5%,
+    global-route overflow 1177 (met3 371, met4 247) against 1038 - the 32
+    flops are about 1k um2 and the routing picture did not move.  Stopped
+    at the detailed router's start; the storage went back to 128 bits.
+    Ken's reading of the counter inventory (19 16-bit counters with 19
+    presets in the 8 + 8 PLC block and the two HSCs: "quite a few timers
+    and counters"): the PLC block cut to 4 timers + 4 counters.  TC_IDX
+    [2:0] (0-3 timers, 4-7 counters), T_DONE / C_DONE [3:0], the TTLC map
+    139-142 the timers' IN / Q, 143-146 the counters' CU / Q, 147-148 the
+    HSCs' GE, 149-159 0, the counter resets storage 120-123.  The UART2
+    idle timer stays (Ken asked what it was for - the Modbus RTU 3.5
+    character frame gap - and kept it).  Unit bench 113 checks, the chip
+    bench's PLC / MISC40 / default / TTLC configurations pass.  Run t6x4-7.
+  - t6x4-7 (2026-11-15, Calvin kept, 128 storage bits, the 4 + 4 PLC block,
+    the idle timer kept): 82.3% padded utilization (t6x4-1 88.5%, t6x4-5
+    without Calvin 81.7%), global-route overflow 135 (12 / 70 / 33 / 20 by
+    layer; t6x4-5 125, t6x4-1 1038), wire 2.08M um at GRT.  The detailed
+    route converged like t6x4-5's (50770 / 39358 / 37578 / 10914 / 3646 /
+    1651 / 1121 / 692 at iterations 1-8, 0 at iteration 22, 0 again after
+    each of the two antenna-repair passes).  **Magic DRC 0, LVS 0, antenna
+    0 nets / 0 pins, design violations 0**; 63.2% final utilization (48327
+    standard cells, 290k um2 against t6x4-5's 306k and rc30's 241k), 1.44M
+    um of wire.  Hold +0.064 (max_ff), setup +5.04 nominal, +6.19 ff,
+    +1.17 nom_ss, +2.00 min_ss, and **-0.011 max_ss on one path**: the
+    core's d_addr[3] through 2.2 ns of the resizer's fanout / slew buffers
+    into the peripheral decode and read tree (t6x4-5 was -2.26 there;
+    rc30 +0.68).  The max-slew count at max_ss (12683) is the flow's usual
+    (rc30 10935).  So Calvin, the 6x4 and RESPIN 40 less four timers and
+    four counters fit together and route clean; the slow corner is 11 ps
+    from clean on one path - a re-run (placement varies run to run), the
+    shallower block decode, or the wait state on peripheral reads would
+    close it.  The 32-byte TIDX view, docs/info.md, the Changelog and the
+    pinout still describe the 8 + 8 block and the 139-156 map.
+  - The two-level peripheral read decode (Ken, 2026-11-15: "try a shallower
+    block decode"): lisa_periph.v gates each block's d_o with the one-hot
+    16-register group `grp = 1 << d_addr[6:4]` (0x00-0x1F d_o_r, 0x20-0x2F
+    I2C / SPI / TTLC I/O, 0x30 Timer 3, 0x40 WS2812 / cycle counter /
+    watchdog, 0x50 PLC, 0x60 the HSCs, 0x70 MUL16 / SP limit), and every
+    block's read case decodes d_addr[3:0] only (d_o_r d_addr[4:0]; lisa_hsc
+    rsel = d_addr[3] == BASE[3]); the write decodes keep the full address.
+    Unit benches (tb_plc / tb_hsc's foreign-address checks moved inside the
+    group) and 13 chip configurations pass.  Area-neutral (82.6% padded).
+  - t6x4-8 (the decode, full Calvin): GRT overflow 392, the detailed route
+    slow - a knot of met1 shorts at the die's upper-left (x 0-100, y
+    400-500: the picture's top rows) that took until iteration 44 to get
+    under 20 and sat at 5-6 from iteration 54 (iterations of 30-45 minutes
+    each); stopped at iteration 62 with 5 (Ken).  Its timing is in t6x4-9
+    (the same RTL).
+  - t6x4-9 (the decode, **Calvin at half size**: Ken, "the calvin image /
+    keepouts scaled to 1/2 size" - trial_6x4_halfcalvin.json, the same 73 x
+    74 picture with 6-site x 1-row pixels, 201 x 201 um at the same
+    lower-left, 7.5k um2 of blockage instead of 30k; the re-tap step added
+    2806 taps against 5640 for the two-row picture, which crosses twice
+    the rows): 78.0% padded
+    utilization, **global-route overflow 0 on every layer** (wire 1.91M um,
+    the lightest 6x4 run), the detailed route at 0 by iteration 13 and
+    after each antenna pass, **Magic DRC 0, LVS 0, antenna 0 / 0**, 62.8%
+    final utilization (45922 cells, 288k um2), 1.36M um of wire.  Timing:
+    hold +0.062, setup +5.30 nominal; **the peripheral-read path is fixed**
+    (d_addr -> decode -> zflag_isr: +1.62 at max_ss, from -0.011 in
+    t6x4-7).  The worst path is now another one: d_addr[4] -> the data
+    cache's hit compare (eight 20-bit tags) -> lisa_we -> ram_we -> the
+    RAM32's WEBUF chain -> the DFFRAM's clock-gate latch, which captures on
+    the falling edge, so a half-cycle (15 ns) budget: **-0.124 at max_ss**
+    (+0.685 in t6x4-7 for the same path - 1.7 ns more fanout / slew
+    buffering in this placement), nom_ss +0.56.  The RAM's address / data
+    pins have +7.9 and its read side is not in the report: the macro's
+    clock could take a nanosecond of useful skew; or the hit could be
+    registered a cycle early; or a re-run.
+  - t6x4-10 / -11 (Ken: the half-size Calvin moved up to five rows under
+    the top of the row area - trial_6x4_halfcalvin_top.json, origin 12.42 /
+    293.76 so the picture spans y 293.76-495.04 under the top row's 508.64;
+    -10 the 4 + 4 block, -11 with two more timers): the position hurt.
+    -10 placed at 78.0% like t6x4-9 but global-routed with overflow 357
+    (t6x4-9: 0) and its detailed route crawled (2526 at iteration 8; -9 had
+    133) - stopped; -11 (79.2%) global-routed with overflow 1203 (met2
+    518), the stalling runs' level - stopped before the detailed route.
+    The picture's upper rows against the top edge pinch the cells of the
+    upper-left; at t6x4-9's place (y 98-299) they do not.
+  - The PLC block parameterized (lisa_plc.v NT / NC, built 6 + 4) in the
+    RESPIN 40 spec's eight-slot layout again: TC_IDX 0-7 the timers, 8-15
+    the counters, T_DONE / C_DONE bytes, TTLC 139-146 / 147-154 / GE
+    155-156, the counter resets storage 120-127; a slot with no block reads
+    0 and takes no write, so the map no longer moves with the count (the
+    compact 4 + 4 map of t6x4-7 .. -10 is gone).  Two timers = 4.5k um2 of
+    cells at synthesis (233.9k against 229.4k), +1.2 points padded.  Unit
+    bench 116 checks; PLC / MISC40 / default / TTLC / TTLCIO pass.
+  - t6x4-12 (6 + 4, the half Calvin back at t6x4-9's place): 79.2% padded,
+    global-route overflow 14 (t6x4-11's 1203 was the position, not the
+    timers), wire 1.93M um at GRT; the detailed route 0 at iteration 19 and
+    after both antenna passes; **Magic DRC 0, LVS 0, antenna 0 / 0**; 63.9%
+    final utilization, 46360 cells, 293.7k um2 (t6x4-9 288.3k: the two
+    timers), 1.35M um of wire.  Hold +0.077; setup +5.03 nominal, +0.47
+    nom_ss, **-0.94 max_ss** - the peripheral-read path again (d_addr[4]
+    -> zflag_isr; +1.62 on t6x4-9), and this time the whole miss is one
+    cell: an a31oi_1 in the core's flag logic driving a 0.156 pF net to a
+    single far load, slew 5.5 ns, 3.84 ns through the gate (0.4 ns is
+    normal) - a long wire the router made that nothing re-buffered, since
+    the flow runs repair_design after placement and the resizer after CTS
+    only (the post-GRT repairs broke routing in October).  Without it the
+    path is about +2.4.  The RAM32 write-enable path, -0.12 on t6x4-9,
+    sits at +0.77 here.  So at this density the max_ss result is decided
+    by where the resizer's buffer chains and the router's long wires fall,
+    about +/-1 ns run to run, with the real margin near +1; the levers are
+    a post-route long-wire repair (RSZ / GRT repair_design with a max wire
+    length, kept away from the DRT), or the slew violations the flow
+    leaves (11.7k at max_ss, rc30 10.9k).
+  - t6x4-13 (Ken: Calvin centred along Y - trial_6x4_halfcalvin_mid.json,
+    origin 12.42 / 155.04, the picture y 155.04-356.32 about the row
+    area's centre 255.68; the 6 + 4 block): 79.2% padded, **global-route
+    overflow 3** (the lightest 6x4 route, wire 1.92M um at GRT), the
+    detailed route 0 at iteration 17 and after each of three antenna
+    passes, **Magic DRC 0, LVS 0, antenna 0 / 0**.  Hold +0.064; setup
+    +5.02 nominal, **+0.02 nom_ss, -0.70 max_ss** - the RAM32 write-enable
+    path again (t6x4-12: +0.77), the peripheral read at +0.23 (t6x4-12:
+    -0.94).  The two families trade places run to run, and both start at
+    the same flop: the top's d_addr_r[4] (tt_um_pettit_lisa.v registers
+    the core's address once and hands it to the data cache and the
+    peripherals alike).  Bit 4 is the cache's line index (cache_map =
+    d_addr[6:4]) and the peripherals' group select at once: 62 loads
+    against 10-27 for the other bits, a four- or five-deep fanout / slew
+    buffer tree, 5-6 ns at max_ss before the first gate of either path.
+    The lever: a second copy of d_addr_r[6:0] for the peripherals (seven
+    flops, (* keep *) against opt_merge) - two trees of half the depth;
+    the peripherals' write decodes (full 7-bit compares in every block)
+    could go two-level like the reads to lighten it further.  Position
+    verdict for the half-size picture: lower-left (y 98) and centre (y 155)
+    route clean, the top (y 294) congests.
+  - The address copy (Ken: "try that structural fix"): tt_um_pettit_lisa.v
+    registers d_addr_c[6:0] a second time as d_addr_p for lisa_periph's
+    d_addr, the cache keeping d_addr_r.  t6x4-14 was built with the copy
+    marked (* keep *) and Yosys's opt_merge folded the two registers into
+    one anyway - keep saves the wire's name, not the cell: the netlist had
+    one flop per bit, its Q called d_addr_p[4], with the same 62 loads -
+    so the run was t6x4-13 again and was stopped at placement.  The copy
+    now resets to 7'h7F instead of 0, which makes it a different cell that
+    nothing merges; the value is of no consequence since the peripherals
+    act on the address only with d_periph and a strobe, which reset low.
+    Checked in t6x4-15's synthesis netlist before letting the run go on:
+    two flops per bit, d_addr[4] with 5 loads (the cache's), d_addr_p[4]
+    with 60 (the peripherals': the blocks' full 7-bit write compares, the
+    group select).
+  - t6x4-15 (the address copy, 6 + 4, Calvin centred): 79.4% padded,
+    global-route overflow 6, the detailed route 0 at iteration 36 (a slow
+    tail on the last violation) and after three antenna passes, **Magic DRC
+    0, LVS 0, antenna 0 / 0**, 293.7k um2, 1.38M um of wire.  Timing did
+    not improve: hold +0.080; setup +5.25 nominal, **-0.37 nom_ss, -0.98
+    max_ss**, the RAM32 write-enable path again, now launched from
+    d_addr[8] - a tag bit - with only 1.5 ns of buffering: the miss is the
+    logic itself.  From the address flop: the eight-line tag compare and
+    its OR (a221oi / nand3 / a2111oi x2 / nand4 / a41oi, 4.6 ns), the
+    hit-to-WE gates (or3b 1.6, o32ai 1.0), the macro's three WEBUF stages
+    and CGAND (1.8), 12.5 ns of logic and 5.1 of buffers against the 13 ns
+    the half cycle leaves after the launch clock.  The peripheral-read path
+    sits at -0.16 (its copy still has the 60 loads).  So the address copy
+    took the fanout variance out but the cache-hit -> WE path does not fit
+    the DFFRAM's half cycle at the slow corner by construction, and the
+    runs' -0.12 / -0.94 / -0.70 / -0.98 were that path's margin plus noise.
+    The fix that fits: compute the tag compare on the core's d_addr_c
+    (available the cycle before, as the top registers it) and register the
+    hit beside d_addr_r - the WE path becomes hit_r & d_we & lane and the
+    WEBUF chain, about 4 ns; the fill / flush hazards of a registered hit
+    are the work.  Alternatives: useful skew on ram1's clock (no path
+    launched by the RAM is in the 1378-path report, whose slacks run to
+    +26.8), or accepting a ~1 ns miss at the slowest corner of a 30 ns
+    signoff (nominal +5.25).
+  - **Ken's decision (2026-11-15 evening): t6x4-13 is the build** - "it is
+    max_ss so I won't worry about it".  The address copy is reverted (the
+    sources are t6x4-13's again: the 6 + 4 block in the eight-slot layout,
+    the two-level read decode, 128 storage bits), macro.json carries the
+    centred half-size Calvin as its default (origin 12.42 / 155.04, 6-site
+    x 1-row pixels), gds/ lef/ pnl/ hold runs/macro-t6x4-13's final files
+    (uncommitted), docs/info.md and the Changelog say six timers and four
+    counters with the empty slots reading 0.  Gate-level simulation of the
+    netlist (test/gate_level_netlist.v from the run, `make GATES=yes
+    MACRO_NETLIST=../macros/RAM32.pnl.v` with PDK_ROOT=~/projects/fossi):
+    the first build failed in Verilator because tb.v's +STATS counters and
+    the +TRACE writer (RESPIN 37 / 24) read the RTL's hierarchy
+    (lisa.core_i_fetch, lisa.i_lisa_qqspi, lisa.i_lisa_core ...), which the
+    flat netlist has not - both are now under `ifndef GL_TEST`.  Then
+    Verilator refused the netlist's VPWR / VGND (inouts tied to constants:
+    PORTSHORT), so icarus as CI; icarus wanted the bench's own host-side
+    models (lisa_tx8n, lisa_rx8n, debug_brg - RTL the GATES branch of the
+    Makefile had not listed) and wires on the power pins (`wire VPWR =
+    1'b1`, the Tiny Tapeout template's way) rather than literals.  With
+    those three fixes **the default run passes at gate level: autobaud,
+    debugger, bringup, uart_burst 4 / 4** (1009 s of icarus).  **PLC passes
+    at gate level** (plc.c's eight checks and the ladder, 679 s).  MISC40
+    prints ok 0001-0008 (MUL16, sleep, UART2's FIFO / DE / idle) and then
+    hangs where the program waits for HSC0's count to leave 0 - and it
+    hangs at the same place at RTL under icarus, while Verilator passes it:
+    a four-state effect, not the netlist.  A probe in tb.v (+HSCPROBE, make
+    HSCPROBE=1: HSC0's en / sync2 / fab / cnt and the interrupt entries, by
+    the hierarchy at RTL and by the flat netlist's names at gate level) is
+    hunting it - and found it (the probe also prints the core's bus and
+    registers after 5000 clocks without a fetch, and the first clock IX's
+    upper byte or A turns X).  The chain: `hsc0()` returns its 16-bit
+    value through IX with `ldxx 0(sp)` (word 0x200), a three-byte load of
+    a two-byte stack temporary, so the third byte - 2(sp), never written -
+    comes back X from the RAM model and IX is xx81EE (sdcc's codegen for a
+    16-bit value in IX; the caller uses IX[15:0] only).  Later HSC0's
+    compare interrupt enters its handler (vector 10 taken correctly: PC
+    0x0A -> 0x10C), and at `adc #1` (0x114), while `lda (0x02)` is still
+    being acknowledged, the core's address mux has moved to its default
+    IX-relative form: d_addr_c = xxxxxx, the top's `d_addr_good = d_addr_c
+    == d_addr_r` = x, the core's d_ready = d_ready & d_addr_good = x, d_ok
+    = x, and the state machine never advances (d_valid still 1 from the
+    lda).  On silicon the byte is random and the compare resolves in a
+    cycle; Verilator zeroes X; icarus and the gate-level netlist carry it.
+    Timer 1's handler survived because it ran before any `ldxx` of a
+    16-bit value.  Remedies, Ken's call: sdcc could write or not read the
+    third byte of a 16-bit IX load (`ldxx` is three stages by the ISA);
+    RAM32.v (the simulation model only) could zero its array at time 0 for
+    the RTL under icarus; a gate-level run can use RAM32.v in place of the
+    macro's netlist for a clean RAM; or misc40's HSC section stays off the
+    gate-level list (default and PLC pass).  tb.v keeps the probe behind
+    +HSCPROBE.  Ken: zero the array in RAM32.v (an `initial` under `ifndef
+    SYNTHESIS`: the behavioural model only, the macro is untouched) and rerun
+    misc40 at gate level - with RAM32.v standing in for the macro's netlist
+    (MACRO_NETLIST=../src/RAM32.v), since the hardened latches cannot be
+    zeroed.  With the zeroed array **misc40 passes at RTL under icarus**:
+    all fourteen checks, the HSC interrupt twice, the SP-limit interrupt and
+    the fault reset (140 s).  **At gate level, the hardened netlist with
+    RAM32.v standing in for the macro, misc40 passes the same way** (all
+    fourteen checks, 835 s of icarus).  So t6x4-13's netlist has now run
+    the default programs, the PLC program with its ladder, and misc40 -
+    the multiplier, sleep, UART2's FIFO / DE / idle timer, both HSCs with
+    their interrupt, the SP limit's interrupt and its reset - at gate level.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
