@@ -2,8 +2,8 @@
 
 * The tile grows from 5x4 to 6x4 (1030.40 x 511.36 um), the RAM32 moved one
   more stripe pitch to the right (x 699.66).
-* PLC timers and counters (peripheral registers 0x50-0x59): four on / off
-  delay timers and four up / down counters in the TTLC's I/O space (139-142
+* PLC timers and counters (peripheral registers 0x50-0x59): six on / off
+  delay timers and four up / down counters in the TTLC's I/O space (139-144
   the timers' IN / Q, 147-150 the counters' CU / Q, storage bits 120-123
   their resets; the layout has eight slots of each, the empty ones read 0),
   usable from LISA too.

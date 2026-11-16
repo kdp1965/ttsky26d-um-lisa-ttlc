@@ -58,7 +58,17 @@ module tb
    wire           spi_miso;           // the SPI devices' MISO (ui_in[2])
 
    reg            clk = 1'b0;
+`ifdef GL_TEST
+   // 10 MHz for the gate-level netlist: its cells carry UNIT_DELAY (1 ns
+   // each, no SDF), so at the 20 ns period a clock tree of a few buffers
+   // and a short data path land in the same time step and the simulator's
+   // process order decides which the flop sees - misc40 hung in one run and
+   // passed in the next on the same netlist (2026-11-16).  The bench counts
+   // everything in clocks, so the slower clock changes nothing else.
+   always #50 clk = ~clk;
+`else
    always #10 clk = ~clk;
+`endif
 
    wire     [7:0] ui_in;
    wire     [7:0] uo_out;
@@ -195,11 +205,28 @@ module tb
    wire [1:0]  gl_hsc0_fab  = {lisa.\i_lisa_periph.i_lisa_hsc0.fab[1] , lisa.\i_lisa_periph.i_lisa_hsc0.fab[0] };
    wire        gl_hsc0_en   = lisa.\i_lisa_periph.i_lisa_hsc0.en ;
    wire        gl_hsc0_irq  = 1'b0;
-   wire        gl_isr_jump  = 1'b0;
+   wire        gl_isr_jump  = lisa.\i_lisa_core.isr_jump ;
    wire [10:0] gl_int_vec   = 11'h0;
-   wire [14:0] gl_pc        = 15'h0;
+   wire [14:0] gl_pc        = {lisa.\i_lisa_core.pc[14] , lisa.\i_lisa_core.pc[13] , lisa.\i_lisa_core.pc[12] , lisa.\i_lisa_core.pc[11] , lisa.\i_lisa_core.pc[10] , lisa.\i_lisa_core.pc[9] , lisa.\i_lisa_core.pc[8] , lisa.\i_lisa_core.pc[7] , lisa.\i_lisa_core.pc[6] , lisa.\i_lisa_core.pc[5] , lisa.\i_lisa_core.pc[4] , lisa.\i_lisa_core.pc[3] , lisa.\i_lisa_core.pc[2] , lisa.\i_lisa_core.pc[1] , lisa.\i_lisa_core.pc[0] };
    wire        gl_fetch     = 1'b0;
    wire [15:0] gl_inst      = 16'h0;
+   // the core's state by the netlist's names, for a gate-level stall detector
+   wire [22:0] gl_ix        = {lisa.\i_lisa_core.ix[22] , lisa.\i_lisa_core.ix[21] , lisa.\i_lisa_core.ix[20] , lisa.\i_lisa_core.ix[19] , lisa.\i_lisa_core.ix[18] , lisa.\i_lisa_core.ix[17] , lisa.\i_lisa_core.ix[16] , lisa.\i_lisa_core.ix[15] , lisa.\i_lisa_core.ix[14] , lisa.\i_lisa_core.ix[13] , lisa.\i_lisa_core.ix[12] , lisa.\i_lisa_core.ix[11] , lisa.\i_lisa_core.ix[10] , lisa.\i_lisa_core.ix[9] , lisa.\i_lisa_core.ix[8] , lisa.\i_lisa_core.ix[7] , lisa.\i_lisa_core.ix[6] , lisa.\i_lisa_core.ix[5] , lisa.\i_lisa_core.ix[4] , lisa.\i_lisa_core.ix[3] , lisa.\i_lisa_core.ix[2] , lisa.\i_lisa_core.ix[1] , lisa.\i_lisa_core.ix[0] };
+   wire [22:0] gl_daddr     = {lisa.\d_addr[22] , lisa.\d_addr[21] , lisa.\d_addr[20] , lisa.\d_addr[19] , lisa.\d_addr[18] , lisa.\d_addr[17] , lisa.\d_addr[16] , lisa.\d_addr[15] , lisa.\d_addr[14] , lisa.\d_addr[13] , lisa.\d_addr[12] , lisa.\d_addr[11] , lisa.\d_addr[10] , lisa.\d_addr[9] , lisa.\d_addr[8] , lisa.\d_addr[7] , lisa.\d_addr[6] , lisa.\d_addr[5] , lisa.\d_addr[4] , lisa.\d_addr[3] , lisa.\d_addr[2] , lisa.\d_addr[1] , lisa.\d_addr[0] };
+   wire [7:0]  gl_acc       = {lisa.\i_lisa_core.acc[7] , lisa.\i_lisa_core.acc[6] , lisa.\i_lisa_core.acc[5] , lisa.\i_lisa_core.acc[4] , lisa.\i_lisa_core.acc[3] , lisa.\i_lisa_core.acc[2] , lisa.\i_lisa_core.acc[1] , lisa.\i_lisa_core.acc[0] };
+   wire [22:0] gl_sp        = {lisa.\i_lisa_core.sp[22] , lisa.\i_lisa_core.sp[21] , lisa.\i_lisa_core.sp[20] , lisa.\i_lisa_core.sp[19] , lisa.\i_lisa_core.sp[18] , lisa.\i_lisa_core.sp[17] , lisa.\i_lisa_core.sp[16] , lisa.\i_lisa_core.sp[15] , lisa.\i_lisa_core.sp[14] , lisa.\i_lisa_core.sp[13] , lisa.\i_lisa_core.sp[12] , lisa.\i_lisa_core.sp[11] , lisa.\i_lisa_core.sp[10] , lisa.\i_lisa_core.sp[9] , lisa.\i_lisa_core.sp[8] , lisa.\i_lisa_core.sp[7] , lisa.\i_lisa_core.sp[6] , lisa.\i_lisa_core.sp[5] , lisa.\i_lisa_core.sp[4] , lisa.\i_lisa_core.sp[3] , lisa.\i_lisa_core.sp[2] , lisa.\i_lisa_core.sp[1] , lisa.\i_lisa_core.sp[0] };
+   wire        gl_ie        = lisa.\i_lisa_core.ie ;
+   reg  [14:0] gl_pc_r = 0; integer gl_same = 0; reg [6:0] gl_ixhi_r = 0;
+   always @(posedge clk)
+      if ($test$plusargs("HSCPROBE"))
+      begin
+         gl_same = (gl_pc === gl_pc_r) ? gl_same + 1 : 0; gl_pc_r <= gl_pc;
+         if (gl_same == 5000 || gl_same == 50000)
+            $display("[GLSTALL] %0t pc unchanged %0d clocks: pc=%h ix=%h d_addr=%h acc=%h sp=%h ie=%b", $time, gl_same, gl_pc, gl_ix, gl_daddr, gl_acc, gl_sp, gl_ie);
+         if ((^gl_ix[22:16]) === 1'bx && (^gl_ixhi_r) !== 1'bx)
+            $display("[GLIXX] %0t ix -> %h (upper byte X) pc=%h d_addr=%h acc=%h sp=%h", $time, gl_ix, gl_pc, gl_daddr, gl_acc, gl_sp);
+         gl_ixhi_r <= gl_ix[22:16];
+      end
 `else
    wire [15:0] gl_hsc0_cnt  = lisa.i_lisa_periph.i_lisa_hsc0.cnt;
    wire [1:0]  gl_hsc0_sync = lisa.i_lisa_periph.i_lisa_hsc0.sync2;

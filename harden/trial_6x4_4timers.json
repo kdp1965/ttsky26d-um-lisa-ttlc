@@ -1,0 +1,6 @@
+{
+  "//": "rc32's PLC block, four timers and four counters (t6x4-16, the shuttle submission of 2026-11-16): the define selects the 4 + 4 instance in lisa_periph.v; the sources' default is rc33's six and four. make macro TAG=<tag> OVERLAY=trial_6x4_4timers.json",
+  "VERILOG_DEFINES": [
+    "PLC_TIMERS4"
+  ]
+}

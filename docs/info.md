@@ -47,7 +47,7 @@ The following is a block diagram of the design:
    - Data bus CACHE controller with 8 16-byte CACHE lines
    - Streaming QSPI instruction fetch with an 8-word window: sequential code runs at the QSPI word rate
    - Two 16-bit programmable timers (with pre-divide)
-   - Four PLC timers (on / off delay, 1 ms to 1 s ticks) and four PLC counters, function blocks in the TTLC's I/O
+   - Six PLC timers (on / off delay, 1 ms to 1 s ticks) and four PLC counters, function blocks in the TTLC's I/O
      space that LISA can use too
    - Two high-speed counters: pulses, pulses with a direction, or quadrature x1 / x4 on any pair of ui_in pins,
      with a compare, a glitch filter and an interrupt
@@ -985,7 +985,7 @@ The I/O subsystem uses an 8-bit address and supports the following:
    - 48-Outputs plus 48-Inputs via external 74HC595 / 74HC165 chips
    - 128-Bit internal storage
    - 16 bit I/O to/from LISA (8 each direction)
-   - Four timers and four counters (the PLC block) and the two high-speed counters' compare bits
+   - Six timers and four counters (the PLC block) and the two high-speed counters' compare bits
    - Ability to send interrupt to LISA
    - Constant zero / one bits 
 
@@ -1000,7 +1000,7 @@ The 8-bit address selects one bit of the I/O space:
  | 136     | RR (the result register)                                   |
  | 137     | Constant 0                                                 |
  | 138     | Constant 1                                                 |
- | 139-146 | Timers T0-T3 at 139-142: a write (STO / STOC) is the timer's input IN, a read its output Q; 143-146 (no timer) read 0 |
+ | 139-146 | Timers T0-T5 at 139-144: a write (STO / STOC) is the timer's input IN, a read its output Q; 145-146 (no timer) read 0 |
  | 147-154 | Counters C0-C3 at 147-150: a write is the count input CU (its rising edge counts), a read its output Q; 151-154 (no counter) read 0 |
  | 155-156 | HSC0 / HSC1: count >= compare (a level, while the counter is enabled) |
  | 160-191 | Internal storage bits 32-63                                |
@@ -1067,7 +1067,7 @@ SPI byte in progress), so the two never collide.
 ## The PLC Timers and Counters
 
 The MC14500B does relay logic and nothing else: a ladder program cannot wait or count by itself.  The PLC
-block adds the function blocks of IEC ladder logic to the TTLC's I/O space: four timers and four counters,
+block adds the function blocks of IEC ladder logic to the TTLC's I/O space: six timers and four counters,
 each driven by a bit the program writes and read back as a bit, with their presets and current values in
 LISA's peripheral registers.  The register and I/O layout has room for eight of each (timer slots 0-7,
 counter slots 8-15); a slot with no block behind it reads 0 and takes no write.  LISA can drive and read the same blocks, so they serve it as general timers and
@@ -1083,13 +1083,13 @@ whose preset is 0 is off (Q = 0), so an unconfigured block reads 0.
 
  | ADDR | Register    | Description                                                                 |
  | ---------- | ----------------- | --------------------------------------------------------------- |
- | 0x50 | TC_IDX      | [3:0] the block the next five registers address: 0-7 timer n (0-3 present), 8-15 counter n - 8 (8-11 present); an empty slot reads 0 |
+ | 0x50 | TC_IDX      | [3:0] the block the next five registers address: 0-7 timer n (0-5 present), 8-15 counter n - 8 (8-11 present); an empty slot reads 0 |
  | 0x51 | TC_CTRL     | Timer: [0] MODE (0 TON, 1 TOF), [2:1] BASE (0 1 ms, 1 10 ms, 2 100 ms, 3 1 s), [3] Q (ro), [4] IN (ro: the ladder's bit OR LISA_IN), [5] LISA_IN.  Counter: [0] MODE (0 up, 1 down), [3] Q (ro), [4] CU (ro), [5] LISA_CU (a rising edge counts), [6] RST (write 1: reset; reads 0) |
  | 0x52 | TC_PRESET_L | The preset, low byte: ticks of the base for a timer, a count for a counter |
  | 0x53 | TC_PRESET_H | The preset, high byte                                                       |
  | 0x54 | TC_VALUE_L  | Read only: the timer's elapsed ticks or the count, low byte (latches the high byte) |
  | 0x55 | TC_VALUE_H  | Read only: the high byte latched by the last TC_VALUE_L read                |
- | 0x56 | T_DONE      | Read only: the timers' Q, bit n timer n ([7:4] 0)                           |
+ | 0x56 | T_DONE      | Read only: the timers' Q, bit n timer n ([7:6] 0)                           |
  | 0x57 | C_DONE      | Read only: the counters' Q, bit n counter n ([7:4] 0)                       |
  | 0x58 | TC_PRE_L    | Clocks per 1 ms tick, less one, low byte (reset 49999 = 0xC34F for 50 MHz)  |
  | 0x59 | TC_PRE_H    | ... high byte.  A write restarts the tick generator                         |

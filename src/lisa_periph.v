@@ -966,7 +966,11 @@ module lisa_periph
    // RESPIN 40: the PLC timers / counters, the two
    // high-speed counters, the multiplier, the SP limit
    // ==============================================
-   lisa_plc #(.NT(4), .NC(4)) i_lisa_plc    // t6x4-16: four timers, four counters (the module's default is 6 + 4)
+`ifdef PLC_TIMERS4                       // a harden overlay's VERILOG_DEFINES (trial_6x4_4timers.json): rc32's four timers
+   lisa_plc #(.NT(4), .NC(4)) i_lisa_plc
+`else
+   lisa_plc #(.NT(6), .NC(4)) i_lisa_plc    // rc33 / t6x4-17: six timers, four counters (the module's default)
+`endif
    (
       .clk          ( clk             ),
       .rst_n        ( rst_n           ),

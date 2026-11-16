@@ -2812,8 +2812,57 @@ at 23 (now 31).
     counters with 0x70 - 0x79 reserved, committed and pushed on tile6x4 with
     tag rc32 while its gate-level runs (default and PLC on the macro
     netlist, misc40 on the behavioural RAM) were still going - "hedging
-    that it will pass"; their result is noted below when in.  rc31 stays as
-    the tagged alternative (half Calvin, 6 + 4, the multiplier).
+    that it will pass".  GitHub: gds (build, precheck, viewer), test and
+    docs **all green** on e0706ca.  Gate level on t6x4-16's netlist with the
+    RAM32 macro: **the default programs 4 / 4** (985 s) and **PLC** (682 s)
+    pass.  misc40 on the behavioural RAM32.v prints no mul16 and ok 0005-0008
+    and then hangs in the HSC section, as the first t6x4-13 run did - but
+    this time the RTL under icarus passes it completely (all fourteen
+    checks, the probe showing both HSC0 interrupts taken at vector 10 and
+    the SP fault at 11), so the hang was in the gate-level netlist or its
+    simulation.  Re-run at gate level with the probe reading the core's PC /
+    IX / d_addr by the netlist's names: **misc40 passed completely** (842
+    s) - the same netlist, the same RAM, one extra testbench process that
+    only reads.  So the hang was a scheduling race of the unit-delay
+    gate-level model: every cell 1 ns, a clock tree of several, data and
+    clock arriving in the same time step at the bench's 20 ns period, the
+    simulator's process order deciding.  The design is not implicated (STA
+    hold positive at every corner, both RTL simulators pass).  tb.v now
+    clocks the gate-level netlist at 10 MHz (`always #50` under GL_TEST;
+    the bench counts in clocks, so nothing else moves) - the usual cure for
+    unit-delay races; confirmed: **misc40 passes at gate level at 10 MHz
+    without the probe** (t6x4-16's netlist, the behavioural RAM, 1039 s).
+    So every gate-level program of the bench passes on the submitted
+    netlist: the default four, PLC and misc40.
+  - **Ken submitted t6x4-16 (rc32) to the shuttle** (2026-11-16, said after
+    the gate-level results).
+  - t6x4-17 (Ken: "one more run adding in the 2 additional TTLC timers with
+    Large Calvin and no 16x16 multiplier, just to see what it does"): six
+    timers and four counters, the multiplier out, the full-size Calvin.
+    The six-timer instance is selected by a define, PLC_TIMERS6, that the
+    overlay trial_6x4_6timers.json passes through VERILOG_DEFINES, so the
+    sources stay at rc32's 4 + 4.  Expect synthesis near 228k um2 (rc32
+    223.6k + the two timers' 4.5k) and a padded placement near 81%, between
+    t6x4-16's 80.2% (clean, barely) and t6x4-7's 82.3% (clean, barely, with
+    the multiplier and 4 + 4).
+    Result: synthesis 227.2k um2, 81.5% padded placement, global-route
+    overflow 153 (wire 1.94M um), the detailed route 0 at iteration 26 with
+    a short tail of 3-4 violations from iteration 20, 0 again after each of
+    three antenna passes.  **Magic DRC 0, LVS 0, antenna 0 / 0**; 62.8%
+    final utilization, 47822 cells, 288.4k um2, 1.37M um of wire.  Timing
+    positive at every corner and better than t6x4-16's: hold +0.071;
+    setup +5.16 nominal, +0.81 nom_ss, **+0.18 max_ss** (the RAM32
+    write-enable path, from d_addr[5] this time).  So six timers do fit
+    beside the full-size Calvin without the multiplier - the submitted
+    t6x4-16 was the conservative choice, this placement happened to draw
+    better.  **Ken (2026-11-16, later): rc33 - promote t6x4-17 and take main
+    to it.**  The sources default to six timers (lisa_periph.v; rc32's four
+    stay behind the PLC_TIMERS4 define and trial_6x4_4timers.json), the
+    datasheet and Changelog say six again, gds/ lef/ pnl/ hold
+    runs/macro-t6x4-17's files; committed on tile6x4, tagged rc33, main
+    fast-forwarded to it and pushed; the gate-level runs on its netlist
+    follow the push as with rc32.  rc31 stays as the tagged alternative (half Calvin, 6 +
+    4, the multiplier).
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception
