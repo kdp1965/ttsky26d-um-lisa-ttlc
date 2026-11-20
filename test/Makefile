@@ -48,10 +48,25 @@ else
 # Gate level simulation:
 SIM_BUILD        = sim_build/gl
 COMPILE_ARGS    += -DGL_TEST
-COMPILE_ARGS    += -DFUNCTIONAL
 COMPILE_ARGS    += -DUSE_POWER_PINS
 COMPILE_ARGS    += -DSIM
+ifeq ($(SDF),)
+# unit delays: every cell 1 ns, the clock tree a few - tb.v clocks the netlist
+# at 10 MHz for it, but the hold side of the unit-delay model stays racy
+COMPILE_ARGS    += -DFUNCTIONAL
 COMPILE_ARGS    += -DUNIT_DELAY=\#1
+else
+# SDF=<corner> (e.g. nom_tt_025C_1v80): the cells' full models with their
+# specify blocks and timing checks, annotated from the run's SDF - real
+# delays at the real 20 ns clock.  SDF_FILE names the file (default: the
+# corner's file under the run's final/sdf, SDF_RUN the run); with the
+# behavioural RAM32.v in the macro's place pass a copy without the ram1
+# cells (sdf_strip_ram.py).  icarus: -gspecify; tb.v: $sdf_annotate (GL_SDF)
+COMPILE_ARGS    += -DGL_SDF -gspecify -ginterconnect   # the SDF's INTERCONNECT (net) delays need -ginterconnect
+SDF_RUN         ?= $(shell ls -td ../harden/runs/macro-* | head -1)
+SDF_FILE        ?= $(SDF_RUN)/final/sdf/$(SDF)/tt_um_pettit_lisa__$(SDF).sdf
+PLUSARGS        += +SDF=$(abspath $(SDF_FILE))
+endif
 VERILOG_SOURCES += $(PDK_ROOT)/sky130A/libs.ref/sky130_fd_sc_hd/verilog/primitives.v
 VERILOG_SOURCES += $(PDK_ROOT)/sky130A/libs.ref/sky130_fd_sc_hd/verilog/sky130_fd_sc_hd.v
 

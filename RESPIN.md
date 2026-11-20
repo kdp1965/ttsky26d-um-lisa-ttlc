@@ -2859,10 +2859,138 @@ at 23 (now 31).
     to it.**  The sources default to six timers (lisa_periph.v; rc32's four
     stay behind the PLC_TIMERS4 define and trial_6x4_4timers.json), the
     datasheet and Changelog say six again, gds/ lef/ pnl/ hold
-    runs/macro-t6x4-17's files; committed on tile6x4, tagged rc33, main
-    fast-forwarded to it and pushed; the gate-level runs on its netlist
-    follow the push as with rc32.  rc31 stays as the tagged alternative (half Calvin, 6 +
+    runs/macro-t6x4-17's files; committed on tile6x4 as 1307b60, tagged
+    rc33, main fast-forwarded to it (cb0cb58 -> 1307b60: rc31, rc32 and
+    rc33 together) and pushed.  GitHub: gds / test / docs **green on main,
+    on tile6x4 and on the tag**; the project's Pages viewer now shows the
+    6x4.  Gate level on t6x4-17's netlist at the 10 MHz bench clock: **the
+    default programs 4 / 4** with the RAM32 macro and **PLC** (699 s) pass;
+    misc40 on the behavioural RAM hangs in the HSC section after ok 0008 -
+    where the first t6x4-16 run hung before passing on a rerun and at 10
+    MHz - while the RTL under icarus passes it completely (all fourteen
+    checks).  So the slower clock cured the setup side of the unit-delay
+    model only; its hold side stays: every cell 1 ns, the clock tree a few,
+    a flop-to-flop path of one cell arrives before the later clock, and
+    which flop sees what depends on the netlist's buffering and the
+    simulator's order.  The way out is real delays: LibreLane writes an SDF
+    per corner (final/sdf/<corner>/, 38483 cells, the RAM32's 3190 among
+    them), icarus annotates it (-gspecify, $sdf_annotate), the sky130
+    models' full versions carry specify blocks and timing checks.  The
+    bench gained `make GATES=yes SDF=<corner>` (Makefile: no FUNCTIONAL /
+    UNIT_DELAY, -gspecify, +SDF=<file>; tb.v: GL_SDF annotates `lisa` and
+    clocks at the real 20 ns) and test/sdf_strip_ram.py, which drops the
+    ram1 cells from an SDF for a run with the behavioural RAM32.v.  The
+    first SDF runs did not get to simulate: icarus needs -ginterconnect for
+    the SDF's INTERCONNECT (net) delays, and with it the annotation still
+    fails on the flat netlist's names - Yosys keeps the hierarchy in the
+    instance names as dots (`\i_lisa_core.GEN_LISA_DBG.i_lisa_dbg.and_08`),
+    the SDF's DIVIDER is `.`, and icarus reads them as hierarchy ("Submodule
+    GEN_LISA_DBG in port path not found", "Could not find intermodpath" for
+    all 10809 interconnects) and aborts.  The way through is a consistent
+    rename of the dots inside escaped instance names in a copy of the
+    netlist and of the SDF (or an SDF written with `/` as the divider and
+    the netlist's instances renamed to match); not done yet.  So the
+    gate-level picture for rc33's netlist stands at: default and PLC pass
+    on the unit-delay model, misc40 reproduces the model's hold-side race in
+    its HSC section, and the RTL passes under both simulators.  rc31 stays as the tagged alternative (half Calvin, 6 +
     4, the multiplier).
+* After rc33 (Ken, 2026-11-20): the counters' reset inputs move off the
+  storage bits.  Until then counter n's R was storage bit 120 + n (I/O
+  address 248 + n), so four storage bits doubled as counter inputs; now R
+  is the empty counter slot above the counter, I/O address 147 + NC + n =
+  151 + n with four counters: a write sets the level (1 holds the counter
+  in reset, or at its preset counting down), a read returns it, and
+  storage bits 64-127 are storage only.  lisa_plc.v holds the level
+  (ttlc_rst, written at plc_addr 8 + NC + n when NC <= 4) and gives the
+  TTLC its own view of the counter slots (c_ttlc: Q at bit n, R at bit NC
+  + n) while C_DONE keeps showing Q alone; ttlc_io.v reads c_ttlc at
+  147-154 and no longer exports cnt_rst.  tb_plc drives R through the slot
+  and reads it back; the ladder test's input 3 goes to 151.  Datasheet:
+  the TTLC map's 147-150 / 151-154 rows and the storage row.  Hardened as
+  t6x4-18 (Ken: "try to harden it"; rc33's recipe, no overlay).  The first
+  attempt (2026-11-20 morning) found the Nix store stripped of every built
+  tool after Ken's reboot - a Determinate Nix self-update of 11-17 and an
+  unrooted closure; `make macro` rebuilt the toolchain from source in about
+  an hour once two overlay entries were added to the LibreLane flake
+  (yosys-slang's source hash as this Nix computes it; the yosys-ghdl plugin
+  excluded, its prebuilt GHDL dylib being refused by macOS 27's loader), and
+  the new environment is rooted by librelane/result.  t6x4-18's draw
+  global-routed with overflow 758 (t6x4-17's 153) and its router runs 4-5
+  minutes an iteration; Ken: "start another draw with a 1% change in
+  density setting, just to see" - t6x4-19, PL_TARGET_DENSITY_PCT 86 instead
+  of 85 (trial_6x4_density86.json), in parallel.  t6x4-18 was killed at
+  router iteration 8 (47142 38032 35968 12790 7801 6647 6104 5776: t6x4-1's
+  crawl); Ken: replay the good run's placement as in the prism entry -
+  t6x4-20, ANCHOR_CELLS_TABLE = placements/macro-t6x4-17_final_cells.json
+  (odb_anchor_cells.py --dump of t6x4-17's final ODB: 29912 cells, 29838
+  nets, 10 unnamed registers; the registers pinned by name, the logic by
+  structure, as the rc3-rc12 anchored runs; trial_6x4_anchor_t6x4-17.json).
+  The anchor step matched 10389 of 29731 cells (all 3864 named registers
+  and 6525 logic cells; the RTL change perturbed ABC's mapping of the whole
+  flattened design, so the forward keys broke early and the neighbourhood
+  pass added 91), global-routed with overflow 119 on 2.10M um of wire
+  (t6x4-19: 128 on 1.96M um, t6x4-17: 153 on 1.97M um), and was killed in
+  its first router iteration so that t6x4-19 had the machine to itself
+  (two routers on 16 cores run at half speed each; Ken).  t6x4-19's router:
+  a plateau at 25 (iterations 22-27, 24 boxes frozen in a 20 x 30 um patch
+  at the west edge, x 11-31 y 435-464, UART2 transmitter nets, no overlap or
+  blockage there, t6x4-17 routed the same density), then 23 22 20 13 (45),
+  13 x 6, 12 12 9 5 5 4 4 - the late iterations take 25 min each.  Ken had
+  it run on, and at iteration 60 asked for t6x4-20 again: resumed from its
+  global-routing result (flow.py --from=OpenROAD.DetailedRouting on the
+  same tag) rather than redrawn, 10:40; its router opened 54213 42861 41065
+  (the clean runs: 43277 34479 33412).  t6x4-19 reached iteration 63 with 3
+  violations still standing (3 3 3 from iteration 61, 25 min an iteration)
+  and Ken killed it there, 11:30: 64 iterations would not have closed it.
+  t6x4-20 was stopped by mistake in the same minute and restarted from the
+  detailed-routing step (iteration 1 again).  t6x4-20 ROUTED: the first
+  series 0 at iteration 36 (115 70 57 47 39 39 35 35 22 22 5 4 4 4 4 3 3 2
+  2 2 1 1 1 0), the post-diode re-route 0 in 17, two more repair passes 0;
+  antenna 0; but Magic DRC 96 (92 LU.3 "P-diff distance to N-tap < 15 um",
+  4 nwell.4, all inside Calvin's extent) and LVS 9 (fill cells whose VPB sits
+  on small isolated n-well nets: 35690 devices / 35372 nets in the layout
+  against 35687 / 35368), and timing worse on the same RAM32 WE path (max_ss
+  -1.48 against rc33's +0.18, nom_ss -0.72 against +0.81; the unmatched two
+  thirds routed around the fixed skeleton).  The DRC/LVS cause: Project.
+  ReleaseAnchors set EVERY FIRM standard cell back to PLACED - including the
+  5640 chip-art taps that Project.ArtPixelTaps had placed FIRM - and the
+  legalizer then moved 2576 of them, leaving n-well segments between pixels
+  without a tap.  The rc3-rc12 anchored runs had no pixel art, so it never
+  showed.  Fixed: odb_anchor_cells.py / odb_anchor_seq.py mark what they
+  pin with an "anchored" dbBoolProperty and odb_anchor_release.py releases
+  only those.  Ken: "another free draw with less density so we don't get so
+  much congestion in the upper left corner" - t6x4-21, PL_TARGET_DENSITY_PCT
+  84 (trial_6x4_density84.json; the padded utilization is 81.5%, the floor
+  about 82), 12:30: GRT overflow 1426 (met1 236 met2 534 met3 415 met4
+  241; the worst draw of the series) on 2.05M um - killed at the start of
+  detailed routing.  The density target reseeds the placer rather than
+  steering congestion (85 -> 758, 86 -> 128, 84 -> 1426).  Ken: density 87 -
+  t6x4-22 (trial_6x4_density87.json): GRT overflow 1879 (met1 431 met2 752
+  met3 452 met4 244), router 70154 66884 65708 42737 - killed at iteration 4.
+  Four draws of the reset-move netlist: 85 -> 758, 86 -> 128 (3 violations
+  at iteration 63), 84 -> 1426, 87 -> 1879; the netlist before it drew 153.
+  Open: the anchored rerun with the fixed release (clean routing, max_ss
+  -1.5), finishing t6x4-19 with DRT_OPT_ITERS 100 (5-6 h, deterministic
+  replay to iteration 63), or a fifth draw.  Ken: the anchored rerun with
+  the fix at density 86 - t6x4-23 (trial_6x4_anchor_t6x4-17_d86.json),
+  14:00.  t6x4-23 CLEAN: the anchor step matched the same 10389 cells, the
+  release freed exactly those and left the 5640 art taps FIRM; GRT overflow
+  151 (met1 12 met2 63 met3 60 met4 16) on 2.12M um; router 53572 43670
+  41034 12425 4267 2310 1325 591 400 350 127 58 34 33 33 33 5 5 2 2 2 then
+  1 for seventeen iterations (a met1 spacing between the clock root's NDR
+  wire and o21ai_1 _33104_'s pin, butted against the clock buffer
+  load_slew1946 in row y 250.24 - an ECO step, Project.EcoMove / ECO_MOVES,
+  was prepared to shift the three clock buffers one site left but was not
+  needed) and 0 at iteration 41; the post-diode re-route 0 in 17, a third
+  pass 0 in 8.  Signoff: routing 0, antenna 0, Magic DRC 0, overlaps 0,
+  LVS 0 (the tap fix holds), hold +0.079; setup max_ss -0.571 (rc33
+  +0.181), nom_ss +0.200 (+0.809), min_ss +0.948 (+1.495), the typical and
+  fast corners within 0.05 ns of rc33 - the same RAM32 WE cone into the
+  byte clock gate, 0.75 ns slower at the slow corner from the anchored
+  placement.  Gate level on its final netlist (icarus, the behavioural RAM32
+  in place of the macro netlist, the 10 MHz GL clock): default 4/4 (debugger,
+  bringup, uart_burst, hello), PLC ALL PASSED, MISC40 ALL PASSED.  Promotion
+  is Ken's call.
 * Found on the way: Yosys names a flattened net after any alias (the
   debugger's data bus is `core_inst_o[*]` in the netlist), the breakpoint
   registers are latches, and OpenSTA's `read_sdc` fails on an exception

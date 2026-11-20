@@ -1,0 +1,6 @@
+{
+  "//": "Ken (2026-11-20): t6x4-23's recipe (anchored on t6x4-17, fixed release, density 86) plus one ECO before detailed routing: the router froze on a single met1 spacing violation at (710.33, 251.89) between the clock root's NDR wire and the pin of o21ai_1 _33104_ (710.24-712.08, row y 250.24), which is butted against the clock buffer load_slew1946 (707.48-710.24) and its two neighbours wire2876 (704.72) and wire2867 (701.96); the site 701.50-701.96 beside them is free, so the three buffers move one site left and the gate gets a free site in front of its pin. Resume: python3 flow.py --macro --from=Project.EcoMove macro-t6x4-23 with this overlay.",
+  "ANCHOR_CELLS_TABLE": "dir::placements/macro-t6x4-17_final_cells.json",
+  "PL_TARGET_DENSITY_PCT": 86,
+  "ECO_MOVES": [["wire2867", 701.50, 250.24], ["wire2876", 704.26, 250.24], ["load_slew1946", 707.02, 250.24]]
+}

@@ -1,0 +1,4 @@
+{
+  "//": "Ken (2026-11-20): a free draw of the reset-move design with the placement density target at 87 (macro.json: 85). The draws so far: 85 -> GRT overflow 758, 86 -> 128 (the router got to 3 violations at iteration 63), 84 -> 1426 (killed at global routing): the target reseeds the placer rather than steering congestion, so 87 is the next draw in the direction that worked. make macro TAG=t6x4-22 OVERLAY=trial_6x4_density87.json",
+  "PL_TARGET_DENSITY_PCT": 87
+}

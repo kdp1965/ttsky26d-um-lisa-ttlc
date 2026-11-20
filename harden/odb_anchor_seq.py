@@ -19,12 +19,22 @@ import json
 import re
 
 import click
+import odb
 from reader import click_odb
 
 SEQ_MASTER = re.compile(r"__(dfxtp|dfrtp|dfstp|dfbbn|dfbbp|dfxbp|dfrbp|dfsbp|dfrtn|dlxtp|dlxtn|dlxbp|dlxbn|dlrtp|dlrtn|dlrbp|dlrbn|dlclkp|sdf|sedf|edf)", re.I)
 NOT_SEQ = re.compile(r"(dlygate|dlymetal|clkdlybuf|clkbuf|buf|inv|fill|decap|tap|conb|diode)", re.I)
 SYNTHETIC = re.compile(r"^(_\d+_|net\d+)$")
 
+
+
+def mark_anchored(inst):
+    """A property on the pinned instance, so that Project.ReleaseAnchors releases
+    exactly these (and not every FIRM cell: the chip-art taps are FIRM too, and
+    releasing them let the legalizer move 2576 of 5640 - 96 Magic LU.3 /
+    nwell.4 errors and an LVS mismatch on t6x4-20, 2026-11-20)."""
+    if odb.dbBoolProperty.find(inst, "anchored") is None:
+        odb.dbBoolProperty.create(inst, "anchored", True)
 
 @click.command()
 @click.option("--table", required=True, help="seq_placement.py JSON of the run to copy")
@@ -92,6 +102,7 @@ def main(reader, table, status):
         inst.setOrient(r["orient"])
         inst.setLocation(x, y)
         inst.setPlacementStatus(status)
+        mark_anchored(inst)
         pinned += 1
     for rtl in have:
         if rtl not in want:

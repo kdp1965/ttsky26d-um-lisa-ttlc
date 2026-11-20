@@ -15,7 +15,7 @@ Project.ReleaseAnchors after it).
 import json
 import os
 import sys
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from librelane.common import Path
 from librelane.config import Variable
@@ -265,6 +265,28 @@ class ArtPixelTaps(OdbpyStep):
         return super().run(state_in, **kwargs)
 
 
+class EcoMove(OdbpyStep):
+    """Moves the instances ECO_MOVES names to the given spots (um) right before
+    detailed routing - a hand edit for the one violation a router will not
+    clear (odb_eco_move.py).  Skipped when ECO_MOVES is unset."""
+    id = "Project.EcoMove"
+    name = "ECO Cell Moves"
+    config_vars = [
+        Variable("ECO_MOVES", Optional[List[List[Any]]], "[[instance, x_um, y_um], ...]: lower-left corners, site- and row-aligned, on free sites.", default=None),
+    ]
+
+    def run(self, state_in, **kwargs):
+        if self.config["ECO_MOVES"] is None:
+            return {}, {}
+        return super().run(state_in, **kwargs)
+
+    def get_script_path(self):
+        return os.path.join(HERE, "odb_eco_move.py")
+
+    def get_command(self) -> List[str]:
+        return super().get_command() + ["--moves", json.dumps(self.config["ECO_MOVES"])]
+
+
 def with_anchors(steps):
     steps = list(steps)
     steps.insert(steps.index(Odb.AddRoutingObstructions) + 1, AnchorSequential)
@@ -273,6 +295,7 @@ def with_anchors(steps):
     steps.insert(steps.index(OpenROAD.CutRows) + 1, ArtKeepout)
     steps.insert(steps.index(ArtKeepout) + 1, ArtPixels)
     steps.insert(steps.index(OpenROAD.TapEndcapInsertion) + 1, ArtPixelTaps)
+    steps.insert(steps.index(OpenROAD.DetailedRouting), EcoMove)
     return steps
 
 

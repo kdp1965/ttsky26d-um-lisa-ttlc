@@ -262,9 +262,9 @@ module lisa_periph
    input  wire          plc_we,
    input  wire [3:0]    plc_addr,
    input  wire          plc_bit,
-   input  wire [7:0]    cnt_rst,
    output wire [7:0]    t_done,
    output wire [7:0]    c_done,
+   output wire [7:0]    c_ttlc,              // the TTLC's view of the counter slots (Q, then the R levels)
    output wire [1:0]    hsc_ge,
    output wire          uart2_de,
    output wire          uart2_de_en,
@@ -983,9 +983,9 @@ module lisa_periph
       .plc_we       ( plc_we          ),
       .plc_addr     ( plc_addr        ),
       .plc_bit      ( plc_bit         ),
-      .cnt_rst      ( cnt_rst         ),
       .t_done       ( t_done          ),
-      .c_done       ( c_done          )
+      .c_done       ( c_done          ),
+      .c_ttlc       ( c_ttlc          )
    );
 
    lisa_hsc #(.BASE(7'h60)) i_lisa_hsc0

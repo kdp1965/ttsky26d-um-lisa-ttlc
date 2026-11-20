@@ -58,7 +58,18 @@ module tb
    wire           spi_miso;           // the SPI devices' MISO (ui_in[2])
 
    reg            clk = 1'b0;
-`ifdef GL_TEST
+`ifdef GL_SDF
+   // SDF-annotated gate level (make GATES=yes SDF=<corner>): the real delays,
+   // so the real 20 ns clock
+   always #10 clk = ~clk;
+   reg [1023:0] sdf_file;
+   initial
+      if ($value$plusargs("SDF=%s", sdf_file))
+      begin
+         $display("[tb] annotating %0s", sdf_file);
+         $sdf_annotate(sdf_file, lisa);
+      end
+`elsif GL_TEST
    // 10 MHz for the gate-level netlist: its cells carry UNIT_DELAY (1 ns
    // each, no SDF), so at the 20 ns period a clock tree of a few buffers
    // and a short data path land in the same time step and the simulator's

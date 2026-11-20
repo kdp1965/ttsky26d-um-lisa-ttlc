@@ -270,6 +270,15 @@ def match(ref, cur, rounds=3, max_iter=30, log=print):
     return pairs
 
 
+
+def mark_anchored(inst):
+    """A property on the pinned instance, so that Project.ReleaseAnchors releases
+    exactly these (and not every FIRM cell: the chip-art taps are FIRM too, and
+    releasing them let the legalizer move 2576 of 5640 - 96 Magic LU.3 /
+    nwell.4 errors and an LVS mismatch on t6x4-20, 2026-11-20)."""
+    if odb.dbBoolProperty.find(inst, "anchored") is None:
+        odb.dbBoolProperty.create(inst, "anchored", True)
+
 @click.command()
 @click.option("--dump", default=None, help="Write the reference graph + placement from this (placed) design and stop")
 @click.option("--table", default=None, help="Reference table to pin this design's cells from")
@@ -342,6 +351,7 @@ def main(reader, dump, table, status, rounds, seq_only, report):
         inst.setOrient(r["orient"])
         inst.setLocation(x, y)
         inst.setPlacementStatus(status)
+        mark_anchored(inst)
         pinned[kind] += 1
     unmatched = Counter("registers" if c["seq"] else "comb" for cname, c in g["cells"].items() if cname not in pairs)
     print(f"{sum(pinned.values())} cells pinned {status}: {dict(pinned)}; {moved_far} snapped by more than 1 um, "

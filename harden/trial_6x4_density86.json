@@ -1,0 +1,4 @@
+{
+  "//": "Ken (2026-11-20): another draw of t6x4-18's design (the counter resets on 151-154, rc33's recipe) with the placement density target one point up, 86 instead of macro.json's 85, to reseed the placer - t6x4-18 global-routed with overflow 758 where t6x4-17 had 153. make macro TAG=t6x4-19 OVERLAY=trial_6x4_density86.json",
+  "PL_TARGET_DENSITY_PCT": 86
+}

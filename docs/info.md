@@ -1001,10 +1001,11 @@ The 8-bit address selects one bit of the I/O space:
  | 137     | Constant 0                                                 |
  | 138     | Constant 1                                                 |
  | 139-146 | Timers T0-T5 at 139-144: a write (STO / STOC) is the timer's input IN, a read its output Q; 145-146 (no timer) read 0 |
- | 147-154 | Counters C0-C3 at 147-150: a write is the count input CU (its rising edge counts), a read its output Q; 151-154 (no counter) read 0 |
+ | 147-150 | Counters C0-C3: a write is the count input CU (its rising edge counts), a read its output Q |
+ | 151-154 | Counters C0-C3's reset inputs R: a write sets the level (1 holds the counter in reset, or at its preset counting down), a read returns it |
  | 155-156 | HSC0 / HSC1: count >= compare (a level, while the counter is enabled) |
  | 160-191 | Internal storage bits 32-63                                |
- | 192-255 | Internal storage bits 64-127 (bits 120-123 are also counters C0-C3's reset inputs R; 124-127 would be C4-C7's) |
+ | 192-255 | Internal storage bits 64-127 |
 
 The rest (157-159) read as 0.
 
@@ -1075,7 +1076,7 @@ event counters as well.
 
 In the ladder, timer n lives at I/O address 139 + n: a STO (or STOC) to it is the timer's input IN, an LD
 from it reads its output Q.  Counter n is at 147 + n the same way (a write is the count input CU, a read is
-Q), and its reset input R is storage bit 120 + n (I/O address 248 + n), written like any other storage bit.
+Q), and its reset input R is at 151 + n: a write sets the level, a read returns it.
 A TON (on delay) sets Q PRESET ticks after IN rises and clears it as soon as IN falls; a TOF (off delay) sets
 Q with IN and holds it PRESET ticks after IN falls.  An up counter counts the rising edges of CU and sets Q
 at count >= PRESET; a down counter is loaded with the preset by R, counts down and sets Q at 0.  A counter

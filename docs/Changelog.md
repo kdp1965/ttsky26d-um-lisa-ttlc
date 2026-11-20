@@ -4,8 +4,8 @@
   more stripe pitch to the right (x 699.66).
 * PLC timers and counters (peripheral registers 0x50-0x59): six on / off
   delay timers and four up / down counters in the TTLC's I/O space (139-144
-  the timers' IN / Q, 147-150 the counters' CU / Q, storage bits 120-123
-  their resets; the layout has eight slots of each, the empty ones read 0),
+  the timers' IN / Q, 147-150 the counters' CU / Q, 151-154 their reset
+  levels R; the layout has eight slots of each, the empty ones read 0),
   usable from LISA too.
 * The peripheral read decode is two-level (the 16-register group of the
   address selects the block, the block decodes its four low bits): the

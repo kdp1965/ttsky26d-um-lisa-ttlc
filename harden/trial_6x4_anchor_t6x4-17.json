@@ -1,0 +1,4 @@
+{
+  "//": "Ken (2026-11-20): t6x4-17's placement (runs/macro-t6x4-17 = rc33, the clean free draw on the 6x4 tile: 6+4 PLC, no MUL16, full Calvin) as the anchor table for the counter-reset move (resets on TTLC 151-154 in place of storage bits 120-123) - the same floorplan, so the registers are pinned by name and the logic cells by structure where t6x4-17 had them, and the placer only arranges what changed.  make macro TAG=t6x4-20 OVERLAY=trial_6x4_anchor_t6x4-17.json",
+  "ANCHOR_CELLS_TABLE": "dir::placements/macro-t6x4-17_final_cells.json"
+}

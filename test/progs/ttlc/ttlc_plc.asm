@@ -3,14 +3,14 @@
 ttlc_plc.asm:  TTLC (MC14500B) ladder program for the PLC block (RESPIN 40):
                every scan the chains' inputs drive a TON timer, a TOF timer
                and an up counter in the I/O space (139-146 the timers' IN /
-               Q, 147-154 the counters' CU / Q, counter n's reset storage bit
-               120 + n at 248 + n), the blocks' Q bits go to the outputs, and
+               Q, 147-150 the counters' CU / Q, 151-154 their reset levels
+               R), the blocks' Q bits go to the outputs, and
                two inputs pass through the new storage bits 64 and 127.
 
                  input 0 (48) -> T0 IN (139);  T0 Q (139) -> output 0
                  input 1 (49) -> T1 IN (140);  T1 Q (140) -> output 1  (TOF)
                  input 2 (50) -> C0 CU (147);  C0 Q (147) -> output 2
-                 input 3 (51) -> storage 120 (248) = C0's reset
+                 input 3 (51) -> C0's reset R (151)
                  input 4 (52) -> storage 64 (192) -> output 3
                  input 5 (53) -> storage 127 (255) -> output 4
                  HSC0 GE (155) -> output 5, HSC1 GE (156) -> output 6
@@ -33,7 +33,7 @@ loop:
     ld      147         // C0 Q
     sto     2           // -> output 2
     ld      51          // input 3
-    sto     248         // -> storage 120: C0's reset
+    sto     151         // -> C0's reset level R
     ld      52          // input 4
     sto     192         // -> storage 64
     ld      192

@@ -1,0 +1,4 @@
+{
+  "//": "Ken (2026-11-20): a free draw of the reset-move design with the placement density target one point DOWN, 84 instead of macro.json's 85 (the padded utilization is 81.5%, so the floor is about 82), to spread the cells and take the pressure off the upper-left corner where t6x4-19's router froze. make macro TAG=t6x4-21 OVERLAY=trial_6x4_density84.json",
+  "PL_TARGET_DENSITY_PCT": 84
+}

@@ -226,8 +226,7 @@ MACRO tt_um_pettit_lisa
   PIN clk
     DIRECTION INPUT ;
     USE SIGNAL ;
-    ANTENNAGATEAREA 2.573400 ;
-    ANTENNADIFFAREA 0.869400 ;
+    ANTENNAGATEAREA 1.704000 ;
     PORT
       LAYER met4 ;
         RECT 143.830 510.360 144.130 511.360 ;
@@ -245,7 +244,7 @@ MACRO tt_um_pettit_lisa
   PIN rst_n
     DIRECTION INPUT ;
     USE SIGNAL ;
-    ANTENNAGATEAREA 0.196500 ;
+    ANTENNAGATEAREA 0.213000 ;
     PORT
       LAYER met4 ;
         RECT 141.070 510.360 141.370 511.360 ;
@@ -485,7 +484,7 @@ MACRO tt_um_pettit_lisa
   PIN uio_out[2]
     DIRECTION OUTPUT ;
     USE SIGNAL ;
-    ANTENNADIFFAREA 0.891000 ;
+    ANTENNADIFFAREA 0.795200 ;
     PORT
       LAYER met4 ;
         RECT 66.550 510.360 66.850 511.360 ;
@@ -494,7 +493,7 @@ MACRO tt_um_pettit_lisa
   PIN uio_out[3]
     DIRECTION OUTPUT ;
     USE SIGNAL ;
-    ANTENNADIFFAREA 0.445500 ;
+    ANTENNADIFFAREA 1.782000 ;
     PORT
       LAYER met4 ;
         RECT 63.790 510.360 64.090 511.360 ;
@@ -503,7 +502,7 @@ MACRO tt_um_pettit_lisa
   PIN uio_out[4]
     DIRECTION OUTPUT ;
     USE SIGNAL ;
-    ANTENNADIFFAREA 0.795200 ;
+    ANTENNADIFFAREA 0.891000 ;
     PORT
       LAYER met4 ;
         RECT 61.030 510.360 61.330 511.360 ;
@@ -521,7 +520,7 @@ MACRO tt_um_pettit_lisa
   PIN uio_out[6]
     DIRECTION OUTPUT ;
     USE SIGNAL ;
-    ANTENNADIFFAREA 0.891000 ;
+    ANTENNADIFFAREA 0.795200 ;
     PORT
       LAYER met4 ;
         RECT 55.510 510.360 55.810 511.360 ;
@@ -548,7 +547,7 @@ MACRO tt_um_pettit_lisa
   PIN uo_out[1]
     DIRECTION OUTPUT ;
     USE SIGNAL ;
-    ANTENNADIFFAREA 1.590400 ;
+    ANTENNADIFFAREA 0.891000 ;
     PORT
       LAYER met4 ;
         RECT 91.390 510.360 91.690 511.360 ;
@@ -557,7 +556,7 @@ MACRO tt_um_pettit_lisa
   PIN uo_out[2]
     DIRECTION OUTPUT ;
     USE SIGNAL ;
-    ANTENNADIFFAREA 0.795200 ;
+    ANTENNADIFFAREA 1.590400 ;
     PORT
       LAYER met4 ;
         RECT 88.630 510.360 88.930 511.360 ;
@@ -575,7 +574,7 @@ MACRO tt_um_pettit_lisa
   PIN uo_out[4]
     DIRECTION OUTPUT ;
     USE SIGNAL ;
-    ANTENNADIFFAREA 0.891000 ;
+    ANTENNADIFFAREA 1.443500 ;
     PORT
       LAYER met4 ;
         RECT 83.110 510.360 83.410 511.360 ;
@@ -614,11 +613,11 @@ MACRO tt_um_pettit_lisa
       LAYER li1 ;
         RECT 2.760 2.635 1027.640 508.725 ;
       LAYER met1 ;
-        RECT 0.070 0.040 1029.870 511.320 ;
+        RECT 0.070 0.040 1027.640 511.320 ;
       LAYER met2 ;
-        RECT 0.090 0.010 1029.840 511.350 ;
+        RECT 0.090 0.010 1027.540 511.350 ;
       LAYER met3 ;
-        RECT 0.065 0.855 1027.115 511.185 ;
+        RECT 0.065 1.535 1027.115 511.185 ;
       LAYER met4 ;
         RECT 0.295 509.960 30.270 510.505 ;
         RECT 31.370 509.960 33.030 510.505 ;
@@ -720,7 +719,7 @@ MACRO tt_um_pettit_lisa
         RECT 992.030 2.320 992.930 509.040 ;
         RECT 995.330 2.320 1020.905 509.040 ;
         RECT 684.370 2.080 1020.905 2.320 ;
-        RECT 0.295 0.855 1020.905 2.080 ;
+        RECT 0.295 1.535 1020.905 2.080 ;
   END
 END tt_um_pettit_lisa
 END LIBRARY

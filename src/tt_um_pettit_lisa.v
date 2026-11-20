@@ -180,7 +180,7 @@ module tt_um_pettit_lisa
    wire                 plc_we;              // RESPIN 40: the PLC block's bits in the TTLC's I/O space
    wire   [3:0]         plc_addr;
    wire                 plc_bit;
-   wire   [7:0]         cnt_rst;
+   wire   [7:0]         c_ttlc;              // the TTLC's view of the counter slots
    wire   [7:0]         t_done;
    wire   [7:0]         c_done;
    wire   [1:0]         hsc_ge;
@@ -761,9 +761,9 @@ module tt_um_pettit_lisa
       .plc_we                    ( plc_we                    ),
       .plc_addr                  ( plc_addr                  ),
       .plc_bit                   ( plc_bit                   ),
-      .cnt_rst                   ( cnt_rst                   ),
       .t_done                    ( t_done                    ),
       .c_done                    ( c_done                    ),
+      .c_ttlc                    ( c_ttlc                    ),
       .hsc_ge                    ( hsc_ge                    ),
       .uart2_de                  ( uart2_de                  ),
       .uart2_de_en               ( uart2_de_en               ),
@@ -1279,12 +1279,11 @@ module tt_um_pettit_lisa
       .lisa_we                   ( ttlcio_we                 ),
       .lisa_rdata                ( ttlcio_rdata              ),
       .t_done                    ( t_done                    ),  // RESPIN 40
-      .c_done                    ( c_done                    ),
+      .c_ttlc                    ( c_ttlc                    ),
       .hsc_ge                    ( hsc_ge                    ),
       .plc_we                    ( plc_we                    ),
       .plc_addr                  ( plc_addr                  ),
-      .plc_bit                   ( plc_bit                   ),
-      .cnt_rst                   ( cnt_rst                   )
+      .plc_bit                   ( plc_bit                   )
    );
 
    assign rr_value  = RR;

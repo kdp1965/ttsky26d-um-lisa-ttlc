@@ -1,0 +1,5 @@
+{
+  "//": "Ken (2026-11-20): the anchored run again with the fixed release step (odb_anchor_release.py now frees only the cells the anchor step pinned, not the chip-art taps) and the placement density target at 86, the value of the best free draw (t6x4-19). Anchor table: t6x4-17's final placement (rc33). make macro TAG=t6x4-23 OVERLAY=trial_6x4_anchor_t6x4-17_d86.json",
+  "ANCHOR_CELLS_TABLE": "dir::placements/macro-t6x4-17_final_cells.json",
+  "PL_TARGET_DENSITY_PCT": 86
+}

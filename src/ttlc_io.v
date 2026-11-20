@@ -54,16 +54,15 @@ module ttlc_io
    output wire [7:0]    lisa_rdata,
    // RESPIN 40: the PLC block's bits in the I/O space - 139-146 the timers
    // (a write is the timer's IN, a read its Q), 147-154 the counters (a
-   // write its CU, a read its Q), 155 / 156 the HSCs' count >= compare;
-   // plc_we is the ICU's write level (WRITE) for 139-154, the block latches
-   // the bit; counter n's reset is storage bit 120 + n (I/O address 248 + n)
+   // write its CU, a read its Q; 151 + n is counter n's reset level R with
+   // four counters), 155 / 156 the HSCs' count >= compare; plc_we is the
+   // ICU's write level (WRITE) for 139-154, the block latches the bit
    input  wire [7:0]    t_done,
-   input  wire [7:0]    c_done,
+   input  wire [7:0]    c_ttlc,        // the counters' slots: Q, then the R levels
    input  wire [1:0]    hsc_ge,
    output wire          plc_we,
    output wire [3:0]    plc_addr,      // address - 139: 0-7 the timers, 8-15 the counters
-   output wire          plc_bit,
-   output wire [7:0]    cnt_rst
+   output wire          plc_bit
 );
 
    // Internal memory for temporary storage and output register: 64 bits
@@ -79,13 +78,12 @@ module ttlc_io
 
    // Assign values to the large vector: 255-192 storage 64-127, 191-160
    // storage 32-63, 159-157 0, 156-155 the HSCs' GE, 154-147 the counters'
-   // Q, 146-139 the timers' Q, 138 1, 137 0, 136 RR, 135-128 port_in,
+   // Q and R levels, 146-139 the timers' Q, 138 1, 137 0, 136 RR, 135-128 port_in,
    // 127-96 storage 0-31, 95-48 the inputs, 47-0 the outputs
-   assign read_values = {temp_storage[127:64], temp_storage[63:32], 3'h0, hsc_ge, c_done, t_done,
+   assign read_values = {temp_storage[127:64], temp_storage[63:32], 3'h0, hsc_ge, c_ttlc, t_done,
                          1'b1, 1'b0, rr_value, port_in,
                          temp_storage[31:0], input_pins, output_pins};
    assign read_all    = read_values;
-   assign cnt_rst     = temp_storage[127:120];
    assign plc_we      = mem_write && address >= 8'd139 && address <= 8'd154;
    assign plc_addr    = address[3:0] - 4'd11;      // 139 = 0x8b: the low nibble less 11, 147 = 0x93 -> 8
    assign plc_bit     = data_in;

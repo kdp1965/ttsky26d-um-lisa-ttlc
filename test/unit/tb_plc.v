@@ -1,7 +1,8 @@
 // tb_plc.v: the PLC timer / counter block (src/lisa_plc.v) on its own.
 // The bus is driven the way the core drives it: d_we / d_rd one clock, an
 // access every few clocks, d_o sampled in the strobe's clock; the TTLC's
-// writes come as one-clock plc_we pulses, counter resets as cnt_rst levels.
+// writes come as one-clock plc_we pulses, a counter's reset R as the TTLC's
+// write to the slot four above the counter (151 + n: plc_addr 12 + n).
 // TC_PRE is set to 9 (a 1 ms tick every 10 clocks) so the run is short;
 // the testbench watches the block's tick pulses (dut.tick) to count ticks.
 // Self-checking: PASS / FAIL per check, then ALL PASSED or SOME FAILED.
@@ -21,8 +22,7 @@ module tb_plc;
    reg            plc_we = 1'b0;
    reg   [3:0]    plc_addr = 4'h0;
    reg            plc_bit = 1'b0;
-   reg   [7:0]    cnt_rst = 8'h0;
-   wire  [7:0]    t_done, c_done;
+   wire  [7:0]    t_done, c_done, c_ttlc;
 
    integer        n_pass = 0;
    integer        n_fail = 0;
@@ -45,9 +45,9 @@ module tb_plc;
       .plc_we   ( plc_we   ),
       .plc_addr ( plc_addr ),
       .plc_bit  ( plc_bit  ),
-      .cnt_rst  ( cnt_rst  ),
       .t_done   ( t_done   ),
-      .c_done   ( c_done   )
+      .c_done   ( c_done   ),
+      .c_ttlc   ( c_ttlc   )
    );
 
    // the registers
@@ -59,7 +59,8 @@ module tb_plc;
                     LISA_IN = 8'h20, RST = 8'h40;
    // plc_addr of timer n / counter n
    localparam [3:0] T0 = 4'd0, T1 = 4'd1, T2 = 4'd2, T3 = 4'd3, T5 = 4'd5,
-                    C0 = 4'd8, C1 = 4'd9, C2 = 4'd10, C3 = 4'd11;
+                    C0 = 4'd8, C1 = 4'd9, C2 = 4'd10, C3 = 4'd11,
+                    R0 = 4'd12, R1 = 4'd13;         // the reset levels' slots (151, 152)
 
    // ---------------------------------------------------------------- checks
    task check(input string name, input [31:0] got, input [31:0] exp);
@@ -405,14 +406,18 @@ module tb_plc;
       pulses(C0, 1);
       rd_value(v16);                      check("up: count 4", v16, 4);
       bus_rd(C_DONE, v8);                 check("up: Q above the preset", v8, 8'h01);
-      // R from the storage bit
-      cnt_rst[0] = 1'b1;
+      // R from the TTLC's slot 151 (plc_addr 12)
+      ttlc_wr(R0, 1'b1);
       settle;
+      check("the TTLC reads R0 back at its slot", c_ttlc[4], 1);
+      check("C_DONE does not show R", c_done[7:4], 0);
       rd_value(v16);                      check("R clears the count", v16, 0);
       bus_rd(C_DONE, v8);                 check("R clears Q", v8, 8'h00);
       pulses(C0, 3);
       rd_value(v16);                      check("R held holds the count at 0", v16, 0);
-      cnt_rst[0] = 1'b0;
+      ttlc_wr(R0, 1'b0);
+      settle;
+      check("R0 read back clear", c_ttlc[4], 0);
       pulses(C0, 1);
       rd_value(v16);                      check("counts again after R", v16, 1);
       // the core's LISA_CU
@@ -446,9 +451,9 @@ module tb_plc;
       setup(C1, DOWN, 16'd2);
       bus_rd(TC_CTRL, v8);                check("counter CTRL readback (down, Q at count 0)", v8, DOWN | Q);
       bus_rd(C_DONE, v8);                 check("down: Q at count 0 before a load", v8, 8'h03);
-      cnt_rst[1] = 1'b1;
+      ttlc_wr(R1, 1'b1);
       settle;
-      cnt_rst[1] = 1'b0;
+      ttlc_wr(R1, 1'b0);
       settle;
       rd_value(v16);                      check("down: R loads the preset", v16, 2);
       bus_rd(C_DONE, v8);                 check("down: Q 0 after the load", v8, 8'h01);
@@ -460,11 +465,11 @@ module tb_plc;
       bus_rd(C_DONE, v8);                 check("down: Q at 0", v8, 8'h03);
       pulses(C1, 2);
       rd_value(v16);                      check("down saturates at 0", v16, 0);
-      cnt_rst[1] = 1'b1;
+      ttlc_wr(R1, 1'b1);
       pulses(C1, 2);
       rd_value(v16);                      check("down: R held holds the preset", v16, 2);
       bus_rd(C_DONE, v8);                 check("down: Q 0 while R held", v8, 8'h01);
-      cnt_rst[1] = 1'b0;
+      ttlc_wr(R1, 1'b0);
       pulses(C1, 1);
       rd_value(v16);                      check("down: counts again after R", v16, 1);
       bus_wr(TC_CTRL, DOWN | RST);

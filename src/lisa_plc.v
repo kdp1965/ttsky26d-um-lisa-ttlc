@@ -36,8 +36,14 @@ I/O address 139 + n and a counter's CU by writing 147 + n (ttlc_io.v
 hands the write over as plc_we / plc_addr /
 plc_bit); the bit written is held and ORed with the core's own LISA_IN /
 LISA_CU bit of TC_CTRL.  The TTLC reads the Q outputs back at the same
-addresses (t_done, c_done), the core as T_DONE / C_DONE.  Counter n's
-reset R is storage bit 120 + n (cnt_rst) or the RST bit of TC_CTRL.
+addresses (t_done, the TTLC's view c_ttlc), the core as T_DONE / C_DONE.
+Counter n's reset R is I/O address 147 + NC + n - the empty counter slot
+NC above its own, 151 + n with four counters: a write sets the level (1
+holds the counter in reset, or at its preset counting down), a read
+returns it - or the RST bit of TC_CTRL.  (Until 2026-11-20 R was storage
+bit 120 + n, which made those storage bits double as counter inputs; Ken:
+the storage bits are storage only.)  With more than four counters the
+slots run out and the TTLC has no R input.
 
    0x50  TC_IDX      [3:0] the block the next five registers address:
                      0-7 timer n, 8-15 counter n - 8
@@ -95,9 +101,9 @@ module lisa_plc
    input  wire          plc_we,       // one clock: the TTLC wrote I/O address 139 + plc_addr
    input  wire [3:0]    plc_addr,     // 0-7 timer n (its IN), 8-15 counter n-8 (its CU)
    input  wire          plc_bit,      // the bit written
-   input  wire [7:0]    cnt_rst,      // counter n's R: storage bit 120 + n (a level)
    output wire [7:0]    t_done,       // the timers' Q (TTLC addresses 139-146, T_DONE)
-   output wire [7:0]    c_done        // the counters' Q (147-154, C_DONE)
+   output wire [7:0]    c_done,       // the counters' Q (C_DONE: bit n counter n, the rest 0)
+   output wire [7:0]    c_ttlc        // the TTLC's view of 147-154: Q for counter n at bit n, its R level at bit NC + n
 );
 
    // the registers shared by the blocks
@@ -281,20 +287,21 @@ module lisa_plc
       reg            mode;             // 0 up, 1 down
       reg            lisa_cu;          // the core's count input
       reg            ttlc_cu;          // the TTLC's last write to 147 + k
+      reg            ttlc_rst;         // the TTLC's last write to 147 + NC + k: the reset level R
       reg            cu_last;
       reg            q;
       wire           cu;
       wire           rise;             // a rising edge of CU
       wire           wr_me;            // a TC_CTRL write to this counter
       wire           mode_now;         // the mode, or the one being written this clock
-      wire           r;                // the reset: storage bit 120 + k, or a RST write
+      wire           r;                // the reset: the TTLC's level, or a RST write
       wire           zero, full;
 
       assign cu       = ttlc_cu | lisa_cu;
       assign rise     = cu & ~cu_last;
       assign wr_me    = wr_ctrl && sel[k + 8];
       assign mode_now = wr_me ? d_i[0] : mode;
-      assign r        = cnt_rst[k] | (wr_me && d_i[6]);
+      assign r        = ttlc_rst | (wr_me && d_i[6]);
       assign zero     = cnt == 16'h0;
       assign full     = cnt == 16'hFFFF;
 
@@ -307,6 +314,7 @@ module lisa_plc
             mode    <= 1'b0;
             lisa_cu <= 1'b0;
             ttlc_cu <= 1'b0;
+            ttlc_rst <= 1'b0;
             cu_last <= 1'b0;
             q       <= 1'b0;
          end
@@ -314,6 +322,8 @@ module lisa_plc
          begin
             if (plc_we && plc_addr == ADDR)
                ttlc_cu <= plc_bit;
+            if (NC <= 4 && plc_we && plc_addr == 4'(k + 8 + NC))   // the R slot, 151 + k with four counters
+               ttlc_rst <= plc_bit;
             if (wr_me)
             begin
                mode    <= d_i[0];
@@ -346,16 +356,25 @@ module lisa_plc
       end
 
       assign c_done[k]                = q;
+      assign c_ttlc[k]                = q;
+      if (NC <= 4)
+      begin : rslot
+         assign c_ttlc[k + NC]        = ttlc_rst;      // the R level reads back at its slot
+      end
       assign c_cnt_bus[k*16 +: 16]    = cnt;
       assign c_preset_bus[k*16 +: 16] = preset;
       assign c_mode_bus[k]            = mode;
       assign c_cu_bus[k]              = cu;
       assign c_lisa_bus[k]            = lisa_cu;
    end
-   // the empty counter slots read 0
+   // the empty counter slots read 0 (for the TTLC, the slots past the R inputs)
    for (k = NC; k < 8; k = k + 1)
    begin : ctr_none
       assign c_done[k]                = 1'b0;
+      if (NC > 4 || k >= 2 * NC)
+      begin : no_rslot
+         assign c_ttlc[k]             = 1'b0;
+      end
       assign c_cnt_bus[k*16 +: 16]    = 16'h0;
       assign c_preset_bus[k*16 +: 16] = 16'h0;
       assign c_mode_bus[k]            = 1'b0;
